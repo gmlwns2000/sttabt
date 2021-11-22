@@ -78,7 +78,7 @@ class ClassificationDataset:
                 self.num_classes = max(self.num_classes, idx + 1)
                 
                 data.append((idx, text,))
-            print(f'Dataset Stat.: nclass:{self.num_classes}, max_len:{max_len}, avg_len:{avg_len / len(data)}')
+            print(f'Classification Dataset Stat.: name:{self.dataset_name}, nclass:{self.num_classes}, max_len:{max_len}, avg_len:{avg_len / len(data)}, count:{len(data)}')
             return data
         
         train_set, test_set = DATASETS[dataset](root='./cache')
