@@ -78,7 +78,7 @@ class ClassificationDataset:
                 self.num_classes = max(self.num_classes, idx + 1)
                 
                 data.append((idx, text,))
-            print(max_len, avg_len / len(data))
+            print(f'Dataset Stat.: nclass:{self.num_classes}, max_len:{max_len}, avg_len:{avg_len / len(data)}')
             return data
         
         train_set, test_set = DATASETS[dataset](root='./cache')
@@ -93,6 +93,7 @@ class ClassificationDataset:
             set = self.train_set
             if test: set = self.test_set
             idx, text = set[random.randint(0, len(set)-1)]
+            text = f'[CLS]{text}'
             labels.append(idx)
             texts.append(text)
 
