@@ -65,7 +65,12 @@ class ClassificationDataset:
         self.batch_size = batch_size
         self.dataset_name = dataset
         self.num_classes = 0
-        self.tokenizer = transformers.ElectraTokenizerFast.from_pretrained('google/electra-base-discriminator')
+        if tokenizer == 'electra':
+            self.tokenizer = transformers.ElectraTokenizerFast.from_pretrained('google/electra-base-discriminator')
+        elif tokenizer == 'bigbird':
+            self.tokenizer = transformers.BigBirdTokenizerFast.from_pretrained('google/bigbird-roberta-base')
+        else:
+            raise Exception('unknonw tokenizer')
         
         def proc(set):
             data = []
