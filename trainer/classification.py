@@ -1,6 +1,7 @@
-import torch
+import torch, tqdm, random
 from torch import nn, optim
 from torch.cuda.amp import GradScaler, autocast
+import numpy as np
 
 from dataset import ClassificationDataset
 from models import ElectraClassifier
@@ -10,6 +11,8 @@ class Trainer:
         batch_size = 32,
         device = 0,
     ):
+        self.seed()
+
         self.batch_size = batch_size
         self.device = device
 
@@ -19,8 +22,16 @@ class Trainer:
         self.model.train()
 
         self.steps = 0
+        self.max_steps = 10000
         self.optimizer = optim.Adam(self.model.parameters(), lr=5e-5)
         self.scaler = GradScaler()
+    
+    def seed(self, seed=42):
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+        random.seed(seed)
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed) # if use multi-GPU
     
     def get_batch(self, test=False):
         batch = self.dataset.batch(test=test)
@@ -50,9 +61,22 @@ class Trainer:
 
         print(f'[{self.steps}] loss:{self.loss}, acc:{acc}, test_loss:{tloss}, test_acc:{tacc}')
         self.model.train()
+    
+    def eval(self):
+        self.model.eval()
+        acc_sum = 0
+        acc_count = 0
+        for i in tqdm.tqdm(range(1000)):
+            with torch.no_grad(), autocast():
+                tloss, toutput = self.model(test_batch, return_output=True)
+                tacc = calc_acc(test_batch.labels, toutput)
+                acc_sum += tacc
+                acc_count += 1
+        print(f'[evaluated] ({self.dataset.dataset_name}:{acc_count}*{self.batch_size}) {(acc_sum / acc_count)*100} %')
+        self.model.train()
 
     def main(self):
-        while True:
+        while self.steps < self.max_steps:
             self.steps += 1
             
             batch = self.get_batch()

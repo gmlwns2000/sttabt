@@ -2,6 +2,7 @@ import random
 
 from torchtext.datasets import DATASETS
 import transformers, torch, tqdm
+import numpy as np
 
 from dataset.classification_batch_entry import ClassificationBatchEntry
 
@@ -59,7 +60,7 @@ class ClassificationDataset:
     def __init__(self, 
         batch_size = 4,
         tokenizer = 'electra',
-        dataset = 'YahooAnswers'
+        dataset = 'AG_NEWS'
     ):
         self.batch_size = batch_size
         self.dataset_name = dataset
