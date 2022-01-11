@@ -8,9 +8,9 @@ from models import ElectraClassifier, BigBirdClassifier
 
 class Trainer:
     def __init__(self,
-        batch_size = 16,
+        batch_size = 12,
         device = 0,
-        model = 'bigbird'
+        model = 'electra'
     ):
         self.seed()
 
