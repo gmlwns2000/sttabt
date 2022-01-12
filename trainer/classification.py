@@ -4,30 +4,37 @@ from torch.cuda.amp import GradScaler, autocast
 import numpy as np
 
 from dataset import ClassificationDataset
-from models import ElectraClassifier, BigBirdClassifier
+from models import ElectraClassifier, BigBirdClassifier, BertClassification
 
 class Trainer:
     def __init__(self,
-        batch_size = 12,
+        batch_size = 64,
         device = 0,
-        model = 'electra'
+        model = 'bert'
     ):
         self.seed()
 
         self.batch_size = batch_size
         self.device = device
-
+        
+        self.model_type = model
         if model == 'electra':
             self.dataset = ClassificationDataset(batch_size=batch_size, tokenizer='electra')
             self.model = ElectraClassifier(self.dataset.num_classes).to(self.device)
         elif model == 'bigbird':
             self.dataset = ClassificationDataset(batch_size=batch_size, tokenizer='bigbird')
             self.model = BigBirdClassifier(self.dataset.num_classes).to(self.device)
+        elif model == 'bert':
+            self.dataset = ClassificationDataset(batch_size=batch_size, tokenizer='bert')
+            self.model = BertClassification(self.dataset.num_classes).to(self.device)
+        else:
+            raise Exception('unknown model')
 
+        print(f'Trainer.__init__: Model initialized. model = {model}')
         self.model.train()
 
         self.steps = 0
-        self.max_steps = 360000 // self.batch_size
+        self.max_steps = 360000 // self.batch_size  # 3 epoch on AG NEWS
         self.optimizer = optim.Adam(self.model.parameters(), lr=5e-5)
         self.scaler = GradScaler()
     
@@ -69,6 +76,7 @@ class Trainer:
     
     def eval(self):
         self.model.eval()
+        self.seed()
 
         acc_sum = 0
         acc_count = 0
@@ -83,6 +91,22 @@ class Trainer:
         print(f'[evaluated] ({self.dataset.dataset_name}:{acc_count}*{self.batch_size}) {(acc_sum / acc_count)*100} %')
         
         self.model.train()
+    
+    def save(self):
+        print('Trainer.save: Saving...')
+        torch.save({
+            'model': self.model.state_dict(),
+            'optimizer': self.optimizer.state_dict(),
+            'steps': self.steps,
+        }, f'cls_{self.model_type}.pth')
+    
+    def load(self):
+        print('Trainer.load: Loading...')
+        state = torch.load(f'cls_{self.model_type}.pth', map_location='cpu')
+        self.model.load_state_dict(state['model'])
+        self.optimizer.load_state_dict(state['optimizer'])
+        self.steps = state['steps']
+        del state
 
     def main(self):
         while self.steps < self.max_steps:
@@ -93,7 +117,9 @@ class Trainer:
             self.optimize_step(batch)
 
             if self.steps % 15 == 0: self.report(batch)
+            if self.steps % 100 == 0: self.save()
         
+        self.save()
         self.eval()
 
 if __name__ == '__main__':

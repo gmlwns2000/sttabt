@@ -69,6 +69,8 @@ class ClassificationDataset:
             self.tokenizer = transformers.ElectraTokenizerFast.from_pretrained('google/electra-base-discriminator')
         elif tokenizer == 'bigbird':
             self.tokenizer = transformers.BigBirdTokenizerFast.from_pretrained('google/bigbird-roberta-base')
+        elif tokenizer == 'bert':
+            self.tokenizer = transformers.BertTokenizerFast.from_pretrained('google/bert_uncased_L-4_H-256_A-4')
         else:
             raise Exception('unknonw tokenizer')
         
