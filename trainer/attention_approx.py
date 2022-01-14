@@ -7,7 +7,8 @@ from torch.cuda.amp import GradScaler, autocast
 class Trainer:
     def __init__(self,
         batch_size = 64,
-        device = 0
+        device = 0,
+        factor = 8
     ):
         self.device = device
         self.batch_size = batch_size
@@ -16,7 +17,7 @@ class Trainer:
         self.trainer.load()
         self.trainer.model.eval()
         
-        self.factor = 4
+        self.factor = factor
         self.guide_model_method = 'new'
         
         self.bert = self.init_guide_model()
