@@ -26,7 +26,7 @@ class Trainer:
         self.bert.train()
 
         self.steps = 0
-        self.max_steps = 50000
+        self.max_steps = 720000 // batch_size
         self.optimizer = optim.Adam(self.bert.parameters(), lr=5e-5)
         self.scaler = GradScaler()
     
@@ -48,6 +48,7 @@ class Trainer:
         return f'saves/att_approx_{self.factor}_{self.trainer.model_type}.pth'
 
     def save(self):
+        print('Trainer.save:', self.get_checkpoint_path())
         torch.save({
             'bert': self.bert.state_dict(),
             'optimizer': self.optimizer.state_dict(),
@@ -55,6 +56,7 @@ class Trainer:
         }, self.get_checkpoint_path())
 
     def load(self):
+        print('Trainer.load:', self.get_checkpoint_path())
         state = torch.load(self.get_checkpoint_path(), map_location='cpu')
         self.bert.load_state_dict(state['bert'])
         self.optimizer.load_state_dict(state['optimizer'])
@@ -67,7 +69,7 @@ class Trainer:
         with torch.no_grad():
             test_loss = self.calc_loss(test_batch)
         self.bert.train()
-        print(f'[{self.steps}] {test_loss}({self.loss}) ({self.time_guide},{self.time_target})')
+        print(f'[{self.steps}/{self.max_steps}] {test_loss}({self.loss}) ({self.time_guide},{self.time_target})')
 
     def calc_loss(self, batch):
         target_bert = self.trainer.model.bert
@@ -113,5 +115,5 @@ class Trainer:
         self.save()
 
 if __name__ == '__main__':
-    trainer = Trainer()
+    trainer = Trainer(model = 'bert-base', batch_size=12, factor=32)
     trainer.main()

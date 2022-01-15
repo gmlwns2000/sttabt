@@ -49,6 +49,8 @@ class Trainer:
         random.seed(seed)
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed) # if use multi-GPU
+        torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.deterministic = True
     
     def get_batch(self, test=False):
         batch = self.dataset.batch(test=test)
