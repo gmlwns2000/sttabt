@@ -133,6 +133,6 @@ class Trainer:
 if __name__ == '__main__':
     trainer = Trainer(
         model = 'bert-base',
-        batch_size = 8, 
+        batch_size = 16, 
     )
     trainer.main()

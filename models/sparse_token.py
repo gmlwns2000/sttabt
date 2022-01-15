@@ -198,14 +198,15 @@ class SparseChannelLinear(nn.Module):
             #input (N, C, H)
             #weight (OUT, H)
             #bias (OUT)
+            channel_indices_unsqueeze = self.channel_indices.unsqueeze(-1)
             sparse_input = torch.gather(
-                input, dim=1, index=self.channel_indices.unsqueeze(-1).expand(-1,-1,H))
+                input, dim=1, index=channel_indices_unsqueeze.expand(-1,-1,H))
             #sparse_input (N, T, H)
             x = F.linear(sparse_input, self.weight, self.bias)
 
             x = torch.empty(N, C, self.out_features, 
                 dtype=input.dtype, device=input.device).\
-                    scatter_(dim=1, index=self.channel_indices.unsqueeze(-1).expand(-1,-1,self.out_features), src=x)
+                    scatter_(dim=1, index=channel_indices_unsqueeze.expand(-1,-1,self.out_features), src=x)
             return x
             #return F.linear(input, self.weight, self.bias)
 
