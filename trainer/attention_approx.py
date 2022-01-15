@@ -8,12 +8,13 @@ class Trainer:
     def __init__(self,
         batch_size = 64,
         device = 0,
-        factor = 8
+        factor = 8,
+        model = 'bert-mini'
     ):
         self.device = device
         self.batch_size = batch_size
 
-        self.trainer = BaseTrainer(batch_size=batch_size, device=device)
+        self.trainer = BaseTrainer(batch_size=batch_size, device=device, model=model)
         self.trainer.load()
         self.trainer.model.eval()
         
@@ -44,7 +45,7 @@ class Trainer:
             raise Exception()
 
     def get_checkpoint_path(self):
-        return f'att_approx_{self.factor}_{self.trainer.model_type}.pth'
+        return f'saves/att_approx_{self.factor}_{self.trainer.model_type}.pth'
 
     def save(self):
         torch.save({

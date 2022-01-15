@@ -6,10 +6,10 @@ import torch
 from dataset.classification_batch_entry import ClassificationBatchEntry
 
 class BertClassification(nn.Module):
-    def __init__(self, n_classes):
+    def __init__(self, n_classes, bert_model_name = 'google/bert_uncased_L-4_H-256_A-4'):
         super().__init__()
 
-        self.bert_model_name = 'google/bert_uncased_L-4_H-256_A-4'
+        self.bert_model_name = bert_model_name
         self.bert = BertModel.from_pretrained(self.bert_model_name)
         self.hidden = self.bert.config.hidden_size
         self.classifier = nn.Sequential(

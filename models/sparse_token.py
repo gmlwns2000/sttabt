@@ -14,6 +14,7 @@ from transformers.modeling_utils import (
 )
 from transformers.utils import logging
 from transformers.models.bert.configuration_bert import BertConfig
+import torch.nn.functional as F
 
 logger = logging.get_logger(__name__)
 
@@ -24,21 +25,31 @@ __timer_start = {}
 
 def timer_start(name):
     global __timer_start
-    __timer_start[name] = time.time()
+    __timer_start[name] = datetime.datetime.now()
 
 def timer_end(name):
     global __timer_start, __timer_cum
-    if not name in __timer_cum: __timer_cum[name] = 0
-    __timer_cum[name] += time.time() - __timer_start[name]
+    if not name in __timer_cum: __timer_cum[name] = datetime.timedelta(0)
+    __timer_cum[name] += datetime.datetime.now() - __timer_start[name]
 
 def timer_reset():
     global __timer_cum
     __timer_cum = {}
 
+def timer_report():
+    global __timer_cum
+    data = __timer_cum
+    name_max = max(map(lambda x: len(x), data.keys()))
+    total_time = datetime.timedelta(0)
+    for k in data.keys(): total_time += data[k]
+    for k in sorted(data.keys()):
+        print(f'{k.ljust(name_max+1)}: {data[k]} ({(data[k]/total_time)*100:2.2f}%)')
+
 #endregion Timer
 
 #region Model Definition
 
+#old version
 def __update_input_mask_from_previous_attention(attention_mask, previous_attention, output_token_indices, output_token_impact, k=5):
     NBATCH = attention_mask.shape[0]
 
@@ -88,8 +99,8 @@ def __update_input_mask_from_previous_attention(
     # attention_mask = attention_mask.cpu()
     # previous_attention = previous_attention.cpu()
     input_mask = torch.zeros(
-        NBATCH, TLEN, 
-        device=device, 
+        NBATCH, TLEN,
+        device=device,
         dtype=dtype
     )
     for i, idxs in enumerate(output_token_indices):
@@ -149,6 +160,60 @@ def update_input_mask_from_previous_attention(
 
 from transformers.models.bert.modeling_bert import BertEmbeddings
 
+class SparseChannelLinear(nn.Module):
+    __constants__ = ['in_features', 'out_features']
+    in_features: int
+    out_features: int
+    weight: torch.Tensor
+
+    def __init__(self, in_features: int, out_features: int, bias: bool = True,
+                 device=None, dtype=None) -> None:
+        factory_kwargs = {'device': device, 'dtype': dtype}
+        super().__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.weight = nn.Parameter(torch.empty((out_features, in_features), **factory_kwargs))
+        if bias:
+            self.bias = nn.Parameter(torch.empty(out_features, **factory_kwargs))
+        else:
+            self.register_parameter('bias', None)
+        self.reset_parameters()
+
+        self.channel_indices= None #(N, K), K<=C
+
+    def reset_parameters(self) -> None:
+        nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+        if self.bias is not None:
+            fan_in, _ = nn.init._calculate_fan_in_and_fan_out(self.weight)
+            bound = 1 / math.sqrt(fan_in) if fan_in > 0 else 0
+            nn.init.uniform_(self.bias, -bound, bound)
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        if self.channel_indices is None:
+            return F.linear(input, self.weight, self.bias)
+        else:
+            input_shape = input.shape
+            assert len(input_shape) == 3
+            N, C, H = input_shape
+            #input (N, C, H)
+            #weight (OUT, H)
+            #bias (OUT)
+            sparse_input = torch.gather(
+                input, dim=1, index=self.channel_indices.unsqueeze(-1).repeat(1,1,H))
+            #sparse_input (N, T, H)
+            x = F.linear(sparse_input, self.weight, self.bias)
+
+            x = torch.empty(N, C, self.out_features, 
+                dtype=input.dtype, device=input.device).\
+                    scatter_(dim=1, index=self.channel_indices.unsqueeze(-1).repeat(1,1,self.out_features), src=x)
+            return x
+            #return F.linear(input, self.weight, self.bias)
+
+    def extra_repr(self) -> str:
+        return 'in_features={}, out_features={}, bias={}'.format(
+            self.in_features, self.out_features, self.bias is not None
+        )
+
 class BertSelfAttention(nn.Module):
     def __init__(self, config, position_embedding_type=None):
         super().__init__()
@@ -162,9 +227,9 @@ class BertSelfAttention(nn.Module):
         self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
         self.all_head_size = self.num_attention_heads * self.attention_head_size
 
-        self.query = nn.Linear(config.hidden_size, self.all_head_size)
-        self.key = nn.Linear(config.hidden_size, self.all_head_size)
-        self.value = nn.Linear(config.hidden_size, self.all_head_size)
+        self.query = SparseChannelLinear(config.hidden_size, self.all_head_size)
+        self.key = SparseChannelLinear(config.hidden_size, self.all_head_size)
+        self.value = SparseChannelLinear(config.hidden_size, self.all_head_size)
 
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
         self.position_embedding_type = position_embedding_type or getattr(
@@ -187,6 +252,7 @@ class BertSelfAttention(nn.Module):
         self.input_indices = None
         self.input_impacts = None
         self.output_mask = None
+        self.output_indices = None
     
     def update_input_mask_from_previous_attention(self, output_token_mask, output_token_indices, output_token_impact, k):
         input_mask, input_indices, input_impacts = update_input_mask_from_previous_attention(
@@ -200,6 +266,10 @@ class BertSelfAttention(nn.Module):
         self.input_indices = input_indices
         self.input_impacts = input_impacts
         self.output_mask = output_token_mask
+        self.output_indices = output_token_indices
+        # self.query.channel_indices = output_token_indices
+        # self.key.channel_indices = input_indices
+        # self.value.channel_indices = input_indices
         return input_mask, input_indices, input_impacts
 
     def transpose_for_scores(self, x):
@@ -220,10 +290,10 @@ class BertSelfAttention(nn.Module):
         if self.is_decoder: raise Exception()
         if not self.attention_masking_timing in ['after_softmax', 'before_softmax']: raise Exception()
         self.last_hidden_states = hidden_states
+        timer_start('attention.qkv')
         mixed_query_layer = self.query(hidden_states)
         
         is_cross_attention = encoder_hidden_states is not None
-
         if (is_cross_attention and past_key_value is not None) or is_cross_attention or (past_key_value is not None):
             raise Exception()
         else:
@@ -231,10 +301,12 @@ class BertSelfAttention(nn.Module):
             value_layer = self.transpose_for_scores(self.value(hidden_states))
 
         query_layer = self.transpose_for_scores(mixed_query_layer)
+        timer_end('attention.qkv')
 
+        timer_start('attention.scores.matmul')
         # Take the dot product between "query" and "key" to get the raw attention scores.
         attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
-
+        timer_end('attention.scores.matmul')
         if self.position_embedding_type == "relative_key" or self.position_embedding_type == "relative_key_query":
             raise Exception()
 
@@ -251,7 +323,9 @@ class BertSelfAttention(nn.Module):
 
         # This is actually dropping out entire tokens to attend to, which might
         # seem a bit unusual, but is taken from the original Transformer paper.
+        timer_start('attention.probs.dropout')
         attention_probs = self.dropout(attention_probs)
+        timer_end('attention.probs.dropout')
 
         # Mask heads if we want to
         if head_mask is not None:
@@ -802,8 +876,6 @@ def run_bert_with_approx(
     ks=[0.5, 0.5, 0.5, 0.5]
 ):
     timer_start('approx_att')
-    attention_mask = input_dict['attention_mask']
-    attention_mask = ((1.0 - attention_mask) * (-10000)).view(attention_mask.shape[0], 1, 1, attention_mask.shape[-1])
     with torch.no_grad():
         ret_approx = approx_bert(**input_dict)
         attentions = ret_approx.attentions
@@ -811,6 +883,10 @@ def run_bert_with_approx(
 
     timer_start('approx_mask_reset')
     reset_input_mask(sparse_bert)
+    timer_start('approx_mask_reset_inverse')
+    attention_mask = input_dict['attention_mask']
+    attention_mask = ((1.0 - attention_mask) * (-10000)).view(attention_mask.shape[0], 1, 1, attention_mask.shape[-1])
+    timer_end('approx_mask_reset_inverse')
     for i, layer in enumerate(sparse_bert.encoder.layer):
         layer.attention.self.last_attention_probs = attentions[i]
         layer.attention.self.last_attention_mask = attention_mask

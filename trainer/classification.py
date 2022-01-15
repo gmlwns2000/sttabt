@@ -10,7 +10,7 @@ class Trainer:
     def __init__(self,
         batch_size = 64,
         device = 0,
-        model = 'bert'
+        model = 'bert-mini'
     ):
         self.seed()
 
@@ -24,9 +24,14 @@ class Trainer:
         elif model == 'bigbird':
             self.dataset = ClassificationDataset(batch_size=batch_size, tokenizer='bigbird')
             self.model = BigBirdClassifier(self.dataset.num_classes).to(self.device)
-        elif model == 'bert':
+        elif model == 'bert-mini':
             self.dataset = ClassificationDataset(batch_size=batch_size, tokenizer='bert')
             self.model = BertClassification(self.dataset.num_classes).to(self.device)
+        elif model == 'bert-base':
+            self.dataset = ClassificationDataset(batch_size=batch_size, tokenizer='bert')
+            self.model = BertClassification(self.dataset.num_classes,
+                bert_model_name = 'google/bert_uncased_L-12_H-768_A-12'
+            ).to(self.device)
         else:
             raise Exception('unknown model')
 
@@ -71,7 +76,7 @@ class Trainer:
             acc = self.calc_acc(batch.labels, self.output)
             tacc = self.calc_acc(test_batch.labels, toutput)
 
-        print(f'[{self.steps}] loss:{self.loss}, acc:{acc}, test_loss:{tloss}, test_acc:{tacc}')
+        print(f'[{self.steps}/{self.max_steps}] loss:{self.loss}, acc:{acc}, test_loss:{tloss}, test_acc:{tacc}')
         self.model.train()
     
     def eval(self):
@@ -92,17 +97,20 @@ class Trainer:
         
         self.model.train()
     
+    def get_checkpoint_path(self):
+        return f'saves/cls_{self.model_type}.pth'
+
     def save(self):
-        print('Trainer.save: Saving...')
+        print('Trainer.save: Saving...', self.get_checkpoint_path())
         torch.save({
             'model': self.model.state_dict(),
             'optimizer': self.optimizer.state_dict(),
             'steps': self.steps,
-        }, f'cls_{self.model_type}.pth')
+        }, self.get_checkpoint_path())
     
     def load(self):
-        print('Trainer.load: Loading...')
-        state = torch.load(f'cls_{self.model_type}.pth', map_location='cpu')
+        print('Trainer.load: Loading...', self.get_checkpoint_path())
+        state = torch.load(self.get_checkpoint_path(), map_location='cpu')
         self.model.load_state_dict(state['model'])
         self.optimizer.load_state_dict(state['optimizer'])
         self.steps = state['steps']
@@ -117,11 +125,14 @@ class Trainer:
             self.optimize_step(batch)
 
             if self.steps % 15 == 0: self.report(batch)
-            if self.steps % 100 == 0: self.save()
+            if self.steps % 300 == 0: self.save()
         
         self.save()
         self.eval()
 
 if __name__ == '__main__':
-    trainer = Trainer()
+    trainer = Trainer(
+        model = 'bert-base',
+        batch_size = 8, 
+    )
     trainer.main()
