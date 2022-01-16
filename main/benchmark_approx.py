@@ -1,4 +1,5 @@
-import torch, random, math, time, sys, os, tqdm
+from sqlalchemy import false
+import torch, random, math, time, sys, os, tqdm, pickle
 import numpy as np
 import numba
 from trainer.classification import Trainer
@@ -10,15 +11,18 @@ def run(
     model='bert-base', 
     target='sparse', 
     device='cuda', 
+    run_benchmark = True,
+    run_accuracy = True,
     batch_size=32,
-    factor = 16
+    factor = 16,
+    dropout = 0.5,
 ):
     trainer = Trainer(
-        batch_size=batch_size, model='bert-base', device='cpu')
+        batch_size=batch_size, model=model, device='cpu')
     trainer.load()
     trainer.model.eval()
     bert = trainer.model.bert
-    fc = trainer.model.classifier
+    fc = trainer.model.classifier.to(device)
     batch = trainer.get_batch()
     test_batch = trainer.get_batch(test=False)
 
@@ -46,11 +50,11 @@ def run(
                 'output_hidden_states': True,
                 'output_attentions': True,
             },
-            ks = [0.5]*12, #[0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.35,0.35,0.15,],
+            ks = [dropout]*12, #[0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.35,0.35,0.15,],
         )
         return eval_fc(lm_output, fc=fc, batch=batch)
 
-    def accuracy(batch_eval, N=7200//16, device=0):
+    def accuracy(batch_eval, N=7600//16, device=0):
         trainer.seed()
         trainer.dataset.batch_size = 16
         acc_sum = 0
@@ -82,6 +86,8 @@ def run(
     
     benchmark_device = device
     benchmark_batch_size = batch_size
+    speed = 0
+    acc = 0
 
     if target == 'sparse':
         approx_trainer = ApproxTrainer(
@@ -101,34 +107,64 @@ def run(
 
         sparse_bert=sparse_bert.to(benchmark_device)
         approx_bert=approx_bert.to(benchmark_device)
-        time_approx = benchmark(
-            eval = lambda batch: approx_eval(sparse_bert, approx_bert, batch=batch, fc=lambda x: x),
-            batch_size = benchmark_batch_size,
-            WARM = 20,
-            N = 1000,
-            device = benchmark_device,
-            end_warm = lambda: sparse.timer_reset()
-        )
-        sparse.timer_report()
-        print(time_approx)
-        print('acc', accuracy(
-            lambda batch: approx_eval(sparse_bert, approx_bert, batch=batch), device=device)
-        )
+        if run_benchmark:
+            time_approx = benchmark(
+                eval = lambda batch: approx_eval(sparse_bert, approx_bert, batch=batch, fc=lambda x: x),
+                batch_size = benchmark_batch_size,
+                WARM = 50,
+                N = 300,
+                device = benchmark_device,
+                end_warm = lambda: sparse.timer_reset()
+            )
+            sparse.timer_report()
+            print(time_approx)
+            speed = time_approx[-1]
+        if run_accuracy:
+            result = accuracy(
+                lambda batch: approx_eval(sparse_bert, approx_bert, batch=batch), device=device)
+            print('acc', result)
+            acc = result
     elif target == 'bert':
-        bert = bert.to(benchmark_device)
-        time_bert = benchmark(
-            lambda batch: eval(bert, batch=batch, fc=lambda x: x), 
-            batch_size = benchmark_batch_size,
-            WARM = 20,
-            N = 1000,
-            device = benchmark_device
-        )
-        print(time_bert)
+        if run_benchmark:
+            bert = bert.to(benchmark_device)
+            time_bert = benchmark(
+                lambda batch: eval(bert, batch=batch, fc=lambda x: x), 
+                batch_size = benchmark_batch_size,
+                WARM = 50,
+                N = 300,
+                device = benchmark_device
+            )
+            print(time_bert)
+            speed = time_bert[-1]
+        if run_accuracy:
+            result = accuracy(lambda batch: eval(bert, batch=batch))
+            print('acc', result)
+            acc = result
+    
+    with open('bench_result.pkl', 'wb') as f:
+        pickle.dump((speed, acc), f)
 
 if __name__ == '__main__':
+    import argparse
+    
+    sparse.timer_enable(False)
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--model', type=str, default='bert-mini')
+    parser.add_argument('--target', type=str, default='sparse')
+    parser.add_argument('--batch-size', type=int, default=64)
+    parser.add_argument('--dropout', type=float, default=0.5)
+    parser.add_argument('--factor', type=int, default=8)
+
+    args = parser.parse_args()
+
     run(
-        model = 'bert-base',
-        target = 'sparse',
+        model = args.model,
+        target = args.target,
         device = 'cuda',
-        batch_size = 32
+        run_benchmark = True,
+        run_accuracy = True,
+        dropout = args.dropout,
+        batch_size = args.batch_size,
+        factor = args.factor,
     )

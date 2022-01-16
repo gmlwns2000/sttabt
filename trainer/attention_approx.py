@@ -26,7 +26,7 @@ class Trainer:
         self.bert.train()
 
         self.steps = 0
-        self.max_steps = 720000 // batch_size
+        self.max_steps = (len(self.trainer.dataset.train_set) * 20) // batch_size
         self.optimizer = optim.Adam(self.bert.parameters(), lr=5e-5)
         self.scaler = GradScaler()
     
@@ -115,5 +115,5 @@ class Trainer:
         self.save()
 
 if __name__ == '__main__':
-    trainer = Trainer(model = 'bert-base', batch_size=12, factor=32)
+    trainer = Trainer(model = 'bert-base', batch_size=12, factor=8)
     trainer.main()

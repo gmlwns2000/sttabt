@@ -22,22 +22,33 @@ logger = logging.get_logger(__name__)
 
 __timer_cum = {}
 __timer_start = {}
+__timer_enable = True
+
+def timer_enable(v):
+    global __timer_enable
+    __timer_enable = v
 
 def timer_start(name):
-    global __timer_start
+    global __timer_start, __timer_enable
+    if not __timer_enable: return
+
     __timer_start[name] = datetime.datetime.now()
 
 def timer_end(name):
-    global __timer_start, __timer_cum
+    global __timer_start, __timer_cum, __timer_enable
+    if not __timer_enable: return
+
     if not name in __timer_cum: __timer_cum[name] = datetime.timedelta(0)
     __timer_cum[name] += datetime.datetime.now() - __timer_start[name]
 
 def timer_reset():
-    global __timer_cum
+    global __timer_cum, __timer_enable
+    if not __timer_enable: return
     __timer_cum = {}
 
 def timer_report():
-    global __timer_cum
+    global __timer_cum, __timer_enable
+    if not __timer_enable: return
     data = __timer_cum
     name_max = max(map(lambda x: len(x), data.keys()))
     total_time = datetime.timedelta(0)
@@ -217,8 +228,8 @@ class SparseChannelLinear(nn.Module):
             timer_end('sparselinear.linear')
 
             timer_start('sparselinear.scatter_')
-            x = torch.empty(N, C, self.out_features, 
-                dtype=input.dtype, device=input.device).\
+            x = torch.zeros(N, C, self.out_features, 
+                dtype=x.dtype, device=x.device).\
                     scatter_(dim=1, index=channel_indices_unsqueeze.expand(-1,-1,self.out_features), src=x)
             timer_end('sparselinear.scatter_')
             timer_end('sparselinear')
@@ -286,8 +297,8 @@ class BertSelfAttention(nn.Module):
         self.output_mask = output_token_mask
         self.output_indices = output_token_indices
         
-        self.query.channel_indices = output_token_indices.unsqueeze(-1)
         input_indices_un = input_indices.unsqueeze(-1)
+        self.query.channel_indices = output_token_indices.unsqueeze(-1)
         self.key.channel_indices = input_indices_un
         self.value.channel_indices = input_indices_un
 
