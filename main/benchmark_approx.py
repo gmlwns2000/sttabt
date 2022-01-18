@@ -16,6 +16,7 @@ def run(
     batch_size=32,
     factor = 16,
     dropout = 0.5,
+    amp = False,
 ):
     trainer = Trainer(
         batch_size=batch_size, model=model, device='cpu')
@@ -86,8 +87,8 @@ def run(
     
     benchmark_device = device
     benchmark_batch_size = batch_size
-    speed = 0
-    acc = 0
+    speed = 1.0
+    acc = 1.0
 
     if target == 'sparse':
         approx_trainer = ApproxTrainer(
@@ -114,7 +115,8 @@ def run(
                 WARM = 50,
                 N = 300,
                 device = benchmark_device,
-                end_warm = lambda: sparse.timer_reset()
+                end_warm = lambda: sparse.timer_reset(),
+                amp = amp,
             )
             sparse.timer_report()
             print(time_approx)
@@ -132,7 +134,8 @@ def run(
                 batch_size = benchmark_batch_size,
                 WARM = 50,
                 N = 300,
-                device = benchmark_device
+                device = benchmark_device,
+                amp = amp,
             )
             print(time_bert)
             speed = time_bert[-1]
@@ -146,8 +149,6 @@ def run(
 
 if __name__ == '__main__':
     import argparse
-    
-    sparse.timer_enable(False)
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', type=str, default='bert-mini')
@@ -155,16 +156,23 @@ if __name__ == '__main__':
     parser.add_argument('--batch-size', type=int, default=64)
     parser.add_argument('--dropout', type=float, default=0.5)
     parser.add_argument('--factor', type=int, default=8)
+    parser.add_argument('--device', type=str, default='cuda')
+    parser.add_argument('--amp', default=False, action='store_true')
+    parser.add_argument('--skip-accuracy', default=False, action='store_true')
+    parser.add_argument('--timer-enable', default=False, action='store_true')
 
     args = parser.parse_args()
+
+    sparse.timer_enable(args.timer_enable)
 
     run(
         model = args.model,
         target = args.target,
-        device = 'cuda',
+        device = args.device,
         run_benchmark = True,
-        run_accuracy = True,
+        run_accuracy = not args.skip_accuracy,
         dropout = args.dropout,
         batch_size = args.batch_size,
         factor = args.factor,
+        amp = args.amp,
     )

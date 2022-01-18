@@ -1,4 +1,5 @@
 import math, os, torch, numba, time, datetime
+from more_itertools import value_chain
 from shutil import ExecError
 import torch.utils.checkpoint
 from torch import nn
@@ -59,6 +60,29 @@ def timer_report():
 
 #endregion Timer
 
+#region Benchmark
+
+__benchmark = {}
+
+def benchmark_cum(name, value):
+    global __benchmark
+    if not name in __benchmark:
+        __benchmark[name] = (0, 0)
+    count, v = __benchmark[name]
+    __benchmark[name] = (count + 1, v + value)
+
+def benchmark_report():
+    global __benchmark
+    for k in __benchmark.keys():
+        c, v = __benchmark[k]
+        print(f"{k}: {__benchmark[k]}, avg: {v/c}")
+
+def benchmark_reset():
+    global __benchmark
+    __benchmark = {}
+
+#endregion
+
 #region Model Definition
 
 #old version
@@ -71,10 +95,9 @@ def update_input_mask_from_previous_attention(
     output_token_impact, 
     head_reduce_method = 'avg',
     token_reduce_method = 'avg',
-    apply_token_impact = True,
+    apply_token_impact = False,
     k=0.5,
-    k_estimate = True,
-    k_estimate_threshold = 0.1,
+    k_estimate = False,
 ):
     attention_mask_shape = attention_mask.shape
     NBATCH = attention_mask_shape[0]
@@ -87,7 +110,7 @@ def update_input_mask_from_previous_attention(
         kxx = k
     
     if head_reduce_method == 'avg':
-        att = torch.sum(previous_attention, dim=1)  #reduce head
+        att = torch.mean(previous_attention, dim=1)  #reduce head
     elif head_reduce_method == 'max':
         att = torch.max(previous_attention, dim=1)[0]
     else: raise Exception()
@@ -97,14 +120,15 @@ def update_input_mask_from_previous_attention(
         att = att * output_token_impact.unsqueeze(-1)
     
     if token_reduce_method == 'avg':
-        att = torch.sum(att, dim=1)                 #reduce token
+        att = torch.mean(att, dim=1)                 #reduce token
     elif token_reduce_method == 'max':
         att = torch.max(att, dim=1)[0]
     else: raise Exception()
     #att(N, TLEN)
     if k_estimate:
-        est_k = max(1, math.ceil(torch.max(torch.sum((att > k_estimate_threshold) * 1.0, dim=1)).item()))
-        #print(kxx, est_k, TLEN)
+        att_max = torch.max(att, dim=1, keepdim=True)[0]
+        est_k = min(math.ceil(TLEN*0.95), max(1, math.ceil(torch.max(torch.sum((att > (att_max * 0.1)) * 1.0, dim=1)).item())))
+        benchmark_cum('est_k', est_k / TLEN)
         kxx = est_k
     input_impacts, input_indices = torch.topk(att, kxx, dim=1)
     #input_impacts(N, K), input_indices(N, K)
@@ -149,15 +173,14 @@ class SparseChannelLinear(nn.Module):
     
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         if self.channel_indices is None or self.force_dense:
-            timer_start('sparselinear.force.linear')
+            timer_start('sparselinear.dense.linear')
             x = F.linear(input, self.weight, self.bias)
-            timer_end('sparselinear.force.linear')
+            timer_end('sparselinear.dense.linear')
             return x
         else:
             timer_start('sparselinear')
             input_shape = input.shape
-            if len(input_shape) != 3:
-                print(input_shape)
+            if len(input_shape) != 3: print(input_shape)
             assert len(input_shape) == 3
             N, C, H = input_shape
             #input (N, C, H)
@@ -867,30 +890,30 @@ def run_bert_with_approx(
     input_dict, 
     ks=[0.5, 0.5, 0.5, 0.5]
 ):
-    timer_start('approx_att')
+    timer_start('eval.approx_att_bert')
     with torch.no_grad():
         ret_approx = approx_bert(**input_dict)
         attentions = ret_approx.attentions
-    timer_end('approx_att')
+    timer_end('eval.approx_att_bert')
 
-    timer_start('approx_mask_reset')
+    timer_start('eval.reset_mask')
     reset_input_mask(sparse_bert)
-    timer_start('approx_mask_reset_inverse')
+    timer_start('eval.reset_mask.convert_mask')
     attention_mask = input_dict['attention_mask']
     attention_mask = ((1.0 - attention_mask) * (-10000)).view(attention_mask.shape[0], 1, 1, attention_mask.shape[-1])
-    timer_end('approx_mask_reset_inverse')
+    timer_end('eval.reset_mask.convert_mask')
     for i, layer in enumerate(sparse_bert.encoder.layer):
         layer.attention.self.last_attention_probs = attentions[i]
         layer.attention.self.last_attention_mask = attention_mask
-    timer_end('approx_mask_reset')
+    timer_end('eval.reset_mask')
 
-    timer_start('approx_mask_update')
+    timer_start('eval.update_mask')
     update_input_mask(sparse_bert, ks=ks)
-    timer_end('approx_mask_update')
+    timer_end('eval.update_mask')
 
-    timer_start('approx_sparse')
+    timer_start('eval.sparse_bert')
     ret_sparse = sparse_bert(**input_dict)
-    timer_end('approx_sparse')
+    timer_end('eval.sparse_bert')
     return ret_sparse
     return ret_approx
 
