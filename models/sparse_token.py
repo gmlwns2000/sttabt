@@ -1,4 +1,5 @@
 import math, os, torch, numba, time, datetime
+from shutil import ExecError
 import torch.utils.checkpoint
 from torch import nn
 from transformers.activations import ACT2FN
@@ -145,6 +146,9 @@ def update_input_mask_from_previous_attention(
     previous_attention, 
     output_token_indices, 
     output_token_impact, 
+    head_reduce_method = 'sum',
+    token_reduce_method = 'sum',
+    apply_token_impact = True,
     k=0.5
 ):
     assert k <= 1.0
@@ -155,10 +159,21 @@ def update_input_mask_from_previous_attention(
     device = previous_attention.device
     kxx = int(math.ceil(k*TLEN))
     
-    att = torch.sum(previous_attention, dim=1)
+    if head_reduce_method == 'sum':
+        att = torch.sum(previous_attention, dim=1)  #reduce head
+    elif head_reduce_method == 'max':
+        att = torch.max(previous_attention, dim=1)[0]
+    else: raise Exception()
+
     att = torch.gather(att, 1, output_token_indices.unsqueeze(-1).expand(NBATCH, output_token_indices.shape[1], TLEN))
-    att = att * output_token_impact.unsqueeze(-1)
-    att = torch.sum(att, dim=1)
+    if apply_token_impact: 
+        att = att * output_token_impact.unsqueeze(-1)
+    
+    if token_reduce_method == 'sum':
+        att = torch.sum(att, dim=1)                 #reduce token
+    elif token_reduce_method == 'max':
+        att = torch.max(att, dim=1)[0]
+    else: raise Exception()
     #att(N, TLEN)
     input_impacts, input_indices = torch.topk(att, kxx, dim=1)
     #input_impacts(N, K), input_indices(N, K)
@@ -289,7 +304,7 @@ class BertSelfAttention(nn.Module):
             self.last_attention_probs, 
             output_token_indices, 
             output_token_impact, 
-            k
+            k=k,
         )
         self.input_mask = input_mask
         self.input_indices = input_indices

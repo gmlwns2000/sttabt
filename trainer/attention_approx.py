@@ -35,6 +35,7 @@ class Trainer:
             origin_config = self.trainer.model.bert.config
             config = copy.deepcopy(origin_config)
             config.hidden_size = origin_config.hidden_size // self.factor
+            config.intermediate_size = origin_config.intermediate_size // self.factor
             bert = BertModel(config)
             return bert
         elif self.guide_model_method == 'resize_avg':
@@ -115,5 +116,14 @@ class Trainer:
         self.save()
 
 if __name__ == '__main__':
-    trainer = Trainer(model = 'bert-base', batch_size=12, factor=8)
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--model', type=str, default='bert-mini')
+    parser.add_argument('--batch-size', type=int, default=64)
+    parser.add_argument('--factor', type=int, default=8)
+
+    args = parser.parse_args()
+
+    trainer = Trainer(model = args.model, batch_size=args.batch_size, factor=args.factor)
     trainer.main()

@@ -50,7 +50,7 @@ def run(
                 'output_hidden_states': True,
                 'output_attentions': True,
             },
-            ks = [dropout]*12, #[0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.35,0.35,0.15,],
+            ks = [dropout]*len(sparse_bert.encoder.layer), #[0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.5,0.35,0.35,0.15,],
         )
         return eval_fc(lm_output, fc=fc, batch=batch)
 
