@@ -62,83 +62,6 @@ def timer_report():
 #region Model Definition
 
 #old version
-def __update_input_mask_from_previous_attention(attention_mask, previous_attention, output_token_indices, output_token_impact, k=5):
-    NBATCH = attention_mask.shape[0]
-
-    input_indices = []
-    input_impacts = []
-    for i, idxs in enumerate(output_token_indices):
-        N = int(torch.sum((attention_mask[i]==0)*1.0).item())
-        
-        #print(i, previous_attention, N)
-        a = previous_attention[i,:,:N,:N]
-        #print(a.shape, N, previous_attention.shape)
-        a = torch.sum(a, dim=0)
-        #print(idxs, a.shape)
-        a = a[idxs, :] * output_token_impact[i].view(-1, 1)
-        a = torch.sum(a, dim=0)
-        
-        #print(f'k {k}, a {a.shape}')
-        kxx = k
-        if k < 1.0: kxx = int(math.ceil(k*N))
-        b, c = torch.topk(a, min(N, kxx))
-        input_indices.append(c)
-        input_impacts.append(b)
-    
-    input_mask = torch.zeros(NBATCH, attention_mask.shape[-1], device=previous_attention.device, dtype=previous_attention.dtype)
-    for i, idxs in enumerate(input_indices):
-        for k in idxs:
-            input_mask[i, k] = 1.0
-    
-    return input_mask, input_indices, input_impacts
-
-#dynamic K version.
-def __update_input_mask_from_previous_attention(
-    attention_mask, 
-    previous_attention, 
-    output_token_indices, 
-    output_token_impact, 
-    k=5
-):
-    attention_mask_shape = attention_mask.shape
-    NBATCH = attention_mask_shape[0]
-    TLEN = attention_mask_shape[-1]
-    dtype = previous_attention.dtype
-    device = previous_attention.device
-
-    input_indices = []
-    input_impacts = []
-    # attention_mask = attention_mask.cpu()
-    # previous_attention = previous_attention.cpu()
-    input_mask = torch.zeros(
-        NBATCH, TLEN,
-        device=device,
-        dtype=dtype
-    )
-    for i, idxs in enumerate(output_token_indices):
-        N = int(torch.sum((attention_mask[i]==0)*1.0).item())
-        
-        #print(i, previous_attention, N)
-        a = previous_attention[i,:,:N,:N]   #roi only active attention
-        #print(a.shape, N, previous_attention.shape)
-        a = torch.sum(a, dim=0)             #sum head
-        #print(idxs, a.shape)
-        a = a[idxs, :] * output_token_impact[i].view(-1, 1) #get index, apply impact
-        a = torch.sum(a, dim=0)             #sum
-        
-        #print(f'k {k}, a {a.shape}')
-        
-        kxx = k
-        if k < 1.0: kxx = int(math.ceil(k*N))
-        b, c = torch.topk(a, min(N, kxx))
-        input_indices.append(c)
-        input_impacts.append(b)
-        input_mask[i, c] = 1.0
-    
-    #proc(input_indices, input_mask)
-
-    input_mask = input_mask.to(device)
-    return input_mask, input_indices, input_impacts
 
 #static K version
 def update_input_mask_from_previous_attention(
@@ -146,20 +69,24 @@ def update_input_mask_from_previous_attention(
     previous_attention, 
     output_token_indices, 
     output_token_impact, 
-    head_reduce_method = 'sum',
-    token_reduce_method = 'sum',
+    head_reduce_method = 'avg',
+    token_reduce_method = 'avg',
     apply_token_impact = True,
-    k=0.5
+    k=0.5,
+    k_estimate = True,
+    k_estimate_threshold = 0.1,
 ):
-    assert k <= 1.0
     attention_mask_shape = attention_mask.shape
     NBATCH = attention_mask_shape[0]
     TLEN = attention_mask_shape[-1]
     dtype = previous_attention.dtype
     device = previous_attention.device
-    kxx = int(math.ceil(k*TLEN))
+    if k < 1.0:
+        kxx = int(math.ceil(k*TLEN))
+    else:
+        kxx = k
     
-    if head_reduce_method == 'sum':
+    if head_reduce_method == 'avg':
         att = torch.sum(previous_attention, dim=1)  #reduce head
     elif head_reduce_method == 'max':
         att = torch.max(previous_attention, dim=1)[0]
@@ -169,12 +96,16 @@ def update_input_mask_from_previous_attention(
     if apply_token_impact: 
         att = att * output_token_impact.unsqueeze(-1)
     
-    if token_reduce_method == 'sum':
+    if token_reduce_method == 'avg':
         att = torch.sum(att, dim=1)                 #reduce token
     elif token_reduce_method == 'max':
         att = torch.max(att, dim=1)[0]
     else: raise Exception()
     #att(N, TLEN)
+    if k_estimate:
+        est_k = max(1, math.ceil(torch.max(torch.sum((att > k_estimate_threshold) * 1.0, dim=1)).item()))
+        #print(kxx, est_k, TLEN)
+        kxx = est_k
     input_impacts, input_indices = torch.topk(att, kxx, dim=1)
     #input_impacts(N, K), input_indices(N, K)
     
@@ -215,7 +146,7 @@ class SparseChannelLinear(nn.Module):
             fan_in, _ = nn.init._calculate_fan_in_and_fan_out(self.weight)
             bound = 1 / math.sqrt(fan_in) if fan_in > 0 else 0
             nn.init.uniform_(self.bias, -bound, bound)
-
+    
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         if self.channel_indices is None or self.force_dense:
             timer_start('sparselinear.force.linear')
@@ -962,5 +893,24 @@ def run_bert_with_approx(
     timer_end('approx_sparse')
     return ret_sparse
     return ret_approx
+
+class ApproxSparseBertModel(nn.Module):
+    def __init__(self, sparse_bert, approx_bert):
+        super().__init__()
+        self.sparse_bert = sparse_bert
+        self.approx_bert = approx_bert
+
+    def forward(self, input_ids, attention_mask, ks):
+        output = run_bert_with_approx(
+            self.sparse_bert, 
+            self.approx_bert,
+            {
+                'input_ids':input_ids,
+                'attention_mask':attention_mask,
+                'output_attentions':True,
+            },
+            ks = ks
+        )
+        return output
 
 #endregion
