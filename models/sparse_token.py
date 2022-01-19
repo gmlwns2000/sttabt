@@ -99,6 +99,7 @@ def update_input_mask_from_previous_attention(
     k=0.5,
     k_estimate = False,
 ):
+    timer_start('update_mask')
     attention_mask_shape = attention_mask.shape
     NBATCH = attention_mask_shape[0]
     TLEN = attention_mask_shape[-1]
@@ -109,6 +110,7 @@ def update_input_mask_from_previous_attention(
     else:
         kxx = k
     
+    timer_start('update_mask.reduce')
     if head_reduce_method == 'avg':
         att = torch.mean(previous_attention, dim=1)  #reduce head
     elif head_reduce_method == 'max':
@@ -124,7 +126,10 @@ def update_input_mask_from_previous_attention(
     elif token_reduce_method == 'max':
         att = torch.max(att, dim=1)[0]
     else: raise Exception()
+    timer_end('update_mask.reduce')
     #att(N, TLEN)
+    
+    timer_start('update_mask.topk')
     if k_estimate:
         att_max = torch.max(att, dim=1, keepdim=True)[0]
         est_k = min(math.ceil(TLEN*0.95), max(1, math.ceil(torch.max(torch.sum((att > (att_max * 0.1)) * 1.0, dim=1)).item())))
@@ -135,8 +140,9 @@ def update_input_mask_from_previous_attention(
     
     input_mask = torch.zeros(NBATCH, TLEN, device=device, dtype=dtype)\
         .scatter_(1, input_indices, 1.0)
+    timer_end('update_mask.topk')
     #input_mask (N, TLEN)
-    
+    timer_end('update_mask')
     return input_mask, input_indices, input_impacts
 
 from transformers.models.bert.modeling_bert import BertEmbeddings
@@ -251,6 +257,9 @@ class BertSelfAttention(nn.Module):
         self.input_impacts = None
         self.output_mask = None
         self.output_indices = None
+        self.query.channel_indices = None
+        self.key.channel_indices = None
+        self.value.channel_indices = None
     
     def update_input_mask_from_previous_attention(self, output_token_mask, output_token_indices, output_token_impact, k):
         input_mask, input_indices, input_impacts = update_input_mask_from_previous_attention(
@@ -715,26 +724,7 @@ class SparseBertModel(BertPreTrainedModel):
         output_hidden_states=None,
         return_dict=None,
     ):
-        r"""
-        encoder_hidden_states  (`torch.FloatTensor` of shape `(batch_size, sequence_length, hidden_size)`, *optional*):
-            Sequence of hidden-states at the output of the last layer of the encoder. Used in the cross-attention if
-            the model is configured as a decoder.
-        encoder_attention_mask (`torch.FloatTensor` of shape `(batch_size, sequence_length)`, *optional*):
-            Mask to avoid performing attention on the padding token indices of the encoder input. This mask is used in
-            the cross-attention if the model is configured as a decoder. Mask values selected in `[0, 1]`:
-
-            - 1 for tokens that are **not masked**,
-            - 0 for tokens that are **masked**.
-        past_key_values (`tuple(tuple(torch.FloatTensor))` of length `config.n_layers` with each tuple having 4 tensors of shape `(batch_size, num_heads, sequence_length - 1, embed_size_per_head)`):
-            Contains precomputed key and value hidden states of the attention blocks. Can be used to speed up decoding.
-
-            If `past_key_values` are used, the user can optionally input only the last `decoder_input_ids` (those that
-            don't have their past key value states given to this model) of shape `(batch_size, 1)` instead of all
-            `decoder_input_ids` of shape `(batch_size, sequence_length)`.
-        use_cache (`bool`, *optional*):
-            If set to `True`, `past_key_values` key value states are returned and can be used to speed up decoding (see
-            `past_key_values`).
-        """
+        timer_start('bert')
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
@@ -816,6 +806,8 @@ class SparseBertModel(BertPreTrainedModel):
         sequence_output = encoder_outputs[0]
         pooled_output = self.pooler(sequence_output) if self.pooler is not None else None
 
+        timer_end('bert')
+        
         if not return_dict:
             return (sequence_output, pooled_output) + encoder_outputs[1:]
 
@@ -881,7 +873,13 @@ def update_input_mask(sparse_bert, ks=[0.999,0.5,0.25,0.1]):
             )
 
 def reset_input_mask(sparse_bert):
+    if sparse_bert.pooler is not None:
+        sparse_bert.pooler.dense.channel_indices = None
+    
     for layer in sparse_bert.encoder.layer:
+        layer.attention.output.dense.channel_indices = None
+        layer.intermediate.dense.channel_indices = None
+        layer.output.dense.channel_indices = None
         layer.attention.self.reset_input_mask()
 
 def run_bert_with_approx(
@@ -890,6 +888,7 @@ def run_bert_with_approx(
     input_dict, 
     ks=[0.5, 0.5, 0.5, 0.5]
 ):
+    timer_start('eval')
     timer_start('eval.approx_att_bert')
     with torch.no_grad():
         ret_approx = approx_bert(**input_dict)
@@ -914,6 +913,7 @@ def run_bert_with_approx(
     timer_start('eval.sparse_bert')
     ret_sparse = sparse_bert(**input_dict)
     timer_end('eval.sparse_bert')
+    timer_end('eval')
     return ret_sparse
     return ret_approx
 
