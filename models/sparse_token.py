@@ -202,10 +202,12 @@ class SparseChannelLinear(nn.Module):
             x = F.linear(sparse_input, self.weight, self.bias)
             timer_end('sparselinear.linear')
 
+            timer_start('sparselinear.zeros')
+            x_zeros = torch.zeros(N, C, self.out_features, 
+                dtype=x.dtype, device=x.device)
+            timer_end('sparselinear.zeros')
             timer_start('sparselinear.scatter_')
-            x = torch.zeros(N, C, self.out_features, 
-                dtype=x.dtype, device=x.device).\
-                    scatter_(dim=1, index=channel_indices_unsqueeze.expand(-1,-1,self.out_features), src=x)
+            x = x_zeros.scatter_(dim=1, index=channel_indices_unsqueeze.expand(-1,-1,self.out_features), src=x) 
             timer_end('sparselinear.scatter_')
             timer_end('sparselinear')
             return x
