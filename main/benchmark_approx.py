@@ -159,6 +159,7 @@ if __name__ == '__main__':
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--amp', default=False, action='store_true')
     parser.add_argument('--skip-accuracy', default=False, action='store_true')
+    parser.add_argument('--skip-benchmark', default=False, action='store_true')
     parser.add_argument('--timer-enable', default=False, action='store_true')
 
     args = parser.parse_args()
@@ -169,7 +170,7 @@ if __name__ == '__main__':
         model = args.model,
         target = args.target,
         device = args.device,
-        run_benchmark = True,
+        run_benchmark = not args.skip_benchmark,
         run_accuracy = not args.skip_accuracy,
         dropout = args.dropout,
         batch_size = args.batch_size,

@@ -95,7 +95,7 @@ def update_input_mask_from_previous_attention(
     output_token_impact, 
     head_reduce_method = 'avg',
     token_reduce_method = 'avg',
-    apply_token_impact = False,
+    apply_token_impact = True,         #apply token impact is not good?!
     k=0.5,
     k_estimate = False,
 ):
