@@ -1,8 +1,9 @@
 import math, os, torch, numba, time, datetime
-from more_itertools import value_chain
 from shutil import ExecError
 import torch.utils.checkpoint
 from torch import nn
+from transformers.models.bert.modeling_bert import BertModel as OriginalBertModel
+import copy
 from transformers.activations import ACT2FN
 from transformers.modeling_outputs import (
     BaseModelOutputWithPastAndCrossAttentions,
@@ -893,7 +894,9 @@ def run_bert_with_approx(
     timer_start('eval')
     timer_start('eval.approx_att_bert')
     with torch.no_grad():
-        ret_approx = approx_bert(**input_dict)
+        attention_input_dict = copy.deepcopy(input_dict)
+        attention_input_dict['output_attentions'] = True
+        ret_approx = approx_bert(**attention_input_dict)
         attentions = ret_approx.attentions
     timer_end('eval.approx_att_bert')
 
@@ -917,9 +920,9 @@ def run_bert_with_approx(
     timer_end('eval.sparse_bert')
     timer_end('eval')
     return ret_sparse
-    return ret_approx
+    #return ret_approx
 
-class ApproxSparseBertModel(nn.Module):
+class ApproxSparseBertModelWrapper(nn.Module):
     def __init__(self, sparse_bert, approx_bert):
         super().__init__()
         self.sparse_bert = sparse_bert
@@ -935,6 +938,45 @@ class ApproxSparseBertModel(nn.Module):
                 'output_attentions':True,
             },
             ks = ks
+        )
+        return output
+
+class ApproxBertModel(nn.Module):
+    def __init__(self, origin_config, factor):
+        super().__init__()
+
+        self.factor = factor
+        config = copy.deepcopy(origin_config)
+        config.hidden_size = origin_config.hidden_size // self.factor
+        config.intermediate_size = origin_config.intermediate_size // self.factor
+
+        self.bert = OriginalBertModel(config, add_pooling_layer=False)
+    
+    def forward(self, *args, **kwargs):
+        return self.bert(*args, **kwargs)
+
+class ApproxSparseBertModel(nn.Module):
+    def __init__(self, bert, add_pooling_layer=True, ks=0.5):
+        super().__init__()
+
+        self.sparse_bert = SparseBertModel(bert.config, add_pooling_layer=add_pooling_layer)
+        set_print(self.sparse_bert, False)
+        set_backup_last_inputs(self.sparse_bert, False)
+        set_output_masking(self.sparse_bert, False)
+        self.sparse_bert.load_state_dict(bert.state_dict())
+
+        self.approx_bert = ApproxBertModel(bert.config)
+        
+        if isinstance(ks, list): pass
+        else: ks = [ks for _ in range(len(self.sparse_bert.encoder.layer))]
+        self.ks = ks
+    
+    def forward(self, **kwargs):
+        output = run_bert_with_approx(
+            sparse_bert = self.sparse_bert,
+            approx_bert = self.approx_bert,
+            input_dict  = kwargs,
+            ks          = self.ks,
         )
         return output
 
