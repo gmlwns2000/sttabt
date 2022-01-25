@@ -29,7 +29,7 @@ def get_dataloader(subset, tokenizer, batch_size, split='train'):
         args = (
             (examples[sentence1_key],) if sentence2_key is None else (examples[sentence1_key], examples[sentence2_key])
         )
-        result = tokenizer(*args, padding='max_length', max_length=512, truncation=True)
+        result = tokenizer(*args, padding=True, max_length=512, truncation=True)
         # Map labels to IDs (not necessary for GLUE tasks)
         # if label_to_id is not None and "label" in examples:
         #     result["label"] = [(label_to_id[l] if l != -1 else -1) for l in examples["label"]]
@@ -110,9 +110,6 @@ class GlueAttentionApproxTrainer:
 
         self.last_metric_score = None
         self.last_loss = None
-        self.eval_base_model()
-
-        torch.cuda.empty_cache()
 
     def seed(self, seed=42):
         torch.manual_seed(seed)
@@ -123,16 +120,22 @@ class GlueAttentionApproxTrainer:
         torch.backends.cudnn.benchmark = False
         torch.backends.cudnn.deterministic = True
 
-    def eval_base_model(self):
-        #print(self.bert)
+    def eval_base_model(self, model = None, amp = False):
+        if model is None:
+            model = self.bert
+        
         metric = load_metric('glue', self.dataset)
+        avg_length = 0
+        
         for i, batch in enumerate(tqdm.tqdm(self.test_dataloader)):
             batch = {k: v.to(self.device) for k, v in batch.items()}
+            print(batch['attention_mask'].shape, torch.mean(torch.sum(batch['attention_mask'], dim=-1).float()).item())
+            avg_length += torch.mean(torch.sum(batch['attention_mask'], dim=-1).float()).item() / batch['attention_mask'].shape[-1]
             labels = batch['labels']
             del batch['labels']
             
-            with torch.no_grad(), torch.cuda.amp.autocast():
-                outputs = self.bert(**batch)
+            with torch.no_grad(), torch.cuda.amp.autocast(enabled=amp):
+                outputs = model(**batch)
             predictions = outputs[0]
 
             if self.dataset != 'stsb': 
@@ -143,12 +146,20 @@ class GlueAttentionApproxTrainer:
         score = metric.compute()
         self.last_metric_score = score
         print('metric score', score)
+        print('avg occupy', avg_length / len(self.test_dataloader))
+        torch.cuda.empty_cache()
+        return score
 
     def checkpoint_path(self):
         return f'saves/glue-{self.dataset}-{self.factor}.pth'
     
     def load(self):
-        pass
+        state = torch.load(self.checkpoint_path(), map_location='cpu')
+        self.bert.load_state_dict(state['bert'])
+        self.approx_bert.load_state_dict(state['approx_bert'])
+        if 'last_metric_score' in state: self.last_metric_score = state['last_metric_score']
+        if 'last_loss' in state: self.last_loss = state['last_loss']
+        del state
 
     def save(self):
         torch.save({
@@ -161,6 +172,8 @@ class GlueAttentionApproxTrainer:
         print('saved')
 
     def main(self):
+        self.eval_base_model()
+
         for epoch in range(self.epochs):
             pbar = tqdm.tqdm(self.train_dataloader)
             for i, batch in enumerate(pbar):

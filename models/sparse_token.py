@@ -673,17 +673,6 @@ class BertPreTrainedModel(PreTrainedModel):
 
 
 class SparseBertModel(BertPreTrainedModel):
-    """
-
-    The model can behave as an encoder (with only self-attention) as well as a decoder, in which case a layer of
-    cross-attention is added between the self-attention layers, following the architecture described in [Attention is
-    all you need](https://arxiv.org/abs/1706.03762) by Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit,
-    Llion Jones, Aidan N. Gomez, Lukasz Kaiser and Illia Polosukhin.
-
-    To behave as an decoder the model needs to be initialized with the `is_decoder` argument of the configuration set
-    to `True`. To be used in a Seq2Seq model, the model needs to initialized with both `is_decoder` argument and
-    `add_cross_attention` set to `True`; an `encoder_hidden_states` is then expected as an input to the forward pass.
-    """
 
     def __init__(self, config, add_pooling_layer=True):
         super().__init__(config)
@@ -956,7 +945,7 @@ class ApproxBertModel(nn.Module):
         return self.bert(*args, **kwargs)
 
 class ApproxSparseBertModel(nn.Module):
-    def __init__(self, bert, add_pooling_layer=True, ks=0.5):
+    def __init__(self, bert, approx_bert=None, add_pooling_layer=True, ks=0.5):
         super().__init__()
 
         self.sparse_bert = SparseBertModel(bert.config, add_pooling_layer=add_pooling_layer)
@@ -965,13 +954,18 @@ class ApproxSparseBertModel(nn.Module):
         set_output_masking(self.sparse_bert, False)
         self.sparse_bert.load_state_dict(bert.state_dict())
 
-        self.approx_bert = ApproxBertModel(bert.config)
+        if approx_bert is None:
+            self.approx_bert = ApproxBertModel(bert.config)
+        else:
+            self.approx_bert = approx_bert
         
         if isinstance(ks, list): pass
         else: ks = [ks for _ in range(len(self.sparse_bert.encoder.layer))]
         self.ks = ks
     
-    def forward(self, **kwargs):
+    def forward(self, *args, **kwargs):
+        if args is not None and len(args)==1:
+            kwargs['input_ids'] = args[0]
         output = run_bert_with_approx(
             sparse_bert = self.sparse_bert,
             approx_bert = self.approx_bert,
