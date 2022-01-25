@@ -31,6 +31,18 @@ task_to_epochs = {
     "wnli": 20,
 }
 
+task_to_batch_size = {
+    "cola": 8,
+    "mnli": 8,
+    "mrpc": 8,
+    "qnli": 8,
+    "qqp": 8,
+    "rte": 8,
+    "sst2": 8,
+    "stsb": 8,
+    "wnli": 8,
+}
+
 def get_dataloader(subset, tokenizer, batch_size, split='train'):
     dataset = load_dataset('glue', subset, split=split)
     
@@ -85,12 +97,14 @@ def get_base_model(dataset):
     return bert, tokenizer
 
 class GlueAttentionApproxTrainer:
-    def __init__(self, dataset, factor, batch_size=2, device=0):
+    def __init__(self, dataset, factor, batch_size=None, device=0):
         print('Trainer:', dataset)
         self.seed()
-
+        
         self.factor = factor
         self.dataset = dataset
+        if batch_size is None or batch_size <= 0:
+            batch_size = task_to_batch_size[self.dataset]
         self.batch_size = batch_size
         self.device = device
 
@@ -139,9 +153,9 @@ class GlueAttentionApproxTrainer:
         metric = load_metric('glue', self.dataset)
         avg_length = 0
         
-        for i, batch in enumerate(tqdm.tqdm(self.test_dataloader)):
+        for i, batch in enumerate(tqdm.tqdm(self.test_dataloader, desc='eval')):
             batch = {k: v.to(self.device) for k, v in batch.items()}
-            print(batch['attention_mask'].shape, torch.mean(torch.sum(batch['attention_mask'], dim=-1).float()).item())
+            #print(batch['attention_mask'].shape, torch.mean(torch.sum(batch['attention_mask'], dim=-1).float()).item())
             avg_length += torch.mean(torch.sum(batch['attention_mask'], dim=-1).float()).item() / batch['attention_mask'].shape[-1]
             labels = batch['labels']
             del batch['labels']
@@ -188,6 +202,7 @@ class GlueAttentionApproxTrainer:
 
         for epoch in range(self.epochs):
             pbar = tqdm.tqdm(self.train_dataloader)
+            torch.cuda.empty_cache()
             for i, batch in enumerate(pbar):
                 batch = {k: v.to(self.device) for k, v in batch.items()}
                 batch['output_attentions'] = True
@@ -208,17 +223,16 @@ class GlueAttentionApproxTrainer:
                 self.scaler.update()
                 self.optimizer.zero_grad()
                 
-                if i % 10 == 0: pbar.set_description(f"{loss:.6f}")
+                if i % 10 == 0: pbar.set_description(f"[{epoch+1}/{self.epochs}] {loss:.6f}")
             self.last_loss = loss.item()
             self.save()
-            torch.cuda.empty_cache()
 
 if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--subset', type=str, default='stsb')
-    parser.add_argument('--batch-size', type=int, default=8)
+    parser.add_argument('--batch-size', type=int, default=-1)
     parser.add_argument('--factor', type=int, default=16)
     parser.add_argument('--device', type=int, default=0)
 
