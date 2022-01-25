@@ -19,6 +19,18 @@ task_to_keys = {
     "wnli": ("sentence1", "sentence2"),
 }
 
+task_to_epochs = {
+    "cola": 20,
+    "mnli": 2,
+    "mrpc": 20,
+    "qnli": 5,
+    "qqp": 2,
+    "rte": 20,
+    "sst2": 7,
+    "stsb": 20,
+    "wnli": 20,
+}
+
 def get_dataloader(subset, tokenizer, batch_size, split='train'):
     dataset = load_dataset('glue', subset, split=split)
     
@@ -101,7 +113,7 @@ class GlueAttentionApproxTrainer:
         self.test_dataloader = get_dataloader(
             self.dataset, self.tokenizer, self.batch_size, split=split)
         
-        self.epochs = 20
+        self.epochs = task_to_epochs[self.dataset]
         self.approx_bert = sparse.ApproxBertModel(self.bert.config, factor=factor)
         self.approx_bert.train()
         self.approx_bert.to(self.device)
