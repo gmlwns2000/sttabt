@@ -197,6 +197,19 @@ class GlueAttentionApproxTrainer:
         }, self.checkpoint_path())
         print('saved')
 
+    def eval_main(self, ks=0.5):
+        self.load()
+        
+        wrapped_bert = sparse.ApproxSparseBertModel(self.bert.bert, approx_bert=self.approx_bert, ks=ks)
+        sparse_cls_bert = berts.BertForSequenceClassification(self.bert.bert.config)
+        sparse_cls_bert.bert = wrapped_bert
+        sparse_cls_bert.to(self.device).eval()
+
+        bert_result = self.eval_base_model(model=self.bert)
+        sparse_result = self.eval_base_model(model = sparse_cls_bert)
+
+        print(bert_result, sparse_result)
+
     def main(self):
         self.eval_base_model()
 
@@ -231,13 +244,17 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--subset', type=str, default='stsb')
+    parser.add_argument('--subset', type=str, default='mrpc')
     parser.add_argument('--batch-size', type=int, default=-1)
     parser.add_argument('--factor', type=int, default=16)
     parser.add_argument('--device', type=int, default=0)
+    parser.add_argument('--eval', action='store_true', default=False)
 
     args = parser.parse_args()
 
     trainer = GlueAttentionApproxTrainer(
         args.subset, factor=args.factor, batch_size=args.batch_size, device=args.device)
-    trainer.main()
+    if args.eval:
+        trainer.eval_main()
+    else:
+        trainer.main()
