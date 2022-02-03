@@ -147,6 +147,7 @@ class GlueAttentionApproxTrainer:
         torch.backends.cudnn.deterministic = True
 
     def eval_base_model(self, model = None, amp = False):
+        self.seed()
         if model is None:
             model = self.bert
         
@@ -197,16 +198,21 @@ class GlueAttentionApproxTrainer:
         }, self.checkpoint_path())
         print('saved')
 
-    def eval_main(self, ks=0.5):
-        self.load()
-        
+    def eval_sparse_model(self, ks=0.5):
+        self.seed()
         wrapped_bert = sparse.ApproxSparseBertModel(self.bert.bert, approx_bert=self.approx_bert, ks=ks)
         sparse_cls_bert = berts.BertForSequenceClassification(self.bert.bert.config)
         sparse_cls_bert.bert = wrapped_bert
         sparse_cls_bert.to(self.device).eval()
-
-        bert_result = self.eval_base_model(model=self.bert)
+        
         sparse_result = self.eval_base_model(model = sparse_cls_bert)
+        return sparse_result
+
+    def eval_main(self, ks=0.5):
+        self.load()
+        
+        bert_result = self.eval_base_model(model = self.bert)
+        sparse_result = self.eval_sparse_model(ks = ks)
 
         print(bert_result, sparse_result)
 
