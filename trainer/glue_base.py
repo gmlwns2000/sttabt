@@ -23,9 +23,9 @@ task_to_epochs = {
     "cola": 20,
     "mnli": 2,
     "mrpc": 20,
-    "qnli": 5,
-    "qqp": 2,
-    "rte": 20,
+    "qnli": 10,
+    "qqp":  2,
+    "rte":  20,
     "sst2": 7,
     "stsb": 20,
     "wnli": 20,
@@ -36,8 +36,8 @@ task_to_batch_size = {
     "mnli": 8,
     "mrpc": 8,
     "qnli": 8,
-    "qqp": 8,
-    "rte": 8,
+    "qqp":  8,
+    "rte":  8,
     "sst2": 8,
     "stsb": 8,
     "wnli": 8,
@@ -108,9 +108,11 @@ class GlueAttentionApproxTrainer:
         self.batch_size = batch_size
         self.device = device
 
-        self.bert, self.tokenizer = get_base_model(self.dataset)
-        self.bert.eval()
-        self.bert.to(self.device)
+        self.model, self.tokenizer = get_base_model(self.dataset)
+        self.model.eval()
+        self.model.to(self.device)
+        self.model_bert = self.model.bert
+
         self.train_dataloader = get_dataloader(
             self.dataset, self.tokenizer, self.batch_size)
         split = {
@@ -128,7 +130,7 @@ class GlueAttentionApproxTrainer:
             self.dataset, self.tokenizer, self.batch_size, split=split)
         
         self.epochs = task_to_epochs[self.dataset]
-        self.approx_bert = sparse.ApproxBertModel(self.bert.config, factor=factor)
+        self.approx_bert = sparse.ApproxBertModel(self.model.config, factor=factor)
         self.approx_bert.train()
         self.approx_bert.to(self.device)
         self.optimizer = optim.Adam(self.approx_bert.parameters(), lr=5e-5)
@@ -149,7 +151,7 @@ class GlueAttentionApproxTrainer:
     def eval_base_model(self, model = None, amp = False):
         self.seed()
         if model is None:
-            model = self.bert
+            model = self.model
         
         metric = load_metric('glue', self.dataset)
         avg_length = 0
@@ -182,7 +184,7 @@ class GlueAttentionApproxTrainer:
     
     def load(self):
         state = torch.load(self.checkpoint_path(), map_location='cpu')
-        self.bert.load_state_dict(state['bert'])
+        self.model.load_state_dict(state['bert'])
         self.approx_bert.load_state_dict(state['approx_bert'])
         if 'last_metric_score' in state: self.last_metric_score = state['last_metric_score']
         if 'last_loss' in state: self.last_loss = state['last_loss']
@@ -190,7 +192,7 @@ class GlueAttentionApproxTrainer:
 
     def save(self):
         torch.save({
-            'bert':self.bert.state_dict(),
+            'bert':self.model.state_dict(),
             'approx_bert': self.approx_bert.state_dict(),
             'epochs':self.epochs,
             'last_metric_score':self.last_metric_score,
@@ -200,8 +202,8 @@ class GlueAttentionApproxTrainer:
 
     def eval_sparse_model(self, ks=0.5):
         self.seed()
-        wrapped_bert = sparse.ApproxSparseBertModel(self.bert.bert, approx_bert=self.approx_bert, ks=ks)
-        sparse_cls_bert = berts.BertForSequenceClassification(self.bert.bert.config)
+        wrapped_bert = sparse.ApproxSparseBertModel(self.model_bert, approx_bert=self.approx_bert, ks=ks)
+        sparse_cls_bert = berts.BertForSequenceClassification(self.model_bert.config)
         sparse_cls_bert.bert = wrapped_bert
         sparse_cls_bert.to(self.device).eval()
         
@@ -211,7 +213,7 @@ class GlueAttentionApproxTrainer:
     def eval_main(self, ks=0.5):
         self.load()
         
-        bert_result = self.eval_base_model(model = self.bert)
+        bert_result = self.eval_base_model(model = self.model)
         sparse_result = self.eval_sparse_model(ks = ks)
 
         print(bert_result, sparse_result)
@@ -228,7 +230,7 @@ class GlueAttentionApproxTrainer:
                 del batch['labels']
                 
                 with torch.no_grad(), torch.cuda.amp.autocast():
-                    attentions = self.bert(**batch).attentions
+                    attentions = self.model(**batch).attentions
                 
                 with torch.cuda.amp.autocast():
                     approx_attentions = self.approx_bert(**batch).attentions
