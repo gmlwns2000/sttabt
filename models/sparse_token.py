@@ -964,10 +964,12 @@ class ApproxSparseBertModel(nn.Module):
         set_print(self.sparse_bert, False)
         set_backup_last_inputs(self.sparse_bert, False)
         set_output_masking(self.sparse_bert, False)
+        set_masking_timing(self.sparse_bert, 'before_softmax')
         self.sparse_bert.load_state_dict(bert.state_dict())
 
         if approx_bert is None:
             self.approx_bert = ApproxBertModel(bert.config)
+            print('approx_bert reset')
         else:
             self.approx_bert = approx_bert
         

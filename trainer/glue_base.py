@@ -152,6 +152,7 @@ class GlueAttentionApproxTrainer:
         self.seed()
         if model is None:
             model = self.model
+        model.eval()
         
         metric = load_metric('glue', self.dataset)
         avg_length = 0
@@ -204,6 +205,7 @@ class GlueAttentionApproxTrainer:
         self.seed()
         wrapped_bert = sparse.ApproxSparseBertModel(self.model_bert, approx_bert=self.approx_bert, ks=ks)
         sparse_cls_bert = berts.BertForSequenceClassification(self.model_bert.config)
+        sparse_cls_bert.load_state_dict(self.model.state_dict())
         sparse_cls_bert.bert = wrapped_bert
         sparse_cls_bert.to(self.device).eval()
         
