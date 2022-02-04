@@ -145,7 +145,7 @@ def update_input_mask_from_previous_attention(
     timer_start('update_mask.topk')
     if k_estimate:
         att_max = torch.max(att, dim=1, keepdim=True)[0]
-        est_k = min(math.ceil(TLEN*0.95), max(1, math.ceil(torch.max(torch.sum((att > (att_max * 0.1)) * 1.0, dim=1)).item())))
+        est_k = min(math.ceil(TLEN*0.85), max(math.ceil(TLEN*0.05), math.ceil(torch.max(torch.sum((att > (att_max * 0.33)) * 1.0, dim=1)).item())))
         benchmark_cum('est_k', est_k / TLEN)
         kxx = est_k
     input_impacts, input_indices = torch.topk(att, kxx, dim=1)
