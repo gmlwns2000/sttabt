@@ -84,6 +84,13 @@ def benchmark_cum(name, value):
     count, v = __benchmark[name]
     __benchmark[name] = (count + 1, v + value)
 
+def benchmark_get_average(name):
+    global __benchmark
+    if name in __benchmark:
+        c, v = __benchmark[name]
+        return v/c
+    return 0
+
 def benchmark_report():
     global __benchmark
     for k in __benchmark.keys():
