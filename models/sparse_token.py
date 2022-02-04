@@ -118,10 +118,15 @@ def update_input_mask_from_previous_attention(
     TLEN = attention_mask_shape[-1]
     dtype = previous_attention.dtype
     device = previous_attention.device
-    if k < 1.0:
-        kxx = int(math.ceil(k*TLEN))
+    if isinstance(k, str):
+        if k == 'dynamic':
+            k_estimate = True
+        else: raise Exception('unknown')
     else:
-        kxx = k
+        if k < 1.0:
+            kxx = int(math.ceil(k*TLEN))
+        else:
+            kxx = k
     
     timer_start('update_mask.reduce')
     if head_reduce_method == 'avg':
@@ -145,10 +150,16 @@ def update_input_mask_from_previous_attention(
     timer_start('update_mask.topk')
     if k_estimate:
         att_max = torch.max(att, dim=1, keepdim=True)[0]
-        est_k = min(math.ceil(TLEN*0.85), max(math.ceil(TLEN*0.05), math.ceil(torch.max(torch.sum((att > (att_max * 0.33)) * 1.0, dim=1)).item())))
+        #att_mean = torch.sum(att, dim=1, keepdim=True) / (torch.sum(attention_mask + 10001, dim=1, keepdim=True) + 1e-8)
+        #assert torch.min(attention_mask) == -10000
+        #att_max = att_max * 0.1 + att_mean * 0.9
+        # print(torch.min(att_max), torch.max(att_max), torch.min(att), torch.max(att))
+        # input()
+        est_k = min(math.ceil(TLEN*0.95), max(math.ceil(TLEN*0.2), math.ceil(torch.max(torch.sum((att > (att_max * 0.00625)) * 1.0, dim=1)).item())))
         benchmark_cum('est_k', est_k / TLEN)
         kxx = est_k
     input_impacts, input_indices = torch.topk(att, kxx, dim=1)
+    input_impacts = input_impacts / (torch.sum(input_impacts, dim=1, keepdim=True) + 1e-8)
     #input_impacts(N, K), input_indices(N, K)
     
     input_mask = torch.zeros(NBATCH, TLEN, device=device, dtype=dtype)\
