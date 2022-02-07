@@ -128,7 +128,13 @@ def update_input_mask_from_previous_attention(
     if isinstance(k, str):
         if k == 'dynamic':
             k_estimate = True
-        else: raise Exception('unknown')
+        elif isinstance(k, str) and k.startswith('dynamic'):
+            k_estimate = True
+            _, head_method, token_method, apply_token_impact = k.split(':')
+            head_reduce_method = head_method
+            token_reduce_method = token_method
+            apply_token_impact = apply_token_impact.lower() == 'true'
+        else: raise Exception(f'unknown method {k}')
     else:
         if k < 1.0:
             kxx = int(math.ceil(k*TLEN))
