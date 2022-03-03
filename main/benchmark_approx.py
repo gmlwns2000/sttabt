@@ -1,6 +1,5 @@
-from sqlalchemy import false
-import torch, random, math, time, sys, os, tqdm, pickle
 import numpy as np
+import torch, random, math, time, sys, os, tqdm, pickle
 import numba
 from trainer.classification import Trainer
 from trainer.attention_approx import Trainer as ApproxTrainer
@@ -154,7 +153,7 @@ if __name__ == '__main__':
     parser.add_argument('--model', type=str, default='bert-mini')
     parser.add_argument('--target', type=str, default='sparse')
     parser.add_argument('--batch-size', type=int, default=64)
-    parser.add_argument('--dropout', type=float, default=0.5)
+    parser.add_argument('--dropout', type=str, default="0.5")
     parser.add_argument('--factor', type=int, default=8)
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--amp', default=False, action='store_true')
@@ -165,6 +164,11 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     sparse.timer_enable(args.timer_enable)
+
+    try:
+        args.dropout = float(args.dropout)
+    except:
+        print('using string dropout', args.dropout)
 
     run(
         model = args.model,
