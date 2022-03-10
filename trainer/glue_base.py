@@ -97,10 +97,11 @@ def get_base_model(dataset):
     return bert, tokenizer
 
 class GlueAttentionApproxTrainer:
-    def __init__(self, dataset, factor, batch_size=None, device=0):
+    def __init__(self, dataset, factor, batch_size=None, device=0, wiki_train=False):
         print('Trainer:', dataset)
         self.seed()
         
+        self.wiki_train = wiki_train
         self.factor = factor
         self.dataset = dataset
         if batch_size is None or batch_size <= 0:
