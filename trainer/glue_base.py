@@ -96,8 +96,54 @@ def get_base_model(dataset):
     
     return bert, tokenizer
 
+from torchtext.datasets import WikiText103
+
+class FilteredWikitext:
+    def __init__(self, min_length = 50):
+        self.data = None
+        self.length = 0
+        self.min_length = min_length
+        for i in self:
+            self.length += 1
+    
+    def __iter__(self):
+        self.data = WikiText103(split='train')
+        return self
+    
+    def __next__(self):
+        line = ""
+        while len(line) < self.min_length:
+            line = next(self.data)
+        return line
+    
+    def __len__(self):
+        return self.length
+
+class WikitextBatchLoader:
+    def __init__(self, batch_size, tokenizer):
+        self.data = FilteredWikitext()
+        self.iterator = None
+        self.tokenizer = tokenizer
+        self.batch_size = batch_size
+    
+    def __iter__(self):
+        self.iterator = iter(self.data)
+        return self
+    
+    def __next__(self):
+        lines = [next(self.iterator) for i in range(self.batch_size)]
+        result = self.tokenizer(lines, padding=True, truncation=True, max_length=512, return_tensors='pt')
+        item = {
+            'input_ids': result.input_ids,
+            'attention_mask': result.attention_mask,
+        }
+        return item
+    
+    def __len__(self):
+        return self.data.length // self.batch_size
+
 class GlueAttentionApproxTrainer:
-    def __init__(self, dataset, factor, batch_size=None, device=0, wiki_train=False):
+    def __init__(self, dataset, factor, batch_size=None, device=0, wiki_train=True):
         print('Trainer:', dataset)
         self.seed()
         
@@ -129,8 +175,11 @@ class GlueAttentionApproxTrainer:
         }[self.dataset]
         self.test_dataloader = get_dataloader(
             self.dataset, self.tokenizer, self.batch_size, split=split)
-        
         self.epochs = task_to_epochs[self.dataset]
+        if wiki_train:
+            self.wiki_dataset = WikitextBatchLoader(batch_size=6, tokenizer=self.tokenizer)
+            self.epochs = 2
+
         self.approx_bert = sparse.ApproxBertModel(self.model.config, factor=factor)
         self.approx_bert.train()
         self.approx_bert.to(self.device)
@@ -139,6 +188,8 @@ class GlueAttentionApproxTrainer:
 
         self.last_metric_score = None
         self.last_loss = None
+
+        print('Trainer: Save checkpoint path', self.checkpoint_path())
 
     def seed(self, seed=42):
         torch.manual_seed(seed)
@@ -182,6 +233,7 @@ class GlueAttentionApproxTrainer:
         return score
 
     def checkpoint_path(self):
+        if self.wiki_train: return f'saves/glue-{self.dataset}-{self.factor}-wiki.pth'
         return f'saves/glue-{self.dataset}-{self.factor}.pth'
     
     def load(self):
@@ -200,7 +252,7 @@ class GlueAttentionApproxTrainer:
             'last_metric_score':self.last_metric_score,
             'last_loss':self.last_loss,
         }, self.checkpoint_path())
-        print('saved')
+        print('saved', self.checkpoint_path())
 
     def eval_sparse_model(self, ks=0.5):
         self.seed()
@@ -225,12 +277,15 @@ class GlueAttentionApproxTrainer:
         self.eval_base_model()
 
         for epoch in range(self.epochs):
-            pbar = tqdm.tqdm(self.train_dataloader)
+            if self.wiki_train:
+                pbar = tqdm.tqdm(iter(self.wiki_dataset))
+            else:
+                pbar = tqdm.tqdm(self.train_dataloader)
             torch.cuda.empty_cache()
             for i, batch in enumerate(pbar):
                 batch = {k: v.to(self.device) for k, v in batch.items()}
                 batch['output_attentions'] = True
-                del batch['labels']
+                if 'labels' in batch: del batch['labels']
                 
                 with torch.no_grad(), torch.cuda.amp.autocast():
                     attentions = self.model(**batch).attentions
