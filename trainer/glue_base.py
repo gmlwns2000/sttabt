@@ -1,9 +1,11 @@
+from threading import Thread
 import transformers, torch, tqdm, random
 import numpy as np
 import transformers.models.bert.modeling_bert as berts
 import models.sparse_token as sparse
 from datasets import load_dataset, load_metric
 from torch import optim, nn
+from utils import ThreadBuffer
 
 torch.cuda.empty_cache()
 
@@ -122,22 +124,32 @@ class FilteredWikitext:
 class WikitextBatchLoader:
     def __init__(self, batch_size, tokenizer):
         self.data = FilteredWikitext()
-        self.iterator = None
+        self.bank = []
+        for i in self.data:
+            self.bank.append(i)
         self.tokenizer = tokenizer
         self.batch_size = batch_size
+        self.buffer = ThreadBuffer()
+        self.index = 0
     
     def __iter__(self):
-        self.iterator = iter(self.data)
+        self.index = 0
         return self
     
-    def __next__(self):
-        lines = [next(self.iterator) for i in range(self.batch_size)]
+    def ___next__(self):
+        if self.index >= self.data.length or self.index > 100000000000:
+            raise StopIteration
+        lines = [self.bank[random.randint(0, len(self.bank) - 1)] for i in range(self.batch_size)]
+        self.index += self.batch_size
         result = self.tokenizer(lines, padding=True, truncation=True, max_length=512, return_tensors='pt')
         item = {
             'input_ids': result.input_ids,
             'attention_mask': result.attention_mask,
         }
         return item
+
+    def __next__(self):
+        return self.___next__()
     
     def __len__(self):
         return self.data.length // self.batch_size
@@ -178,7 +190,7 @@ class GlueAttentionApproxTrainer:
         self.epochs = task_to_epochs[self.dataset]
         if wiki_train:
             self.wiki_dataset = WikitextBatchLoader(batch_size=6, tokenizer=self.tokenizer)
-            self.epochs = 2
+            self.epochs = 3
 
         self.approx_bert = sparse.ApproxBertModel(self.model.config, factor=factor)
         self.approx_bert.train()
@@ -265,11 +277,13 @@ class GlueAttentionApproxTrainer:
         sparse_result = self.eval_base_model(model = sparse_cls_bert)
         return sparse_result
 
-    def eval_main(self, ks=0.5):
+    def eval_main(self, ks='dynamic'):
         self.load()
         
         bert_result = self.eval_base_model(model = self.model)
         sparse_result = self.eval_sparse_model(ks = ks)
+        est_k = sparse.benchmark_get_average('est_k')
+        print('est_k', est_k)
 
         print(bert_result, sparse_result)
 
@@ -278,7 +292,7 @@ class GlueAttentionApproxTrainer:
 
         for epoch in range(self.epochs):
             if self.wiki_train:
-                pbar = tqdm.tqdm(iter(self.wiki_dataset))
+                pbar = tqdm.tqdm(self.wiki_dataset.__iter__())
             else:
                 pbar = tqdm.tqdm(self.train_dataloader)
             torch.cuda.empty_cache()
@@ -310,16 +324,19 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--subset', type=str, default='mrpc')
+    parser.add_argument('--subset', type=str, default='mrpc')                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               
     parser.add_argument('--batch-size', type=int, default=-1)
     parser.add_argument('--factor', type=int, default=16)
     parser.add_argument('--device', type=int, default=0)
     parser.add_argument('--eval', action='store_true', default=False)
+    parser.add_argument('--not-wiki', action='store_true', default=False)
 
     args = parser.parse_args()
+    args.wiki = not args.not_wiki
+    print(args)
 
     trainer = GlueAttentionApproxTrainer(
-        args.subset, factor=args.factor, batch_size=args.batch_size, device=args.device)
+        args.subset, factor=args.factor, batch_size=args.batch_size, device=args.device, wiki_train=args.wiki)
     if args.eval:
         trainer.eval_main()
     else:
