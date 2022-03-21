@@ -13,7 +13,7 @@ class FilteredWikitext:
             self.length += 1
     
     def __iter__(self):
-        self.data = WikiText103(split='train')
+        self.data = iter(WikiText103(split='train'))
         return self
     
     def __next__(self):
