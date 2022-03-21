@@ -298,6 +298,8 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     args.wiki = not args.not_wiki
+    ngpus = torch.cuda.device_count()
+    args.device = args.device % ngpus
     print(args)
-
     
+    main(args)

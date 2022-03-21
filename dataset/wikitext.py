@@ -35,9 +35,9 @@ class WikitextBatchLoader:
         self.batch_size = batch_size
         self.buffer = ThreadBuffer()
         self.index = 0
-        self.queue = mp.Queue(maxsize=100)
+        self.queue = mp.Queue(maxsize=64)
         self.procs = []
-        self.num_workers = 8
+        self.num_workers = 4
         for i in range(self.num_workers):
             proc = mp.Process(target=self.worker_main, daemon=True)
             proc.start()
