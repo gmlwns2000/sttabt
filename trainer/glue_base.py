@@ -239,7 +239,7 @@ class GlueAttentionApproxTrainer:
         print(bert_result, sparse_result)
 
     def main(self):
-        self.eval_base_model()
+        #self.eval_base_model()
 
         for epoch in range(self.epochs):
             if self.wiki_train:
@@ -298,8 +298,8 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     args.wiki = not args.not_wiki
-    ngpus = torch.cuda.device_count()
-    args.device = args.device % ngpus
+    #ngpus = torch.cuda.device_count()
+    #args.device = args.device % ngpus
     print(args)
     
     main(args)
