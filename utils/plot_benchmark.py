@@ -4,6 +4,7 @@ import subprocess
 import pickle
 import os
 
+exp_name = ""
 exp_device = 'cuda'
 exp_amp = False
 exp_skip_accuracy = False
@@ -42,6 +43,10 @@ def plot_exp_by_factor(model, factor):
     return dropouts, speedups, accuracies
 
 def plot_exp(model='bert-mini'):
+    global exp_device, exp_amp, exp_skip_accuracy, exp_batch_size, exp_name
+
+    plt.style.use("seaborn")
+
     d, s4, a4 = plot_exp_by_factor(model, 4)
     d, s8, a8 = plot_exp_by_factor(model, 8)
     d, s16, a16 = plot_exp_by_factor(model, 16)
@@ -51,6 +56,7 @@ def plot_exp(model='bert-mini'):
     plt.plot(d, s8, label='factor:8')
     plt.plot(d, s16, label='factor:16')
     plt.legend()
+    plt.savefig(f'saves_plot/{exp_name}{model}_dev_{exp_device}_amp_{exp_amp}_bsize_{exp_batch_size[model]}_speedup.png', dpi=320)
     plt.show()
 
     print('acc reproduce')
@@ -58,6 +64,7 @@ def plot_exp(model='bert-mini'):
     plt.plot(d, a8, label='factor:8')
     plt.plot(d, a16, label='factor:16')
     plt.legend()
+    plt.savefig(f'saves_plot/{exp_name}{model}_dev_{exp_device}_amp_{exp_amp}_bsize_{exp_batch_size[model]}_acc.png', dpi=320)
     plt.show()
 
     return [(d, s4, a4), (d, s8, a8), (d, s16, a16)]

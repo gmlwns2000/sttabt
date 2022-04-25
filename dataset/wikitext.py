@@ -53,10 +53,11 @@ class WikitextBatchLoader:
         #mimic GLUE
         line = self.bank[random.randint(0, len(self.bank) - 1)].strip()
         #random cut
-        spl = line.split()
-        if len(spl) > 10:
-            spl = spl[:random.randint(10,len(spl))]
-        line = ' '.join(spl)
+        if random.random() < 0.5: # need to re experiment
+            spl = line.split()
+            if len(spl) > 10:
+                spl = spl[:random.randint(10,len(spl))]
+            line = ' '.join(spl)
         #mimic cls
         if random.random() < 0.75:
             line = "[CLS]"+line
