@@ -100,13 +100,14 @@ def get_base_model(dataset):
     return bert, tokenizer
 
 class GlueAttentionApproxTrainer:
-    def __init__(self, dataset, factor, batch_size=None, device=0, wiki_train=False, wiki_epochs=3):
+    def __init__(self, dataset, factor, batch_size=None, device=0, wiki_train=False, wiki_epochs=5):
         print('Trainer:', dataset)
         self.seed()
         
         self.wiki_train = wiki_train
         self.wiki_epochs = wiki_epochs
         self.lr = 5e-5
+        self.weight_decay = 0
         self.factor = factor
         self.dataset = dataset
         if batch_size is None or batch_size <= 0:
@@ -138,12 +139,13 @@ class GlueAttentionApproxTrainer:
         if wiki_train:
             self.wiki_dataset = WikitextBatchLoader(batch_size=6, tokenizer=self.tokenizer)
             self.lr = 2e-5
+            self.weight_decay = 5e-4
             self.epochs = wiki_epochs
 
         self.approx_bert = sparse.ApproxBertModel(self.model.config, factor=factor)
         self.approx_bert.train()
         self.approx_bert.to(self.device)
-        self.optimizer = optim.Adam(self.approx_bert.parameters(), lr=self.lr)
+        self.optimizer = optim.Adam(self.approx_bert.parameters(), lr=self.lr, weight_decay=self.weight_decay)
         self.scaler = torch.cuda.amp.GradScaler()
 
         self.last_metric_score = None

@@ -23,12 +23,12 @@ def run_exp(model, factor, dropout, target='sparse'):
     if exp_skip_accuracy: cmd = cmd + " --skip-accuracy"
     if exp_amp: cmd = cmd + " --amp"
     print(cmd)
-    subprocess.call(cmd.split(' '))
+    subprocess.call(cmd.split(' '), stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
     with open('bench_result.pkl', 'rb') as f:
         obj = pickle.load(f)
         speed, acc = obj
     os.remove('bench_result.pkl')
-    print('done', speed, acc)
+    print('done', 'speed', speed, 'acc', acc)
     return speed, acc
 
 def plot_exp_by_factor(model, factor):
