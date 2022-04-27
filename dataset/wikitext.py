@@ -64,13 +64,12 @@ class WikitextBatchLoader:
         #mimic sep
         for i in range(random.randint(0, 3)):
             if random.random() > 0.5:
-                if random.random() > 0.5:
-                    spl = line.split()
-                    spl.insert(random.randint(0, len(spl)-1), "[SEP]")
-                    line = ' '.join(spl)
-                else:
-                    pivot = random.randint(0, len(line)-1)
-                    line = line[:pivot] + "[SEP]" + line[pivot:]
+                spl = line.split()
+                spl.insert(random.randint(0, len(spl)-1), "[SEP]")
+                line = ' '.join(spl)
+            else:
+                pivot = random.randint(0, len(line)-1)
+                line = line[:pivot] + "[SEP]" + line[pivot:]
         if random.random() < 0.75:
             line = line + "[SEP]"
         return line
