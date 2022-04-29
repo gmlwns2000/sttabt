@@ -219,9 +219,10 @@ class GlueAttentionApproxTrainer:
         }, self.checkpoint_path())
         print('saved', self.checkpoint_path())
 
-    def eval_sparse_model(self, ks=0.5):
+    def eval_sparse_model(self, ks=0.5, use_forward=False):
         self.seed()
         wrapped_bert = sparse.ApproxSparseBertModel(self.model_bert, approx_bert=self.approx_bert, ks=ks)
+        wrapped_bert.use_forward_sparse = use_forward
         sparse_cls_bert = berts.BertForSequenceClassification(self.model_bert.config)
         sparse_cls_bert.load_state_dict(self.model.state_dict())
         sparse_cls_bert.bert = wrapped_bert
