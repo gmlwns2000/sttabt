@@ -38,7 +38,7 @@ task_to_batch_size = {
     "cola": 8,
     "mnli": 8,
     "mrpc": 8,
-    "qnli": 8,
+    "qnli": 4,
     "qqp":  8,
     "rte":  8,
     "sst2": 8,
