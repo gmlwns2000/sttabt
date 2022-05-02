@@ -118,6 +118,7 @@ def update_input_mask_from_previous_attention(
     apply_token_impact = True,         #apply token impact is not good?!
     k=0.5,
     k_estimate = False,
+    accumulate_indicies = True,
 ):
     timer_start('update_mask')
     attention_mask_shape = attention_mask.shape
@@ -172,7 +173,12 @@ def update_input_mask_from_previous_attention(
         est_k = min(math.ceil(TLEN*0.95), max(math.ceil(TLEN*0.2), math.ceil(torch.max(torch.sum((att > (att_max * 0.00625)) * 1.0, dim=1)).item())))
         benchmark_cum('est_k', est_k / TLEN)
         kxx = est_k
-    input_impacts, input_indices = torch.topk(att, kxx, dim=1)
+    _, input_indices = torch.topk(att, kxx, dim=1)
+    if accumulate_indicies:
+        input_indices = torch.cat([input_indices, output_token_indices], dim=1)
+        input_indices = torch.unique(input_indices, dim=1)
+    benchmark_cum('mask_occupy', input_indices.shape[1]/TLEN)
+    input_impacts = att.gather(1, input_indices)
     input_impacts = input_impacts / (torch.sum(input_impacts, dim=1, keepdim=True) + 1e-8)
     #input_impacts(N, K), input_indices(N, K)
     
@@ -353,6 +359,10 @@ class BertSelfAttention(nn.Module):
             value_layer = self.transpose_for_scores(self.value(hidden_states))
 
         query_layer = self.transpose_for_scores(mixed_query_layer)
+        if self.backup_last_inputs:
+            self.last_query = query_layer.clone().detach()
+            self.last_key = key_layer.clone().detach()
+            self.last_value = value_layer.clone().detach()
         timer_end('bert.attention.qkv')
 
         timer_start('bert.attention.scores.matmul')
@@ -371,6 +381,9 @@ class BertSelfAttention(nn.Module):
             attention_scores = torch.clamp_min(
                 attention_scores + (1.0 - self.input_mask.view(self.input_mask.shape[0], 1, 1, self.input_mask.shape[-1])) * -10000,
                 -10000)
+        
+        if self.backup_last_inputs:
+            self.last_attention_scores = attention_scores.clone().detach()
 
         # Normalize the attention scores to probabilities.
         attention_probs = nn.functional.softmax(attention_scores, dim=-1)
@@ -389,17 +402,18 @@ class BertSelfAttention(nn.Module):
 
         # Mask heads if we want to
         if head_mask is not None:
+            raise "not supported"
             attention_probs = attention_probs * head_mask
-        
-        if self.backup_last_inputs:
-            if self.print: print('SelfAttention.forward: last_attention_probs backuped')
-            self.last_attention_probs = attention_probs.detach().clone()
-            self.last_attention_mask = attention_mask.detach().clone()
 
         if self.input_mask is not None and self.attention_masking_timing == 'after_softmax':
             print('not supported')
             if self.print: print(f'apply input mask, after softmax. input_mask:{self.input_mask.shape}, attention_probs:{attention_probs.shape}')
             attention_probs = attention_probs * self.input_mask.view(self.input_mask.shape[0], 1, 1, self.input_mask.shape[-1])
+        
+        if self.backup_last_inputs:
+            if self.print: print('SelfAttention.forward: last_attention_probs backuped')
+            self.last_attention_probs = attention_probs.detach().clone()
+            self.last_attention_mask = attention_mask.detach().clone()
 
         context_layer = torch.matmul(attention_probs, value_layer)
 
@@ -926,14 +940,19 @@ def run_bert_with_approx(
     sparse_bert, 
     approx_bert, 
     input_dict, 
-    ks=[0.5, 0.5, 0.5, 0.5]
+    ks=[0.5, 0.5, 0.5, 0.5],
+    run_original_attention = False,
 ):
     timer_start('eval')
     timer_start('eval.approx_att_bert')
     with torch.no_grad():
         attention_input_dict = copy.deepcopy(input_dict)
         attention_input_dict['output_attentions'] = True
-        ret_approx = approx_bert(**attention_input_dict)
+        if not run_original_attention:
+            ret_approx = approx_bert(**attention_input_dict)
+        else:
+            reset_input_mask(sparse_bert)
+            ret_approx = sparse_bert(**attention_input_dict)
         attentions = ret_approx.attentions
     timer_end('eval.approx_att_bert')
 
@@ -945,6 +964,7 @@ def run_bert_with_approx(
     timer_end('eval.reset_mask.convert_mask')
     for i, layer in enumerate(sparse_bert.encoder.layer):
         layer.attention.self.last_attention_probs = attentions[i]
+        layer.attention.self.last_approx_attention_probs = attentions[i]
         layer.attention.self.last_attention_mask = attention_mask
     timer_end('eval.reset_mask')
 
@@ -1002,9 +1022,9 @@ def run_bert_forward_sparsity(
     indices = indices.repeat(*tokens.shape)
 
     for idx, layer in enumerate(sparse_bert.encoder.layer):
-        # input_mask = torch.zeros(batch_size, token_len, device=device, dtype=dtype)\
-        #     .scatter_(1, indices, 1.0)
-        # layer.attention.self.input_mask = input_mask
+        input_mask = torch.zeros(batch_size, token_len, device=device, dtype=dtype)\
+            .scatter_(1, indices, 1.0)
+        layer.attention.self.input_mask = input_mask
 
         indices_unsqueeze = indices.unsqueeze(-1)
         layer.attention.self.key.channel_indices = indices_unsqueeze
@@ -1033,6 +1053,7 @@ class ApproxSparseBertModelWrapper(nn.Module):
         super().__init__()
         self.sparse_bert = sparse_bert
         self.approx_bert = approx_bert
+        self.run_original_attention = False
 
     def forward(self, input_ids, attention_mask, ks):
         output = run_bert_with_approx(
@@ -1043,7 +1064,8 @@ class ApproxSparseBertModelWrapper(nn.Module):
                 'attention_mask':attention_mask,
                 'output_attentions':True,
             },
-            ks = ks
+            ks = ks,
+            run_original_attention = self.run_original_attention
         )
         return output
 
@@ -1083,6 +1105,7 @@ class ApproxSparseBertModel(nn.Module):
         self.ks = ks
 
         self.use_forward_sparse = False
+        self.run_original_attention = False
     
     def forward(self, *args, **kwargs):
         if args is not None and len(args)==1:
@@ -1093,6 +1116,7 @@ class ApproxSparseBertModel(nn.Module):
                 approx_bert = self.approx_bert,
                 input_dict  = kwargs,
                 ks          = self.ks,
+                run_original_attention= self.run_original_attention,
             )
         else:
             output = run_bert_forward_sparsity(

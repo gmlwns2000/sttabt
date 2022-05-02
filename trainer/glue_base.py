@@ -38,7 +38,7 @@ task_to_batch_size = {
     "cola": 8,
     "mnli": 8,
     "mrpc": 8,
-    "qnli": 8,
+    "qnli": 4,
     "qqp":  8,
     "rte":  8,
     "sst2": 8,
@@ -47,7 +47,7 @@ task_to_batch_size = {
 }
 
 def get_dataloader(subset, tokenizer, batch_size, split='train'):
-    dataset = load_dataset('glue', subset, split=split, cache_dir='./cache/datasets/')
+    dataset = load_dataset('glue', subset, split=split,)
     
     sentence1_key, sentence2_key = task_to_keys[subset]
 
@@ -219,10 +219,15 @@ class GlueAttentionApproxTrainer:
         }, self.checkpoint_path())
         print('saved', self.checkpoint_path())
 
-    def eval_sparse_model(self, ks=0.5, use_forward=False):
+    def eval_sparse_model(self, 
+        ks=0.5, 
+        use_forward=False,
+        run_original_attention = False
+    ):
         self.seed()
         wrapped_bert = sparse.ApproxSparseBertModel(self.model_bert, approx_bert=self.approx_bert, ks=ks)
         wrapped_bert.use_forward_sparse = use_forward
+        wrapped_bert.run_original_attention = run_original_attention
         sparse_cls_bert = berts.BertForSequenceClassification(self.model_bert.config)
         sparse_cls_bert.load_state_dict(self.model.state_dict())
         sparse_cls_bert.bert = wrapped_bert
@@ -243,6 +248,7 @@ class GlueAttentionApproxTrainer:
 
     def main(self):
         #self.eval_base_model()
+        self.last_test_loss = 987654321
 
         for epoch in range(self.epochs):
             if self.wiki_train:
@@ -290,12 +296,16 @@ class GlueAttentionApproxTrainer:
                         loss += torch.mean(torch.square(approx_attentions[j]- attentions[j]))
                     loss /= len(attentions)
                 
-                loss_sum += loss
+                loss_sum += loss.item()
                 loss_count += 1
+            valid_loss = loss_sum / loss_count
+            print('valid loss', valid_loss)
             self.approx_bert.train()
             
             self.last_loss = loss.item()
-            self.save()
+            if self.last_test_loss >= valid_loss:
+                self.save()
+            self.last_test_loss = valid_loss
 
 def main(args):
     trainer = GlueAttentionApproxTrainer(
