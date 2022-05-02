@@ -47,7 +47,7 @@ task_to_batch_size = {
 }
 
 def get_dataloader(subset, tokenizer, batch_size, split='train'):
-    dataset = load_dataset('glue', subset, split=split)
+    dataset = load_dataset('glue', subset, split=split, cache_dir='./cache/datasets/')
     
     sentence1_key, sentence2_key = task_to_keys[subset]
 
@@ -94,7 +94,7 @@ def get_base_model(dataset):
         "wnli": berts.BertForSequenceClassification,
     }[dataset]
     
-    bert = model.from_pretrained(checkpoint)
+    bert = model.from_pretrained(checkpoint, cache_dir='./cache/huggingface/')
     tokenizer = transformers.BertTokenizerFast.from_pretrained(checkpoint)
     
     return bert, tokenizer
@@ -271,6 +271,29 @@ class GlueAttentionApproxTrainer:
                 self.optimizer.zero_grad()
                 
                 if i % 10 == 0: pbar.set_description(f"[{epoch+1}/{self.epochs}] {loss:.6f}")
+            
+            loss_sum = 0
+            loss_count = 0
+            self.approx_bert.eval()
+            for i, batch in enumerate(self.test_dataloader):
+                if i > 100: break
+                
+                with torch.no_grad(), torch.cuda.amp.autocast():
+                    batch = {k: v.to(self.device, non_blocking=True) for k, v in batch.items()}
+                    batch['output_attentions'] = True
+                    if 'labels' in batch: del batch['labels']
+                    attentions = self.model(**batch).attentions
+
+                    approx_attentions = self.approx_bert(**batch).attentions
+                    loss = 0
+                    for j in range(len(attentions)):
+                        loss += torch.mean(torch.square(approx_attentions[j]- attentions[j]))
+                    loss /= len(attentions)
+                
+                loss_sum += loss
+                loss_count += 1
+            self.approx_bert.train()
+            
             self.last_loss = loss.item()
             self.save()
 

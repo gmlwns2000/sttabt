@@ -8,6 +8,7 @@ Glue = glue_base.GlueAttentionApproxTrainer
 
 # %%
 subsets = ["cola","mnli","mrpc","qnli","qqp","rte","sst2","stsb","wnli",]
+subsets = ["mnli","mrpc","qnli","qqp","rte","sst2","stsb"]
 kss = [
     0.1, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 0.999,
 ]
@@ -24,7 +25,7 @@ def get_score(score):
 results = {}
 i = 0
 for subset in subsets:
-    trainer = Glue(dataset=subset, factor=16, batch_size=4, device=0)
+    trainer = Glue(dataset=subset, factor=16, batch_size=-1, device=0)
     trainer.load()
     scores = {}
     metric_name = ""
@@ -87,3 +88,30 @@ tex = df.to_latex()
 with open('saves_plot/glue_benchmark_forward.tex', 'w') as f:
     f.write(tex)
 df
+
+# %%
+trainer = Glue(dataset='qnli', factor=16, batch_size=-1, device=0)
+trainer.load() 
+
+# %%
+trainer.model.bert = trainer.model_bert
+trainer.eval_base_model()
+
+# %%
+# trainer.seed()
+# import models.sparse_token as sparse
+# import transformers.models.bert.modeling_bert as berts
+# import importlib
+# importlib.reload(sparse)
+
+# wrapped_bert = sparse.ApproxSparseBertModel(trainer.model_bert, approx_bert=trainer.approx_bert, ks=0.1)
+# sparse_cls_bert = berts.BertForSequenceClassification(trainer.model_bert.config)
+# sparse_cls_bert.load_state_dict(trainer.model.state_dict())
+# sparse_cls_bert.bert = wrapped_bert
+# sparse_cls_bert.to(trainer.device).eval()
+
+# trainer.eval_base_model(model = sparse_cls_bert)
+
+# %%
+
+
