@@ -1,4 +1,4 @@
-COMMON_ARGS=""
+COMMON_ARGS="--not-wiki"
 python -m trainer.glue_base --subset cola $COMMON_ARGS &&\
 python -m trainer.glue_base --subset mnli $COMMON_ARGS &&\
 python -m trainer.glue_base --subset mrpc $COMMON_ARGS &&\

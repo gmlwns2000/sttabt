@@ -23,15 +23,15 @@ task_to_keys = {
 }
 
 task_to_epochs = {
-    "cola": 20,
-    "mnli": 2,
-    "mrpc": 20,
-    "qnli": 10,
-    "qqp":  2,
-    "rte":  20,
-    "sst2": 7,
-    "stsb": 20,
-    "wnli": 20,
+    "cola": 30,
+    "mnli": 4,
+    "mrpc": 30,
+    "qnli": 20,
+    "qqp":  4,
+    "rte":  30,
+    "sst2": 10,
+    "stsb": 30,
+    "wnli": 30,
 }
 
 task_to_batch_size = {
