@@ -108,6 +108,11 @@ def benchmark_reset():
 #old version
 
 #static K version
+__mask_acc_indices = False
+def set_update_input_mask_accumulate_indices(value):
+    global __mask_acc_indices
+    __mask_acc_indices = value
+
 def update_input_mask_from_previous_attention(
     attention_mask, 
     previous_attention, 
@@ -118,8 +123,12 @@ def update_input_mask_from_previous_attention(
     apply_token_impact = True,         #apply token impact is not good?!
     k=0.5,
     k_estimate = False,
-    accumulate_indicies = True,
+    accumulate_indices = None,
 ):
+    global __mask_acc_indices
+    if accumulate_indices is None:
+        accumulate_indices = __mask_acc_indices
+    
     timer_start('update_mask')
     attention_mask_shape = attention_mask.shape
     NBATCH = attention_mask_shape[0]
@@ -174,7 +183,7 @@ def update_input_mask_from_previous_attention(
         benchmark_cum('est_k', est_k / TLEN)
         kxx = est_k
     _, input_indices = torch.topk(att, kxx, dim=1)
-    if accumulate_indicies:
+    if accumulate_indices:
         input_indices = torch.cat([input_indices, output_token_indices], dim=1)
         input_indices = torch.unique(input_indices, dim=1)
     benchmark_cum('mask_occupy', input_indices.shape[1]/TLEN)
@@ -1035,7 +1044,7 @@ def run_bert_forward_sparsity(
         last_att = layer.attention.self.last_attention_probs #(N, H, T, T)
         impact_factor = torch.mean(last_att, dim=1) #reduce head
         impact_factor = torch.mean(impact_factor, dim=1) #reduce tokens, (N, T)
-        _, indices = torch.topk(impact_factor, k=int(ks[idx]*token_len), dim=1)
+        _, indices = torch.topk(impact_factor, k=min(impact_factor.shape[1], int(ks[idx]*token_len)), dim=1)
 
         indices_unsqueeze = indices.unsqueeze(-1)
         layer.attention.output.dense.channel_indices = indices_unsqueeze

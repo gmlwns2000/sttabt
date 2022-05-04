@@ -1,12 +1,15 @@
 from threading import Thread
-import transformers, torch, tqdm, random
+import transformers, torch, tqdm, random, gc
 import numpy as np
 import transformers.models.bert.modeling_bert as berts
 import models.sparse_token as sparse
 from datasets import load_dataset, load_metric
+from datasets.utils import logging as datasets_logging
 from torch import optim, nn
 from utils import ThreadBuffer
 from dataset.wikitext import FilteredWikitext, WikitextBatchLoader
+
+datasets_logging.set_verbosity_error()
 
 torch.cuda.empty_cache()
 
@@ -62,8 +65,8 @@ def get_dataloader(subset, tokenizer, batch_size, split='train'):
         #     result["label"] = [(label_to_id[l] if l != -1 else -1) for l in examples["label"]]
         return result
     
-    dataset = dataset.map(lambda examples: {'labels': examples['label']}, batched=True)
-    dataset = dataset.map(encode, batched=True)
+    dataset = dataset.map(lambda examples: {'labels': examples['label']}, batched=True, batch_size=1024)
+    dataset = dataset.map(encode, batched=True, batch_size=1024)
     dataset.set_format(type='torch', columns=['input_ids', 'token_type_ids', 'attention_mask', 'labels'])
 
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size)
@@ -151,7 +154,34 @@ class GlueAttentionApproxTrainer:
         self.last_metric_score = None
         self.last_loss = None
 
-        print('Trainer: Save checkpoint path', self.checkpoint_path())
+        print('Trainer: Checkpoint path', self.checkpoint_path())
+
+    def set_batch_size(self, new_value):
+        if new_value != self.batch_size:
+            self.batch_size = new_value
+
+            self.train_dataloader = get_dataloader(
+                self.dataset, self.tokenizer, self.batch_size)
+            split = {
+                "cola": "validation",
+                "mnli": "validation_matched",
+                "mrpc": "test",
+                "qnli": "validation",
+                "qqp": "validation",
+                "rte": "validation",
+                "sst2": "validation",
+                "stsb": "validation",
+                "wnli": "validation",
+            }[self.dataset]
+            self.test_dataloader = get_dataloader(
+                self.dataset, self.tokenizer, self.batch_size, split=split)
+            self.epochs = task_to_epochs[self.dataset]
+            if self.wiki_train:
+                self.wiki_dataset = WikitextBatchLoader(batch_size=6, tokenizer=self.tokenizer)
+                self.lr = 2e-5
+                self.weight_decay = 5e-4
+                self.epochs = self.wiki_epochs
+
 
     def seed(self, seed=42):
         torch.manual_seed(seed)
@@ -162,7 +192,7 @@ class GlueAttentionApproxTrainer:
         torch.backends.cudnn.benchmark = False
         torch.backends.cudnn.deterministic = True
 
-    def eval_base_model(self, model = None, amp = False):
+    def eval_base_model(self, model = None, amp = False, show_messages=True):
         self.seed()
         if model is None:
             model = self.model
@@ -189,8 +219,10 @@ class GlueAttentionApproxTrainer:
         
         score = metric.compute()
         self.last_metric_score = score
-        print('metric score', score)
-        print('avg occupy', avg_length / len(self.test_dataloader))
+        if show_messages:
+            print('metric score', score)
+            print('avg occupy', avg_length / len(self.test_dataloader))
+        gc.collect()
         torch.cuda.empty_cache()
         return score
 
@@ -222,7 +254,8 @@ class GlueAttentionApproxTrainer:
     def eval_sparse_model(self, 
         ks=0.5, 
         use_forward=False,
-        run_original_attention = False
+        run_original_attention = False,
+        show_message=True
     ):
         self.seed()
         wrapped_bert = sparse.ApproxSparseBertModel(self.model_bert, approx_bert=self.approx_bert, ks=ks)
@@ -233,7 +266,7 @@ class GlueAttentionApproxTrainer:
         sparse_cls_bert.bert = wrapped_bert
         sparse_cls_bert.to(self.device).eval()
         
-        sparse_result = self.eval_base_model(model = sparse_cls_bert)
+        sparse_result = self.eval_base_model(model = sparse_cls_bert, show_messages = show_message)
         return sparse_result
 
     def eval_main(self, ks='dynamic'):
