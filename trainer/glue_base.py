@@ -36,6 +36,7 @@ task_to_epochs = {
     "sst2": 10,
     "stsb": 30,
     "wnli": 30,
+    "bert": 30,
 }
 
 task_to_batch_size = {
@@ -48,9 +49,13 @@ task_to_batch_size = {
     "sst2": 8,
     "stsb": 8,
     "wnli": 8,
+    "bert": 8,
 }
 
 def get_dataloader(subset, tokenizer, batch_size, split='train'):
+    if subset == 'bert':
+        subset = "cola" #return dummy set
+    
     dataset = load_dataset('glue', subset, split=split,)
     
     sentence1_key, sentence2_key = task_to_keys[subset]
@@ -84,6 +89,7 @@ def get_base_model(dataset):
         "sst2": "textattack/bert-base-uncased-SST-2",
         "stsb": "textattack/bert-base-uncased-STS-B",
         "wnli": "textattack/bert-base-uncased-WNLI",
+        "bert": "bert-base-uncased",
     }[dataset]
 
     model = {
@@ -96,6 +102,7 @@ def get_base_model(dataset):
         "sst2": berts.BertForSequenceClassification,
         "stsb": berts.BertForSequenceClassification,
         "wnli": berts.BertForSequenceClassification,
+        "bert": berts.BertForSequenceClassification,
     }[dataset]
     
     bert = model.from_pretrained(checkpoint, cache_dir='./cache/huggingface/')
@@ -104,12 +111,13 @@ def get_base_model(dataset):
     return bert, tokenizer
 
 class GlueAttentionApproxTrainer:
-    def __init__(self, dataset, factor, batch_size=None, device=0, wiki_train=False, wiki_epochs=5):
+    def __init__(self, dataset, factor, batch_size=None, device=0, wiki_train=False, wiki_epochs=5, checkpoint_name=None):
         print('Trainer:', dataset)
         self.seed()
         
         self.wiki_train = wiki_train
         self.wiki_epochs = wiki_epochs
+        self.checkpoint_name = checkpoint_name
         self.lr = 1e-4
         self.weight_decay = 1e-4
         self.factor = factor
@@ -137,6 +145,7 @@ class GlueAttentionApproxTrainer:
             "sst2": "validation",
             "stsb": "validation",
             "wnli": "validation",
+            "bert": "validation",
         }[self.dataset]
         self.test_dataloader = get_dataloader(
             self.dataset, self.tokenizer, self.batch_size, split=split)
@@ -199,6 +208,7 @@ class GlueAttentionApproxTrainer:
                 "sst2": "validation",
                 "stsb": "validation",
                 "wnli": "validation",
+                "bert": "validation",
             }[self.dataset]
             self.test_dataloader = get_dataloader(
                 self.dataset, self.tokenizer, self.batch_size, split=split)
@@ -212,6 +222,8 @@ class GlueAttentionApproxTrainer:
 # checkpoint functions
 
     def checkpoint_path(self):
+        if self.checkpoint_name is not None:
+            return f'saves/{self.checkpoint_name}.pth'
         if self.wiki_train: 
             if self.wiki_epochs == 3:
                 return f'saves/glue-{self.dataset}-{self.factor}-wiki.pth'
@@ -417,7 +429,7 @@ class GlueAttentionApproxTrainer:
 
         # save checkpoint with early stopping
         if self.best_test_loss >= valid_loss:
-            self.best_test_loss = valid_loss
+            #self.best_test_loss = valid_loss # always save
             self.save()
 
     def main(self):
@@ -433,11 +445,13 @@ class GlueAttentionApproxTrainer:
 
 def main(args):
     trainer = GlueAttentionApproxTrainer(
-        args.subset, 
-        factor=args.factor, 
-        batch_size=args.batch_size, 
-        device=args.device, 
-        wiki_train=args.wiki
+        args.subset,
+        factor=args.factor,
+        batch_size=args.batch_size,
+        device=args.device,
+        wiki_train=args.wiki,
+        wiki_epochs=args.wiki_epochs,
+        checkpoint_name=args.checkpoint_name,
     )
 
     if args.eval:
@@ -449,12 +463,14 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--subset', type=str, default='mrpc')                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               
+    parser.add_argument('--subset', type=str, default='mrpc')
     parser.add_argument('--batch-size', type=int, default=-1)
     parser.add_argument('--factor', type=int, default=16)
     parser.add_argument('--device', type=int, default=0)
     parser.add_argument('--eval', action='store_true', default=False)
     parser.add_argument('--not-wiki', action='store_true', default=False)
+    parser.add_argument('--wiki-epochs', type=int, default=5)
+    parser.add_argument('--checkpoint-name', type=str, default=None)
 
     args = parser.parse_args()
     args.wiki = not args.not_wiki
