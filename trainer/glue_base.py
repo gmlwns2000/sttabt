@@ -8,6 +8,7 @@ from datasets.utils import logging as datasets_logging
 from torch import optim, nn
 from utils import ThreadBuffer
 from dataset.wikitext import FilteredWikitext, WikitextBatchLoader
+import torch.nn.functional as F
 
 datasets_logging.set_verbosity_error()
 
@@ -110,7 +111,7 @@ class GlueAttentionApproxTrainer:
         self.wiki_train = wiki_train
         self.wiki_epochs = wiki_epochs
         self.lr = 5e-5
-        self.weight_decay = 0
+        self.weight_decay = 5e-4
         self.factor = factor
         self.dataset = dataset
         if batch_size is None or batch_size <= 0:
@@ -122,6 +123,7 @@ class GlueAttentionApproxTrainer:
         self.model.eval()
         self.model.to(self.device)
         self.model_bert = self.model.bert
+        self.model_classifier = self.model.classifier
 
         self.train_dataloader = get_dataloader(
             self.dataset, self.tokenizer, self.batch_size)
@@ -148,16 +150,41 @@ class GlueAttentionApproxTrainer:
         self.approx_bert = sparse.ApproxBertModel(self.model.config, factor=factor)
         self.approx_bert.train()
         self.approx_bert.to(self.device)
-        self.optimizer = optim.Adam(self.approx_bert.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+        self.optimizer = self.get_optimizer(self.approx_bert)
         self.scaler = torch.cuda.amp.GradScaler()
 
         self.last_metric_score = None
         self.last_loss = None
 
         print('Trainer: Checkpoint path', self.checkpoint_path())
+    
+    def seed(self, seed=42):
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+        random.seed(seed)
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed) # if use multi-GPU
+        torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.deterministic = True
+    
+    def get_optimizer(self, model):
+        param_optimizer = list(model.named_parameters())
+        no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
+        params = [
+            {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)], 'weight_decay': 0.01},
+            {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
+        ]
+
+        kwargs = {
+            'lr':self.lr,
+            'weight_decay':self.weight_decay,
+        }
+        
+        return optim.AdamW(params, **kwargs)
 
     def set_batch_size(self, new_value):
         if new_value != self.batch_size:
+            print("GlueAttentionApproxTrainer: update batch size", new_value)
             self.batch_size = new_value
 
             self.train_dataloader = get_dataloader(
@@ -182,49 +209,7 @@ class GlueAttentionApproxTrainer:
                 self.weight_decay = 5e-4
                 self.epochs = self.wiki_epochs
 
-
-    def seed(self, seed=42):
-        torch.manual_seed(seed)
-        np.random.seed(seed)
-        random.seed(seed)
-        torch.cuda.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed) # if use multi-GPU
-        torch.backends.cudnn.benchmark = False
-        torch.backends.cudnn.deterministic = True
-
-    def eval_base_model(self, model = None, amp = False, show_messages=True):
-        self.seed()
-        if model is None:
-            model = self.model
-        model.eval()
-        
-        metric = load_metric('glue', self.dataset)
-        avg_length = 0
-        
-        for i, batch in enumerate(tqdm.tqdm(self.test_dataloader, desc='eval')):
-            batch = {k: v.to(self.device) for k, v in batch.items()}
-            #print(batch['attention_mask'].shape, torch.mean(torch.sum(batch['attention_mask'], dim=-1).float()).item())
-            avg_length += torch.mean(torch.sum(batch['attention_mask'], dim=-1).float()).item() / batch['attention_mask'].shape[-1]
-            labels = batch['labels']
-            del batch['labels']
-            
-            with torch.no_grad(), torch.cuda.amp.autocast(enabled=amp):
-                outputs = model(**batch)
-            predictions = outputs[0]
-
-            if self.dataset != 'stsb': 
-                predictions = torch.argmax(predictions, dim=-1)
-            metric.add_batch(predictions=predictions, references=labels)
-            #if i > 100: break
-        
-        score = metric.compute()
-        self.last_metric_score = score
-        if show_messages:
-            print('metric score', score)
-            print('avg occupy', avg_length / len(self.test_dataloader))
-        gc.collect()
-        torch.cuda.empty_cache()
-        return score
+# checkpoint functions
 
     def checkpoint_path(self):
         if self.wiki_train: 
@@ -250,6 +235,45 @@ class GlueAttentionApproxTrainer:
             'last_loss':self.last_loss,
         }, self.checkpoint_path())
         print('saved', self.checkpoint_path())
+
+# eval functions
+
+    def eval_base_model(self, model = None, amp = False, show_messages=True, max_step=987654321):
+        self.seed()
+        if model is None:
+            model = self.model
+        model.eval()
+        
+        metric = load_metric('glue', self.dataset)
+        avg_length = 0
+        step_count = 0
+        
+        for i, batch in enumerate(tqdm.tqdm(self.test_dataloader, desc='eval')):
+            if i > max_step: break
+            step_count += 1
+
+            batch = {k: v.to(self.device) for k, v in batch.items()}
+            #print(batch['attention_mask'].shape, torch.mean(torch.sum(batch['attention_mask'], dim=-1).float()).item())
+            avg_length += torch.mean(torch.sum(batch['attention_mask'], dim=-1).float()).item() / batch['attention_mask'].shape[-1]
+            labels = batch['labels']
+            del batch['labels']
+            
+            with torch.no_grad(), torch.cuda.amp.autocast(enabled=amp):
+                outputs = model(**batch)
+            predictions = outputs[0]
+
+            if self.dataset != 'stsb': 
+                predictions = torch.argmax(predictions, dim=-1)
+            metric.add_batch(predictions=predictions, references=labels)
+        
+        score = metric.compute()
+        self.last_metric_score = score
+        if show_messages:
+            print('metric score', score)
+            print('avg occupy', avg_length / step_count)
+        gc.collect()
+        torch.cuda.empty_cache()
+        return score
 
     def eval_sparse_model(self, 
         ks=0.5, 
@@ -278,67 +302,124 @@ class GlueAttentionApproxTrainer:
         print('est_k', est_k)
 
         print(bert_result, sparse_result)
+    
+    def eval_approx_model(
+        self, show_message=True
+    ):
+        self.seed()
+        approx_bert = self.approx_bert
+        result = self.eval_base_model(model = approx_bert, show_messages = show_message)
+        return result
 
-    def main(self):
-        #self.eval_base_model()
-        self.last_test_loss = 987654321
+# train functions
 
-        for epoch in range(self.epochs):
-            if self.wiki_train:
-                pbar = tqdm.tqdm(self.wiki_dataset.__iter__())
-            else:
-                pbar = tqdm.tqdm(self.train_dataloader)
-            torch.cuda.empty_cache()
-            for i, batch in enumerate(pbar):
+    def train_epoch(self):
+        if self.wiki_train:
+            pbar = tqdm.tqdm(self.wiki_dataset.__iter__())
+        else:
+            pbar = tqdm.tqdm(self.train_dataloader)
+        
+        for step, batch in enumerate(pbar):
+            batch = {k: v.to(self.device, non_blocking=True) for k, v in batch.items()}
+            batch['output_attentions'] = True
+            batch['output_hidden_states'] = True
+            if 'labels' in batch: del batch['labels']
+            
+            with torch.no_grad(), torch.cuda.amp.autocast():
+                original_output = self.model(**batch)
+            
+            with torch.cuda.amp.autocast():
+                approx_output = self.approx_bert(**batch)
+                NLAYER = len(approx_output.attentions)
+
+                # loss attention
+                loss_att = 0
+                for j in range(NLAYER):
+                    loss_att += F.mse_loss(approx_output.attentions[j], original_output.attentions[j])
+                loss_att /= NLAYER
+                
+                # loss hidden
+                loss_hid = 0
+                for j in range(NLAYER):
+                    loss_hid += F.mse_loss(
+                        self.approx_bert.transfer_hidden[j](approx_output.hidden_states[j]),
+                        original_output.hidden_states[j]
+                    )
+                loss_hid /= NLAYER
+                
+                # loss emb
+                approx_emb = self.approx_bert.bert.embeddings(batch['input_ids'])
+                with torch.no_grad():
+                    original_emb = self.model.bert.embeddings(batch['input_ids'])
+                loss_emb = F.mse_loss(self.approx_bert.transfer_embedding(approx_emb), original_emb)
+                
+                # loss prediction
+                loss_pred = torch.mean(
+                    torch.sum(
+                        -(
+                            F.softmax(original_output.logits, dim=-1) * \
+                            torch.log(F.softmax(approx_output.logits, dim=-1))
+                        ), 
+                        dim=-1
+                    )
+                )
+
+                loss = loss_att + loss_hid + loss_emb + loss_pred
+
+            self.scaler.scale(loss).backward()
+            
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+            self.optimizer.zero_grad()
+            
+            pbar.set_description(f"[{self.epoch+1}/{self.epochs}] L:{loss:.5f}, Latt:{loss_att:.4f}, Lhid:{loss_hid:.4f}, Lemb:{loss_emb:.4f}, Lpred:{loss_pred:.4f}")
+
+    def train_validate(self):
+        # check average loss
+        loss_sum = 0
+        loss_count = 0
+        self.approx_bert.eval()
+        for i, batch in enumerate(self.test_dataloader):
+            if i > 100: break
+            
+            with torch.no_grad(), torch.cuda.amp.autocast():
                 batch = {k: v.to(self.device, non_blocking=True) for k, v in batch.items()}
                 batch['output_attentions'] = True
                 if 'labels' in batch: del batch['labels']
-                
-                with torch.no_grad(), torch.cuda.amp.autocast():
-                    attentions = self.model(**batch).attentions
-                
-                with torch.cuda.amp.autocast():
-                    approx_attentions = self.approx_bert(**batch).attentions
-                    loss = 0
-                    for j in range(len(attentions)):
-                        loss += torch.mean(torch.square(approx_attentions[j]- attentions[j]))
-                    loss /= len(attentions)
-                self.scaler.scale(loss).backward()
-                
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
-                self.optimizer.zero_grad()
-                
-                if i % 10 == 0: pbar.set_description(f"[{epoch+1}/{self.epochs}] {loss:.6f}")
-            
-            loss_sum = 0
-            loss_count = 0
-            self.approx_bert.eval()
-            for i, batch in enumerate(self.test_dataloader):
-                if i > 100: break
-                
-                with torch.no_grad(), torch.cuda.amp.autocast():
-                    batch = {k: v.to(self.device, non_blocking=True) for k, v in batch.items()}
-                    batch['output_attentions'] = True
-                    if 'labels' in batch: del batch['labels']
-                    attentions = self.model(**batch).attentions
+                attentions = self.model(**batch).attentions
 
-                    approx_attentions = self.approx_bert(**batch).attentions
-                    loss = 0
-                    for j in range(len(attentions)):
-                        loss += torch.mean(torch.square(approx_attentions[j]- attentions[j]))
-                    loss /= len(attentions)
-                
-                loss_sum += loss.item()
-                loss_count += 1
-            valid_loss = loss_sum / loss_count
-            print('valid loss', valid_loss)
-            self.approx_bert.train()
+                approx_attentions = self.approx_bert(**batch).attentions
+                loss = 0
+                for j in range(len(attentions)):
+                    loss += torch.mean(torch.square(approx_attentions[j]- attentions[j]))
+                loss /= len(attentions)
             
-            self.last_loss = loss.item()
-            if self.last_test_loss >= valid_loss:
-                self.save()
-            self.last_test_loss = valid_loss
+            loss_sum += loss.item()
+            loss_count += 1
+        valid_loss = loss_sum / loss_count
+        print('valid loss:', valid_loss)
+        self.approx_bert.train()
+
+        # check accuracy
+        result = self.eval_approx_model(show_message=False)
+        print('evaluate approx net. score:', result)
+
+        # save checkpoint with early stopping
+        self.last_loss = loss.item()
+        if self.last_test_loss >= valid_loss:
+            self.save()
+        self.last_test_loss = valid_loss
+
+    def main(self):
+        self.last_test_loss = 987654321
+
+        for epoch in range(self.epochs):
+            self.epoch = epoch
+            gc.collect()
+            torch.cuda.empty_cache()
+            
+            self.train_epoch()
+            self.train_validate()
 
 def main(args):
     trainer = GlueAttentionApproxTrainer(
