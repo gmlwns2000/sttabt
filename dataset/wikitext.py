@@ -1,8 +1,7 @@
 import transformers
 from torchtext.datasets import WikiText103
-from utils import ThreadBuffer
 import random
-import multiprocessing as mp
+import torch.multiprocessing as mp
 
 class FilteredWikitext:
     def __init__(self, min_length = 50):
@@ -13,7 +12,7 @@ class FilteredWikitext:
             self.length += 1
     
     def __iter__(self):
-        self.data = iter(WikiText103(split='train'))
+        self.data = iter(WikiText103(split='train', root='./cache/wikitext103'))
         return self
     
     def __next__(self):
@@ -26,22 +25,23 @@ class FilteredWikitext:
         return self.length
 
 class WikitextBatchLoader:
-    def __init__(self, batch_size, tokenizer):
-        self.data = FilteredWikitext()
+    def __init__(self, batch_size):
+        data = FilteredWikitext()
         self.bank = []
-        for i in self.data:
+        for i in data:
             self.bank.append(i)
+        del data
         self.tokenizer = None
         self.batch_size = batch_size
-        self.buffer = ThreadBuffer()
         self.index = 0
         self.queue = mp.Queue(maxsize=64)
-        self.procs = []
-        self.num_workers = 4
+        procs = []
+        self.num_workers = 2
         for i in range(self.num_workers):
             proc = mp.Process(target=self.worker_main, daemon=True)
             proc.start()
-            self.procs.append(proc)
+            procs.append(proc)
+        self.procs = procs
     
     def worker_main(self):
         print('WikitextBatchLoader: worker_main')

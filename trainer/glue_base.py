@@ -10,6 +10,27 @@ from utils import ThreadBuffer
 from dataset.wikitext import FilteredWikitext, WikitextBatchLoader
 import torch.nn.functional as F
 
+import os
+import sys
+import tempfile
+import torch
+import torch.distributed as dist
+import torch.nn as nn
+import torch.optim as optim
+import torch.multiprocessing as mp
+
+from torch.nn.parallel import DistributedDataParallel as DDP
+
+def setup(rank, world_size):
+    os.environ['MASTER_ADDR'] = 'localhost'
+    os.environ['MASTER_PORT'] = '32277'
+
+    # initialize the process group
+    dist.init_process_group("nccl", rank=rank, world_size=world_size)
+
+def cleanup():
+    dist.destroy_process_group()
+
 datasets_logging.set_verbosity_error()
 
 torch.cuda.empty_cache()
@@ -56,7 +77,7 @@ def get_dataloader(subset, tokenizer, batch_size, split='train'):
     if subset == 'bert':
         subset = "cola" #return dummy set
     
-    dataset = load_dataset('glue', subset, split=split,)
+    dataset = load_dataset('glue', subset, split=split, cache_dir='./cache/datasets')
     
     sentence1_key, sentence2_key = task_to_keys[subset]
 
@@ -111,7 +132,7 @@ def get_base_model(dataset):
     return bert, tokenizer
 
 class GlueAttentionApproxTrainer:
-    def __init__(self, dataset, factor, batch_size=None, device=0, wiki_train=False, wiki_epochs=5, checkpoint_name=None):
+    def __init__(self, dataset, factor, batch_size=None, device=0, world_size=1, wiki_train=False, wiki_epochs=5, checkpoint_name=None):
         print('Trainer:', dataset)
         self.seed()
         
@@ -126,12 +147,18 @@ class GlueAttentionApproxTrainer:
             batch_size = task_to_batch_size[self.dataset]
         self.batch_size = batch_size
         self.device = device
+        self.world_size = world_size
 
         self.model, self.tokenizer = get_base_model(self.dataset)
         self.model.eval()
         self.model.to(self.device)
         self.model_bert = self.model.bert
         self.model_classifier = self.model.classifier
+
+        if device == 0:
+            self.train_dataloader = get_dataloader(
+                self.dataset, self.tokenizer, self.batch_size)
+        dist.barrier()
 
         self.train_dataloader = get_dataloader(
             self.dataset, self.tokenizer, self.batch_size)
@@ -148,10 +175,10 @@ class GlueAttentionApproxTrainer:
             "bert": "validation",
         }[self.dataset]
         self.test_dataloader = get_dataloader(
-            self.dataset, self.tokenizer, self.batch_size, split=split)
+            self.dataset, self.tokenizer, self.batch_size//self.world_size, split=split)
         self.epochs = task_to_epochs[self.dataset]
         if wiki_train:
-            self.wiki_dataset = WikitextBatchLoader(batch_size=6, tokenizer=self.tokenizer)
+            self.wiki_dataset = WikitextBatchLoader(batch_size=self.batch_size)
             self.lr = 1e-4 #2e-5
             self.weight_decay = 1e-4
             self.epochs = wiki_epochs
@@ -159,6 +186,7 @@ class GlueAttentionApproxTrainer:
         self.approx_bert = sparse.ApproxBertModel(self.model.config, factor=factor)
         self.approx_bert.train()
         self.approx_bert.to(self.device)
+        self.approx_bert = DDP(self.approx_bert, device_ids=[device])
         self.optimizer = self.get_optimizer(self.approx_bert)
         self.scaler = torch.cuda.amp.GradScaler()
 
@@ -214,7 +242,7 @@ class GlueAttentionApproxTrainer:
                 self.dataset, self.tokenizer, self.batch_size, split=split)
             self.epochs = task_to_epochs[self.dataset]
             if self.wiki_train:
-                self.wiki_dataset = WikitextBatchLoader(batch_size=6, tokenizer=self.tokenizer)
+                self.wiki_dataset = WikitextBatchLoader(batch_size=self.batch_size)
                 self.lr = 2e-5
                 self.weight_decay = 5e-4
                 self.epochs = self.wiki_epochs
@@ -327,15 +355,19 @@ class GlueAttentionApproxTrainer:
 
     def train_epoch(self):
         if self.wiki_train:
-            pbar = tqdm.tqdm(self.wiki_dataset.__iter__())
+            pbar = self.wiki_dataset.__iter__()
         else:
-            pbar = tqdm.tqdm(self.train_dataloader)
+            pbar = self.train_dataloader
+        
+        if self.device == 0 or self.world_size == 1:
+            pbar = tqdm.tqdm(pbar)
         
         self.model.eval()
         self.approx_bert.train()
 
         for step, batch in enumerate(pbar):
             batch = {k: v.to(self.device, non_blocking=True) for k, v in batch.items()}
+            batch = {k: v[self.device*(self.batch_size//self.world_size):(self.device+1)*(self.batch_size//self.world_size)] for k, v in batch.items()}
             batch['output_attentions'] = True
             batch['output_hidden_states'] = True
             if 'labels' in batch: del batch['labels']
@@ -345,46 +377,13 @@ class GlueAttentionApproxTrainer:
                 original_emb = self.model.bert.embeddings(batch['input_ids'])
             
             with torch.cuda.amp.autocast():
-                approx_output = self.approx_bert(**batch)
-                NLAYER = len(approx_output.attentions)
-
-                # loss attention
-                loss_att = 0
-                for j in range(NLAYER):
-                    loss_att += F.mse_loss(approx_output.attentions[j], original_output.attentions[j])
-                loss_att /= NLAYER
-                
-                # loss hidden
-                loss_hid = 0
-                for j in range(NLAYER):
-                    loss_hid += F.mse_loss(
-                        self.approx_bert.transfer_hidden[j](approx_output.hidden_states[j]),
-                        original_output.hidden_states[j]
-                    )
-                loss_hid /= NLAYER
-                
-                # loss emb
-                approx_emb = self.approx_bert.bert.embeddings(batch['input_ids'])
-                loss_emb = F.mse_loss(self.approx_bert.transfer_embedding(approx_emb), original_emb)
-                
-                # loss prediction
-                #???
-                # loss_pred = torch.mean(
-                #     torch.sum(
-                #         -(
-                #             F.softmax(original_output.logits, dim=-1) * \
-                #             torch.log(F.softmax(approx_output.logits, dim=-1))
-                #         ), 
-                #         dim=-1
-                #     )
-                # )
-                loss_pred = F.mse_loss(
-                    F.softmax(approx_output.logits, dim=-1),
-                    F.softmax(original_output.logits, dim=-1),
-                )
-                #print(approx_output.logits[0], original_output.logits[0])
-
-                loss = loss_att * 50 + loss_hid * 2 + loss_emb * 2 + loss_pred
+                batch['return_loss'] = True
+                batch['original_output'] = original_output
+                batch['original_emb'] = original_emb
+                #tt = batch['input_ids'][0,1].item()
+                #print(f'[S:{step}|D:{self.device}|{tt}]')
+                approx_output, losses = self.approx_bert(**batch)
+                loss, loss_att, loss_hid, loss_emb, loss_pred = losses
 
             self.scaler.scale(loss).backward()
             
@@ -393,13 +392,16 @@ class GlueAttentionApproxTrainer:
             self.optimizer.zero_grad()
 
             self.last_loss = loss.item()
-            pbar.set_description(f"[{self.epoch+1}/{self.epochs}] L:{loss:.5f}, Latt:{loss_att:.4f}, Lhid:{loss_hid:.4f}, Lemb:{loss_emb:.4f}, Lpred:{loss_pred:.4f}")
+            if self.device == 0 or self.world_size == 1:
+                pbar.set_description(f"[{self.epoch+1}/{self.epochs}] L:{loss:.5f}, Latt:{loss_att:.4f}, Lhid:{loss_hid:.4f}, Lemb:{loss_emb:.4f}, Lpred:{loss_pred:.4f}")
 
     def train_validate(self):
         # check average loss
         loss_sum = 0
         loss_count = 0
         self.approx_bert.eval()
+        ddp_model = self.approx_bert
+        self.approx_bert = ddp_model.module
         self.model.eval()
         for i, batch in enumerate(self.test_dataloader):
             if i > 100: break
@@ -425,6 +427,7 @@ class GlueAttentionApproxTrainer:
         result = self.eval_approx_model(show_message=False, max_step=100)
         print('evaluate approx net. score:', result)
 
+        self.approx_bert = ddp_model
         self.approx_bert.train()
 
         # save checkpoint with early stopping
@@ -441,9 +444,31 @@ class GlueAttentionApproxTrainer:
             torch.cuda.empty_cache()
             
             self.train_epoch()
-            self.train_validate()
 
-def main(args):
+            if self.device == 0 or self.world_size == 1:
+                self.train_validate()
+            dist.barrier()
+
+def main_ddp(rank, world_size, args):
+    print(f"Running basic DDP example on rank {rank}.")
+    setup(rank, world_size)
+
+    trainer = GlueAttentionApproxTrainer(
+        args.subset,
+        factor=args.factor,
+        batch_size=args.batch_size,
+        device=rank,
+        world_size=world_size,
+        wiki_train=args.wiki,
+        wiki_epochs=args.wiki_epochs,
+        checkpoint_name=args.checkpoint_name,
+    )
+    
+    trainer.main()
+    
+    cleanup()
+
+def main_eval(args):
     trainer = GlueAttentionApproxTrainer(
         args.subset,
         factor=args.factor,
@@ -453,11 +478,20 @@ def main(args):
         wiki_epochs=args.wiki_epochs,
         checkpoint_name=args.checkpoint_name,
     )
+    trainer.eval_main()
 
+def main(args):
     if args.eval:
-        trainer.eval_main()
-    else:
-        trainer.main()
+        main_eval(args)
+        return
+    
+    n_gpus = min(args.n_gpus, torch.cuda.device_count())
+    print(f'Setup DDP', n_gpus)
+    mp.spawn(main_ddp,
+        args=(n_gpus, args,),
+        nprocs=n_gpus,
+        join=True
+    )
 
 if __name__ == '__main__':
     import argparse
@@ -467,6 +501,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch-size', type=int, default=-1)
     parser.add_argument('--factor', type=int, default=16)
     parser.add_argument('--device', type=int, default=0)
+    parser.add_argument('--n-gpus', type=int, default=128)
     parser.add_argument('--eval', action='store_true', default=False)
     parser.add_argument('--not-wiki', action='store_true', default=False)
     parser.add_argument('--wiki-epochs', type=int, default=5)

@@ -1114,6 +1114,9 @@ class ApproxBertModel(nn.Module):
         output_attentions=None,
         output_hidden_states=None,
         return_dict=None,
+        return_loss=False,
+        original_output=None,
+        original_emb=None
     ):
         r"""
         labels (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
@@ -1166,12 +1169,61 @@ class ApproxBertModel(nn.Module):
             output = (logits,) + outputs[2:]
             return ((loss,) + output) if loss is not None else output
 
-        return SequenceClassifierOutput(
+        ret = SequenceClassifierOutput(
             loss=loss,
             logits=logits,
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
+
+        if not return_loss:
+            return ret
+        
+        approx_output = ret
+        NLAYER = len(approx_output.attentions)
+
+        # loss attention
+        loss_att = 0
+        for j in range(NLAYER):
+            loss_att += F.mse_loss(
+                approx_output.attentions[j], 
+                original_output.attentions[j]
+            )
+        loss_att /= NLAYER
+        
+        # loss hidden
+        loss_hid = 0
+        for j in range(NLAYER):
+            loss_hid += F.mse_loss(
+                self.transfer_hidden[j](approx_output.hidden_states[j]),
+                original_output.hidden_states[j]
+            )
+        loss_hid /= NLAYER
+        
+        # loss emb
+        approx_emb = self.bert.embeddings(input_ids)
+        loss_emb = F.mse_loss(self.transfer_embedding(approx_emb), original_emb)
+        
+        # loss prediction
+        #???
+        # loss_pred = torch.mean(
+        #     torch.sum(
+        #         -(
+        #             F.softmax(original_output.logits, dim=-1) * \
+        #             torch.log(F.softmax(approx_output.logits, dim=-1))
+        #         ), 
+        #         dim=-1
+        #     )
+        # )
+        loss_pred = F.mse_loss(
+            F.softmax(approx_output.logits, dim=-1),
+            F.softmax(original_output.logits, dim=-1),
+        )
+        #print(approx_output.logits[0], original_output.logits[0])
+
+        loss = loss_att * 10 + loss_hid * 1 + loss_emb * 1 + loss_pred
+
+        return ret, (loss, loss_att, loss_hid, loss_emb, loss_pred)
 
 class ApproxSparseBertModel(nn.Module):
     def __init__(self, bert, approx_bert=None, add_pooling_layer=True, ks=0.5):
