@@ -149,12 +149,6 @@ class GlueAttentionApproxTrainer:
         self.device = device
         self.world_size = world_size
 
-        self.model, self.tokenizer = get_base_model(self.dataset)
-        self.model.eval()
-        self.model.to(self.device)
-        self.model_bert = self.model.bert
-        self.model_classifier = self.model.classifier
-
         if device == 0:
             self.train_dataloader = get_dataloader(
                 self.dataset, self.tokenizer, self.batch_size)
@@ -182,6 +176,12 @@ class GlueAttentionApproxTrainer:
             self.lr = 1e-4 #2e-5
             self.weight_decay = 1e-4
             self.epochs = wiki_epochs
+        
+        self.model, self.tokenizer = get_base_model(self.dataset)
+        self.model.eval()
+        self.model.to(self.device)
+        self.model_bert = self.model.bert
+        self.model_classifier = self.model.classifier
 
         self.approx_bert = sparse.ApproxBertModel(self.model.config, factor=factor)
         self.approx_bert.train()
