@@ -29,7 +29,7 @@ task_to_keys = {
 task_to_epochs = {
     "cola": 30,
     "mnli": 4,
-    "mrpc": 30,
+    "mrpc": 200,
     "qnli": 20,
     "qqp":  4,
     "rte":  30,
@@ -110,8 +110,8 @@ class GlueAttentionApproxTrainer:
         
         self.wiki_train = wiki_train
         self.wiki_epochs = wiki_epochs
-        self.lr = 5e-5
-        self.weight_decay = 5e-4
+        self.lr = 1e-4
+        self.weight_decay = 1e-4
         self.factor = factor
         self.dataset = dataset
         if batch_size is None or batch_size <= 0:
@@ -143,8 +143,8 @@ class GlueAttentionApproxTrainer:
         self.epochs = task_to_epochs[self.dataset]
         if wiki_train:
             self.wiki_dataset = WikitextBatchLoader(batch_size=6, tokenizer=self.tokenizer)
-            self.lr = 2e-5
-            self.weight_decay = 5e-4
+            self.lr = 1e-4 #2e-5
+            self.weight_decay = 1e-4
             self.epochs = wiki_epochs
 
         self.approx_bert = sparse.ApproxBertModel(self.model.config, factor=factor)
@@ -171,7 +171,7 @@ class GlueAttentionApproxTrainer:
         param_optimizer = list(model.named_parameters())
         no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
         params = [
-            {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)], 'weight_decay': 0.01},
+            {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)], 'weight_decay': self.weight_decay},
             {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
         ]
 
@@ -304,11 +304,11 @@ class GlueAttentionApproxTrainer:
         print(bert_result, sparse_result)
     
     def eval_approx_model(
-        self, show_message=True
+        self, show_message=True, max_step=987654321
     ):
         self.seed()
         approx_bert = self.approx_bert
-        result = self.eval_base_model(model = approx_bert, show_messages = show_message)
+        result = self.eval_base_model(model = approx_bert, show_messages = show_message, max_step = max_step)
         return result
 
 # train functions
@@ -319,6 +319,9 @@ class GlueAttentionApproxTrainer:
         else:
             pbar = tqdm.tqdm(self.train_dataloader)
         
+        self.model.eval()
+        self.approx_bert.train()
+
         for step, batch in enumerate(pbar):
             batch = {k: v.to(self.device, non_blocking=True) for k, v in batch.items()}
             batch['output_attentions'] = True
@@ -327,6 +330,7 @@ class GlueAttentionApproxTrainer:
             
             with torch.no_grad(), torch.cuda.amp.autocast():
                 original_output = self.model(**batch)
+                original_emb = self.model.bert.embeddings(batch['input_ids'])
             
             with torch.cuda.amp.autocast():
                 approx_output = self.approx_bert(**batch)
@@ -349,29 +353,34 @@ class GlueAttentionApproxTrainer:
                 
                 # loss emb
                 approx_emb = self.approx_bert.bert.embeddings(batch['input_ids'])
-                with torch.no_grad():
-                    original_emb = self.model.bert.embeddings(batch['input_ids'])
                 loss_emb = F.mse_loss(self.approx_bert.transfer_embedding(approx_emb), original_emb)
                 
                 # loss prediction
-                loss_pred = torch.mean(
-                    torch.sum(
-                        -(
-                            F.softmax(original_output.logits, dim=-1) * \
-                            torch.log(F.softmax(approx_output.logits, dim=-1))
-                        ), 
-                        dim=-1
-                    )
+                #???
+                # loss_pred = torch.mean(
+                #     torch.sum(
+                #         -(
+                #             F.softmax(original_output.logits, dim=-1) * \
+                #             torch.log(F.softmax(approx_output.logits, dim=-1))
+                #         ), 
+                #         dim=-1
+                #     )
+                # )
+                loss_pred = F.mse_loss(
+                    F.softmax(approx_output.logits, dim=-1),
+                    F.softmax(original_output.logits, dim=-1),
                 )
+                #print(approx_output.logits[0], original_output.logits[0])
 
-                loss = loss_att + loss_hid + loss_emb + loss_pred
+                loss = loss_att * 50 + loss_hid * 2 + loss_emb * 2 + loss_pred
 
             self.scaler.scale(loss).backward()
             
             self.scaler.step(self.optimizer)
             self.scaler.update()
             self.optimizer.zero_grad()
-            
+
+            self.last_loss = loss.item()
             pbar.set_description(f"[{self.epoch+1}/{self.epochs}] L:{loss:.5f}, Latt:{loss_att:.4f}, Lhid:{loss_hid:.4f}, Lemb:{loss_emb:.4f}, Lpred:{loss_pred:.4f}")
 
     def train_validate(self):
@@ -379,6 +388,7 @@ class GlueAttentionApproxTrainer:
         loss_sum = 0
         loss_count = 0
         self.approx_bert.eval()
+        self.model.eval()
         for i, batch in enumerate(self.test_dataloader):
             if i > 100: break
             
@@ -398,20 +408,20 @@ class GlueAttentionApproxTrainer:
             loss_count += 1
         valid_loss = loss_sum / loss_count
         print('valid loss:', valid_loss)
-        self.approx_bert.train()
 
         # check accuracy
-        result = self.eval_approx_model(show_message=False)
+        result = self.eval_approx_model(show_message=False, max_step=100)
         print('evaluate approx net. score:', result)
 
+        self.approx_bert.train()
+
         # save checkpoint with early stopping
-        self.last_loss = loss.item()
-        if self.last_test_loss >= valid_loss:
+        if self.best_test_loss >= valid_loss:
+            self.best_test_loss = valid_loss
             self.save()
-        self.last_test_loss = valid_loss
 
     def main(self):
-        self.last_test_loss = 987654321
+        self.best_test_loss = 987654321
 
         for epoch in range(self.epochs):
             self.epoch = epoch
