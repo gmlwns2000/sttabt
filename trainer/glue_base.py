@@ -149,6 +149,8 @@ class GlueAttentionApproxTrainer:
         self.device = device
         self.world_size = world_size
 
+        _, self.tokenizer = get_base_model(self.dataset)
+
         if device == 0:
             self.train_dataloader = get_dataloader(
                 self.dataset, self.tokenizer, self.batch_size)
