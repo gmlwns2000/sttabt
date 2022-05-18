@@ -398,7 +398,7 @@ class GlueAttentionApproxTrainer:
 
             self.last_loss = loss.item()
             if self.device == 0 or self.world_size == 1:
-                pbar.set_description(f"[{self.epoch+1}/{self.epochs}] L:{loss:.5f}, Latt:{loss_att:.4f}, Lhid:{loss_hid:.4f}, Lemb:{loss_emb:.4f}, Lpred:{loss_pred:.4f}")
+                pbar.set_description(f"[{self.epoch+1}/{self.epochs}] L:{loss:.5f}, Latt:{loss_att:.5f}, Lhid:{loss_hid:.4f}, Lemb:{loss_emb:.4f}, Lpred:{loss_pred:.4f}")
 
     def train_validate(self):
         # check average loss
