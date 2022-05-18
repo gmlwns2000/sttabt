@@ -50,7 +50,7 @@ task_to_keys = {
 task_to_epochs = {
     "cola": 30,
     "mnli": 4,
-    "mrpc": 500,
+    "mrpc": 2500,
     "qnli": 20,
     "qqp":  4,
     "rte":  30,
