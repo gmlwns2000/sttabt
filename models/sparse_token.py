@@ -1079,7 +1079,7 @@ class ApproxSparseBertModelWrapper(nn.Module):
         return output
 
 class ApproxBertModel(nn.Module):
-    def __init__(self, origin_config, factor):
+    def __init__(self, origin_config, factor, wiki_train=False):
         super().__init__()
 
         self.factor = factor
@@ -1101,6 +1101,7 @@ class ApproxBertModel(nn.Module):
         ])
 
         self.transfer_embedding = nn.Linear(config.hidden_size, origin_config.hidden_size)
+        self.wiki_train = wiki_train
     
     def forward(
         self,

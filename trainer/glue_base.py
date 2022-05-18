@@ -200,7 +200,7 @@ class GlueAttentionApproxTrainer:
         self.approx_bert.train()
         self.approx_bert.to(self.device)
         if self.world_size > 1:
-            self.approx_bert = DDP(self.approx_bert, device_ids=[device], find_unused_parameters=True)
+            self.approx_bert = DDP(self.approx_bert, device_ids=[device], find_unused_parameters=False)
         else:
             self.approx_bert = MimicDDP(self.approx_bert)
         self.optimizer = self.get_optimizer(self.approx_bert)
