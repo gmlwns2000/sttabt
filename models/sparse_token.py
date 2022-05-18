@@ -1206,20 +1206,23 @@ class ApproxBertModel(nn.Module):
         
         # loss prediction
         #???
-        loss_pred = torch.mean(
-            torch.sum(
-                -(
-                    F.softmax(original_output.logits, dim=-1) * \
-                    torch.log(F.softmax(approx_output.logits, dim=-1))
-                ),
-                dim=-1
+        if self.wiki_train:
+            loss_pred = 0
+        else:
+            loss_pred = torch.mean(
+                torch.sum(
+                    -(
+                        F.softmax(original_output.logits, dim=-1) * \
+                        torch.log(F.softmax(approx_output.logits, dim=-1))
+                    ),
+                    dim=-1
+                )
             )
-        )
-        # loss_pred = F.mse_loss(
-        #     F.softmax(approx_output.logits, dim=-1),
-        #     F.softmax(original_output.logits, dim=-1),
-        # )
-        #print(approx_output.logits[0], original_output.logits[0])
+            # loss_pred = F.mse_loss(
+            #     F.softmax(approx_output.logits, dim=-1),
+            #     F.softmax(original_output.logits, dim=-1),
+            # )
+            #print(approx_output.logits[0], original_output.logits[0])
 
         loss = loss_att * 1 + loss_hid * 1 + loss_emb * 1 + loss_pred
 
