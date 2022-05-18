@@ -1097,7 +1097,7 @@ class ApproxBertModel(nn.Module):
         self.classifier = nn.Linear(config.hidden_size, config.num_labels)
 
         self.transfer_hidden = nn.ModuleList([
-            nn.Linear(config.hidden_size, origin_config.hidden_size) 
+            nn.Linear(config.hidden_size, origin_config.hidden_size)
             for _ in range(config.num_hidden_layers)
         ])
 
@@ -1207,22 +1207,25 @@ class ApproxBertModel(nn.Module):
         
         # loss prediction
         #???
-        # loss_pred = torch.mean(
-        #     torch.sum(
-        #         -(
-        #             F.softmax(original_output.logits, dim=-1) * \
-        #             torch.log(F.softmax(approx_output.logits, dim=-1))
-        #         ), 
-        #         dim=-1
-        #     )
-        # )
-        loss_pred = F.mse_loss(
-            F.softmax(approx_output.logits, dim=-1),
-            F.softmax(original_output.logits, dim=-1),
-        )
-        #print(approx_output.logits[0], original_output.logits[0])
+        if self.wiki_train:
+            loss_pred = 0
+        else:
+            loss_pred = torch.mean(
+                torch.sum(
+                    -(
+                        F.softmax(original_output.logits, dim=-1) * \
+                        torch.log(F.softmax(approx_output.logits, dim=-1))
+                    ),
+                    dim=-1
+                )
+            )
+            # loss_pred = F.mse_loss(
+            #     F.softmax(approx_output.logits, dim=-1),
+            #     F.softmax(original_output.logits, dim=-1),
+            # )
+            #print(approx_output.logits[0], original_output.logits[0])
 
-        loss = loss_att * 10 + loss_hid * 1 + loss_emb * 1 + loss_pred
+        loss = loss_att * 1 + loss_hid * 1 + loss_emb * 1 + loss_pred
 
         return ret, (loss, loss_att, loss_hid, loss_emb, loss_pred)
 

@@ -52,26 +52,43 @@ class WikitextBatchLoader:
     def random_sample(self):
         #mimic GLUE
         line = self.bank[random.randint(0, len(self.bank) - 1)].strip()
+        line2 = self.bank[random.randint(0, len(self.bank) - 1)].strip()
+        #masking
+        def masking_line(line):
+            spl = line.split()
+            for i in range(len(spl)):
+                if random.random() < 0.15:
+                    if random.random() < 0.8:
+                        spl[i] = '[MASK]'
+                    else:
+                        spl[i] = spl[random.randint(0, len(spl)-1)]
+            line = ' '.join(spl)
+            return line
+        line = masking_line(line)
+        line2 = masking_line(line2)
         #random cut
         if random.random() < 0.65: # need to re experiment
             spl = line.split()
             if len(spl) > 10:
                 spl = spl[:random.randint(10,len(spl))]
             line = ' '.join(spl)
+        #mimic sep
+        if random.random() < 0.75:
+            spl = line.split()
+            sep_idx = random.randint(0, len(spl)-1)
+            spl.insert(sep_idx, "[SEP]")
+            if random.random() < 0.5:
+                spl2 = line2.split()
+                spl2_patch_len = min(len(spl) - sep_idx - 1, len(spl2))
+                spl[sep_idx+1:min(sep_idx+1+spl2_patch_len, len(spl))] = spl2[:spl2_patch_len]
+            line = ' '.join(spl)
+        
+        #end sep
+        if random.random() < 0.75:
+            line = line + "[SEP]"
         #mimic cls
         if random.random() < 0.75:
             line = "[CLS]"+line
-        #mimic sep
-        for i in range(random.randint(0, 3)):
-            if random.random() > 0.5:
-                spl = line.split()
-                spl.insert(random.randint(0, len(spl)-1), "[SEP]")
-                line = ' '.join(spl)
-            else:
-                pivot = random.randint(0, len(line)-1)
-                line = line[:pivot] + "[SEP]" + line[pivot:]
-        if random.random() < 0.75:
-            line = line + "[SEP]"
         return line
 
     def random_batch(self):
@@ -102,8 +119,6 @@ class WikitextBatchLoader:
         return len(self.bank) // self.batch_size
 
 if __name__ == '__main__':
-    import transformers
-    tokenizer = transformers.BertTokenizerFast.from_pretrained('bert-base-uncased')
-    data = WikitextBatchLoader(16, tokenizer)
+    data = WikitextBatchLoader(16)
     for i in range(50):
         print(data.random_sample())
