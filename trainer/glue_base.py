@@ -50,7 +50,7 @@ task_to_keys = {
 task_to_epochs = {
     "cola": 30,
     "mnli": 4,
-    "mrpc": 200,
+    "mrpc": 500,
     "qnli": 20,
     "qqp":  4,
     "rte":  30,
@@ -131,6 +131,14 @@ def get_base_model(dataset):
     
     return bert, tokenizer
 
+class MimicDDP(nn.Module):
+    def __init__(self, module) -> None:
+        super().__init__()
+        self.module = module
+    
+    def forward(self, *args, **kwargs):
+        return self.module(*args, **kwargs)
+
 class GlueAttentionApproxTrainer:
     def __init__(self, dataset, factor, batch_size=None, device=0, world_size=1, wiki_train=False, wiki_epochs=5, checkpoint_name=None):
         print('Trainer:', dataset)
@@ -154,7 +162,8 @@ class GlueAttentionApproxTrainer:
         if device == 0:
             self.train_dataloader = get_dataloader(
                 self.dataset, self.tokenizer, self.batch_size)
-        dist.barrier()
+        if self.world_size > 1:
+            dist.barrier()
 
         self.train_dataloader = get_dataloader(
             self.dataset, self.tokenizer, self.batch_size)
@@ -188,7 +197,10 @@ class GlueAttentionApproxTrainer:
         self.approx_bert = sparse.ApproxBertModel(self.model.config, factor=factor)
         self.approx_bert.train()
         self.approx_bert.to(self.device)
-        self.approx_bert = DDP(self.approx_bert, device_ids=[device])
+        if self.world_size > 1:
+            self.approx_bert = DDP(self.approx_bert, device_ids=[device])
+        else:
+            self.approx_bert = MimicDDP(self.approx_bert)
         self.optimizer = self.get_optimizer(self.approx_bert)
         self.scaler = torch.cuda.amp.GradScaler()
 
@@ -452,7 +464,8 @@ class GlueAttentionApproxTrainer:
 
             if self.device == 0 or self.world_size == 1:
                 self.train_validate()
-            dist.barrier()
+            if self.world_size > 1:
+                dist.barrier()
 
 def main_ddp(rank, world_size, args):
     print(f"Running basic DDP example on rank {rank}.")

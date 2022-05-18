@@ -161,7 +161,8 @@ def update_input_mask_from_previous_attention(
     att = torch.gather(att, 1, output_token_indices.unsqueeze(-1).expand(NBATCH, output_token_indices.shape[1], TLEN))
     if apply_token_impact: 
         #todo fix this..
-        att = att * output_token_impact.unsqueeze(-1) * 0.1 + att * 0.9
+        impact_strength = 0.9
+        att = att * output_token_impact.unsqueeze(-1) * impact_strength + att * (1-impact_strength)
     
     if token_reduce_method == 'avg':
         att = torch.mean(att, dim=1)                 #reduce token, column mean
