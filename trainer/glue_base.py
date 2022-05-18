@@ -149,6 +149,8 @@ class GlueAttentionApproxTrainer:
         self.device = device
         self.world_size = world_size
 
+        _, self.tokenizer = get_base_model(self.dataset)
+
         if device == 0:
             self.train_dataloader = get_dataloader(
                 self.dataset, self.tokenizer, self.batch_size)
@@ -284,7 +286,10 @@ class GlueAttentionApproxTrainer:
             model = self.model
         model.eval()
         
-        metric = load_metric('glue', self.dataset)
+        if self.dataset == 'bert':
+            metric = load_metric('glue', 'cola')
+        else:
+            metric = load_metric('glue', self.dataset)
         avg_length = 0
         step_count = 0
         
