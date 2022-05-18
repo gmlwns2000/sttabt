@@ -99,7 +99,7 @@ def get_dataloader(subset, tokenizer, batch_size, split='train'):
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size)
     return dataloader
 
-def get_base_model(dataset):
+def get_base_model(dataset, only_tokenizer=False):
     checkpoint = {
         "cola": "textattack/bert-base-uncased-CoLA",
         "mnli": "yoshitomo-matsubara/bert-base-uncased-mnli",
@@ -126,9 +126,11 @@ def get_base_model(dataset):
         "bert": berts.BertForSequenceClassification,
     }[dataset]
     
-    bert = model.from_pretrained(checkpoint, cache_dir='./cache/huggingface/')
     tokenizer = transformers.BertTokenizerFast.from_pretrained(checkpoint)
+    if only_tokenizer:
+        return None, tokenizer
     
+    bert = model.from_pretrained(checkpoint, cache_dir='./cache/huggingface/')
     return bert, tokenizer
 
 class MimicDDP(nn.Module):
@@ -157,7 +159,7 @@ class GlueAttentionApproxTrainer:
         self.device = device
         self.world_size = world_size
 
-        _, self.tokenizer = get_base_model(self.dataset)
+        _, self.tokenizer = get_base_model(self.dataset, only_tokenizer=True)
 
         if device == 0:
             self.train_dataloader = get_dataloader(
@@ -198,7 +200,7 @@ class GlueAttentionApproxTrainer:
         self.approx_bert.train()
         self.approx_bert.to(self.device)
         if self.world_size > 1:
-            self.approx_bert = DDP(self.approx_bert, device_ids=[device])
+            self.approx_bert = DDP(self.approx_bert, device_ids=[device], find_unused_parameters=True)
         else:
             self.approx_bert = MimicDDP(self.approx_bert)
         self.optimizer = self.get_optimizer(self.approx_bert)

@@ -161,8 +161,7 @@ def update_input_mask_from_previous_attention(
     att = torch.gather(att, 1, output_token_indices.unsqueeze(-1).expand(NBATCH, output_token_indices.shape[1], TLEN))
     if apply_token_impact: 
         #todo fix this..
-        impact_strength = 0.9
-        att = att * output_token_impact.unsqueeze(-1) * impact_strength + att * (1-impact_strength)
+        att = att * output_token_impact.unsqueeze(-1) * 0.1 + att * 0.9
     
     if token_reduce_method == 'avg':
         att = torch.mean(att, dim=1)                 #reduce token, column mean
@@ -1080,7 +1079,7 @@ class ApproxSparseBertModelWrapper(nn.Module):
         return output
 
 class ApproxBertModel(nn.Module):
-    def __init__(self, origin_config, factor, wiki_train=False):
+    def __init__(self, origin_config, factor):
         super().__init__()
 
         self.factor = factor
@@ -1102,7 +1101,6 @@ class ApproxBertModel(nn.Module):
         ])
 
         self.transfer_embedding = nn.Linear(config.hidden_size, origin_config.hidden_size)
-        self.wiki_train = wiki_train
     
     def forward(
         self,
@@ -1208,23 +1206,22 @@ class ApproxBertModel(nn.Module):
         
         # loss prediction
         #???
-        if self.wiki_train:
-            loss_pred = 0
-        else:
-            loss_pred = torch.mean(
-                torch.sum(
-                    -(
-                        F.softmax(original_output.logits, dim=-1) * \
-                        torch.log(F.softmax(approx_output.logits, dim=-1))
-                    ),
-                    dim=-1
-                )
+        loss_pred = torch.mean(
+            torch.sum(
+                -(
+                    F.softmax(original_output.logits, dim=-1) * \
+                    torch.log(F.softmax(approx_output.logits, dim=-1))
+                ),
+                dim=-1
             )
-            # loss_pred = F.mse_loss(
-            #     F.softmax(approx_output.logits, dim=-1),
-            #     F.softmax(original_output.logits, dim=-1),
-            # )
-            #print(approx_output.logits[0], original_output.logits[0])
+        )
+        # loss_pred = F.mse_loss(
+        #     F.softmax(approx_output.logits, dim=-1),
+        #     F.softmax(original_output.logits, dim=-1),
+        # )
+        #print(approx_output.logits[0], original_output.logits[0])
+        if self.wiki_train:
+            loss_pred *= 0
 
         loss = loss_att * 1 + loss_hid * 1 + loss_emb * 1 + loss_pred
 
