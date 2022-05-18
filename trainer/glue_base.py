@@ -194,7 +194,7 @@ class GlueAttentionApproxTrainer:
         self.model_bert = self.model.bert
         self.model_classifier = self.model.classifier
 
-        self.approx_bert = sparse.ApproxBertModel(self.model.config, factor=factor)
+        self.approx_bert = sparse.ApproxBertModel(self.model.config, factor=factor, wiki_train=wiki_train)
         self.approx_bert.train()
         self.approx_bert.to(self.device)
         if self.world_size > 1:
@@ -468,7 +468,7 @@ class GlueAttentionApproxTrainer:
                 dist.barrier()
 
 def main_ddp(rank, world_size, args):
-    print(f"Running basic DDP example on rank {rank}.")
+    print(f"Running DDP instance on rank {rank}.")
     setup(rank, world_size)
 
     trainer = GlueAttentionApproxTrainer(
