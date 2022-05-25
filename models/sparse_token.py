@@ -1185,11 +1185,14 @@ class ApproxBertModel(nn.Module):
 
         # loss attention
         loss_att = 0
+        seq_len = torch.sum(attention_mask, dim=-1).to(approx_output.attentions[0].dtype)
         for j in range(NLAYER):
-            loss_att += F.mse_loss(
-                approx_output.attentions[j], 
-                original_output.attentions[j]
-            )
+            se = torch.square(approx_output.attentions[j] - original_output.attentions[j])
+            se = se.view(se.shape[0], -1)
+            se = torch.sum(se, dim=-1)
+            se = se / torch.square(seq_len)
+            se = se.mean()
+            loss_att += se
         loss_att /= NLAYER
         
         # loss hidden
@@ -1206,15 +1209,10 @@ class ApproxBertModel(nn.Module):
         loss_emb = F.mse_loss(self.transfer_embedding(approx_emb), original_emb)
         
         # loss prediction
-        #???
-        loss_pred = torch.mean(
-            torch.sum(
-                -(
-                    F.softmax(original_output.logits, dim=-1) * \
-                    torch.log(F.softmax(approx_output.logits, dim=-1))
-                ),
-                dim=-1
-            )
+        #print(approx_output.logits[0])
+        loss_pred = F.cross_entropy(
+            F.softmax(approx_output.logits, dim=-1),
+            F.softmax(original_output.logits, dim=-1)
         )
         # loss_pred = F.mse_loss(
         #     F.softmax(approx_output.logits, dim=-1),
@@ -1224,7 +1222,7 @@ class ApproxBertModel(nn.Module):
         if self.wiki_train:
             loss_pred *= 0
 
-        loss = loss_att * 1 + loss_hid * 1 + loss_emb * 1 + loss_pred
+        loss = loss_att + loss_hid + loss_emb + loss_pred
 
         return ret, (loss, loss_att, loss_hid, loss_emb, loss_pred)
 

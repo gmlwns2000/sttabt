@@ -1,5 +1,4 @@
-from threading import Thread
-import transformers, torch, tqdm, random, gc
+import transformers, torch, tqdm, random, gc, visdom
 import numpy as np
 import transformers.models.bert.modeling_bert as berts
 import models.sparse_token as sparse
@@ -48,7 +47,7 @@ task_to_keys = {
 }
 
 task_to_epochs = {
-    "cola": 30,
+    "cola": 2500,
     "mnli": 4,
     "mrpc": 2500,
     "qnli": 20,
@@ -91,8 +90,10 @@ def get_dataloader(subset, tokenizer, batch_size, split='train'):
         # if label_to_id is not None and "label" in examples:
         #     result["label"] = [(label_to_id[l] if l != -1 else -1) for l in examples["label"]]
         return result
-    
+
     dataset = dataset.map(lambda examples: {'labels': examples['label']}, batched=True, batch_size=1024)
+    dataset = dataset.sort('label')
+    dataset = dataset.shuffle(seed=random.randint(0, 10000))
     dataset = dataset.map(encode, batched=True, batch_size=1024)
     dataset.set_format(type='torch', columns=['input_ids', 'token_type_ids', 'attention_mask', 'labels'])
 
@@ -142,10 +143,11 @@ class MimicDDP(nn.Module):
         return self.module(*args, **kwargs)
 
 class GlueAttentionApproxTrainer:
-    def __init__(self, dataset, factor, batch_size=None, device=0, world_size=1, wiki_train=False, wiki_epochs=5, checkpoint_name=None):
+    def __init__(self, dataset, factor, batch_size=None, device=0, world_size=1, wiki_train=False, wiki_epochs=5, checkpoint_name=None, init_checkpoint=None):
         print('Trainer:', dataset)
         self.seed()
         
+        self.init_checkpoint = init_checkpoint
         self.wiki_train = wiki_train
         self.wiki_epochs = wiki_epochs
         self.checkpoint_name = checkpoint_name
@@ -167,9 +169,9 @@ class GlueAttentionApproxTrainer:
         if self.world_size > 1:
             dist.barrier()
 
-        self.train_dataloader = get_dataloader(
-            self.dataset, self.tokenizer, self.batch_size)
-        split = {
+        self.load_train_dataset()
+
+        self.split = {
             "cola": "validation",
             "mnli": "validation_matched",
             "mrpc": "test",
@@ -182,7 +184,7 @@ class GlueAttentionApproxTrainer:
             "bert": "validation",
         }[self.dataset]
         self.test_dataloader = get_dataloader(
-            self.dataset, self.tokenizer, self.batch_size//self.world_size, split=split)
+            self.dataset, self.tokenizer, self.batch_size//self.world_size, split=self.split)
         self.epochs = task_to_epochs[self.dataset]
         if wiki_train:
             self.wiki_dataset = WikitextBatchLoader(batch_size=self.batch_size)
@@ -210,7 +212,17 @@ class GlueAttentionApproxTrainer:
         self.last_loss = None
 
         print('Trainer: Checkpoint path', self.checkpoint_path())
+
+        self.vis = visdom.Visdom()
+
+        if not (self.init_checkpoint is None):
+            print('Trainer: From pretrained checkpoint', self.init_checkpoint)
+            self.load(self.init_checkpoint)
     
+    def load_train_dataset(self):
+        self.train_dataloader = get_dataloader(
+            self.dataset, self.tokenizer, self.batch_size)
+
     def seed(self, seed=42):
         torch.manual_seed(seed)
         np.random.seed(seed)
@@ -259,8 +271,8 @@ class GlueAttentionApproxTrainer:
             self.epochs = task_to_epochs[self.dataset]
             if self.wiki_train:
                 self.wiki_dataset = WikitextBatchLoader(batch_size=self.batch_size)
-                self.lr = 2e-5
-                self.weight_decay = 5e-4
+                # self.lr = 2e-5
+                # self.weight_decay = 5e-4
                 self.epochs = self.wiki_epochs
 
 # checkpoint functions
@@ -274,12 +286,17 @@ class GlueAttentionApproxTrainer:
             return f'saves/glue-{self.dataset}-{self.factor}-wiki-b{self.wiki_epochs}.pth'
         return f'saves/glue-{self.dataset}-{self.factor}.pth'
     
-    def load(self):
-        state = torch.load(self.checkpoint_path(), map_location='cpu')
+    def load(self, path = None, load_loss = True):
+        if path is None:
+            path = self.checkpoint_path()
+        else:
+            load_loss = False
+        state = torch.load(path, map_location='cpu')
         self.model.load_state_dict(state['bert'])
         self.approx_bert.load_state_dict(state['approx_bert'])
-        if 'last_metric_score' in state: self.last_metric_score = state['last_metric_score']
-        if 'last_loss' in state: self.last_loss = state['last_loss']
+        if load_loss:
+            if 'last_metric_score' in state: self.last_metric_score = state['last_metric_score']
+            if 'last_loss' in state: self.last_loss = state['last_loss']
         del state
 
     def save(self):
@@ -371,6 +388,24 @@ class GlueAttentionApproxTrainer:
         return result
 
 # train functions
+    def prepare_plots(self):
+        win = self.vis.line(
+            X=np.array([]),
+            Y=np.array([]),
+            win="loss",
+            name='loss',
+        )
+    
+    def train_plot(self,
+        loss, loss_att, loss_hid, loss_emb, loss_pred
+    ):
+        self.vis.line(
+            X=np.array([self.steps]),
+            Y=np.array([loss.item()]),
+            win="loss",
+            name='loss',
+            update='append',
+        )    
 
     def train_epoch(self):
         if self.wiki_train:
@@ -378,7 +413,8 @@ class GlueAttentionApproxTrainer:
         else:
             pbar = self.train_dataloader
         
-        if self.device == 0 or self.world_size == 1:
+        print_log = self.device == 0 or self.world_size == 1
+        if print_log:
             pbar = tqdm.tqdm(pbar)
         
         self.model.eval()
@@ -403,16 +439,22 @@ class GlueAttentionApproxTrainer:
                 #print(f'[S:{step}|D:{self.device}|{tt}]')
                 approx_output, losses = self.approx_bert(**batch)
                 loss, loss_att, loss_hid, loss_emb, loss_pred = losses
+                if print_log and (self.steps % 5) == 0:
+                    self.train_plot(loss, loss_att, loss_hid, loss_emb, loss_pred)
 
             self.scaler.scale(loss).backward()
             
+            self.scaler.unscale_(self.optimizer)
+            torch.nn.utils.clip_grad_norm_(self.approx_bert.parameters(), 0.5)
+
             self.scaler.step(self.optimizer)
             self.scaler.update()
             self.optimizer.zero_grad()
 
             self.last_loss = loss.item()
-            if self.device == 0 or self.world_size == 1:
+            if print_log:
                 pbar.set_description(f"[{self.epoch+1}/{self.epochs}] L:{loss:.5f}, Latt:{loss_att:.5f}, Lhid:{loss_hid:.4f}, Lemb:{loss_emb:.4f}, Lpred:{loss_pred:.4f}")
+            self.steps += 1
 
     def train_validate(self):
         # check average loss
@@ -451,11 +493,12 @@ class GlueAttentionApproxTrainer:
 
         # save checkpoint with early stopping
         if self.best_test_loss >= valid_loss:
-            #self.best_test_loss = valid_loss # always save
+            self.best_test_loss = valid_loss # always save
             self.save()
 
     def main(self):
         self.best_test_loss = 987654321
+        self.steps = 0
 
         for epoch in range(self.epochs):
             self.epoch = epoch
@@ -463,6 +506,8 @@ class GlueAttentionApproxTrainer:
             torch.cuda.empty_cache()
             
             self.train_epoch()
+
+            self.load_train_dataset()
 
             if self.device == 0 or self.world_size == 1:
                 self.train_validate()
@@ -482,6 +527,7 @@ def main_ddp(rank, world_size, args):
         wiki_train=args.wiki,
         wiki_epochs=args.wiki_epochs,
         checkpoint_name=args.checkpoint_name,
+        init_checkpoint=args.init_checkpoint
     )
     
     trainer.main()
@@ -497,6 +543,7 @@ def main_eval(args):
         wiki_train=args.wiki,
         wiki_epochs=args.wiki_epochs,
         checkpoint_name=args.checkpoint_name,
+        init_checkpoint=args.init_checkpoint
     )
     trainer.eval_main()
 
@@ -518,6 +565,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--subset', type=str, default='mrpc')
+    parser.add_argument('--init-checkpoint', type=str, default=None)
     parser.add_argument('--batch-size', type=int, default=-1)
     parser.add_argument('--factor', type=int, default=16)
     parser.add_argument('--device', type=int, default=0)
