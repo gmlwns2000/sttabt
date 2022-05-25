@@ -63,7 +63,7 @@ def run_exp():
 
         trainer.set_batch_size(8)
         target_ks = mask_occupy
-        ksx = [target_ks*0.5+((1-x/11.0)**1.5) * target_ks for x in range(12)]
+        ksx = [target_ks*0.5+((1-x/11.0)**1.0) * target_ks for x in range(12)]
         score_forward, _ = get_score(trainer.eval_sparse_model(ks=ksx, use_forward=True, show_message=False))
         print('forward', score_forward, '@', mask_occupy)
 
