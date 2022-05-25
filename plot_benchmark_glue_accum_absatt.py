@@ -41,6 +41,7 @@ def run_exp():
             gc.collect()
             torch.cuda.empty_cache()
             trainer = Glue(subset, factor=2, batch_size=8, wiki_train=False)
+            trainer.load()
             bert_score, _ = get_score(trainer.eval_base_model())
             results[(subset, 'bert')] = { 'score_bert':bert_score }
             print('bert', bert_score)

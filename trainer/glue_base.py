@@ -92,8 +92,9 @@ def get_dataloader(subset, tokenizer, batch_size, split='train'):
         return result
 
     dataset = dataset.map(lambda examples: {'labels': examples['label']}, batched=True, batch_size=1024)
-    dataset = dataset.sort('label')
-    dataset = dataset.shuffle(seed=random.randint(0, 10000))
+    if split == 'train':
+        dataset = dataset.sort('label')
+        dataset = dataset.shuffle(seed=random.randint(0, 10000))
     dataset = dataset.map(encode, batched=True, batch_size=1024)
     dataset.set_format(type='torch', columns=['input_ids', 'token_type_ids', 'attention_mask', 'labels'])
 
@@ -292,11 +293,12 @@ class GlueAttentionApproxTrainer:
         else:
             load_loss = False
         state = torch.load(path, map_location='cpu')
-        self.model.load_state_dict(state['bert'])
+        #self.model.load_state_dict(state['bert'])
         self.approx_bert.load_state_dict(state['approx_bert'])
         if load_loss:
             if 'last_metric_score' in state: self.last_metric_score = state['last_metric_score']
             if 'last_loss' in state: self.last_loss = state['last_loss']
+        print('loaded', state['epochs'], state['last_loss'])
         del state
 
     def save(self):
