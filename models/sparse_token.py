@@ -1050,7 +1050,8 @@ def run_bert_forward_sparsity(
         layer.attention.output.dense.channel_indices = indices_unsqueeze
         layer.intermediate.dense.channel_indices = indices_unsqueeze
         layer.output.dense.channel_indices = indices_unsqueeze
-        #layer.attention.self.query.channel_indices = indices_unsqueeze
+        #layer.attention.self.query.channel_indices = indices_unsqueeze 
+        # this should not be able, because query layer is already used previous attention calculation...
 
     #run sparse
     set_backup_last_inputs(sparse_bert, False)

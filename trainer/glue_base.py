@@ -47,7 +47,7 @@ task_to_keys = {
 }
 
 task_to_epochs = {
-    "cola": 2500,
+    "cola": 100,
     "mnli": 4,
     "mrpc": 2500,
     "qnli": 20,
@@ -405,7 +405,7 @@ class GlueAttentionApproxTrainer:
             win="loss",
             name='loss',
             update='append',
-        )    
+        )
 
     def train_epoch(self):
         if self.wiki_train:
@@ -493,7 +493,8 @@ class GlueAttentionApproxTrainer:
 
         # save checkpoint with early stopping
         if self.best_test_loss >= valid_loss:
-            self.best_test_loss = valid_loss # always save
+            if self.dataset != 'bert':
+                self.best_test_loss = valid_loss # always save
             self.save()
 
     def main(self):

@@ -11,12 +11,12 @@ sparse.set_update_input_mask_accumulate_indices(True)
 Glue = glue_base.GlueAttentionApproxTrainer
 
 RESULT_PKL = 'glue_benchmark_accum_absatt.pkl'
-PLOT_HEADER= '[F4]'
+PLOT_HEADER= '[F2]'
 
 # %%
 subsets = ["cola","mnli","mrpc","qnli","qqp","rte","sst2","stsb","wnli",]
 kss = [0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.625, 0.75]
-subsets = ['mrpc']
+subsets = ['cola']
 #kss = [0.05, 0.1, 0.15, 0.2, 0.3, 0.5]
 #kss = [0.1, 0.5]
 
@@ -40,7 +40,7 @@ def run_exp():
             trainer = None
             gc.collect()
             torch.cuda.empty_cache()
-            trainer = Glue(subset, factor=4, batch_size=8, wiki_train=False)
+            trainer = Glue(subset, factor=2, batch_size=8, wiki_train=False)
             bert_score, _ = get_score(trainer.eval_base_model())
             results[(subset, 'bert')] = { 'score_bert':bert_score }
             print('bert', bert_score)
