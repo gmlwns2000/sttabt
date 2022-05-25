@@ -439,7 +439,7 @@ class GlueAttentionApproxTrainer:
                 #print(f'[S:{step}|D:{self.device}|{tt}]')
                 approx_output, losses = self.approx_bert(**batch)
                 loss, loss_att, loss_hid, loss_emb, loss_pred = losses
-                if print_log and (self.steps % 5) == 0:
+                if print_log and (self.steps % 5) == 0 and (self.dataset != 'bert'):
                     self.train_plot(loss, loss_att, loss_hid, loss_emb, loss_pred)
 
             self.scaler.scale(loss).backward()
