@@ -11,14 +11,15 @@ sparse.set_update_input_mask_accumulate_indices(True)
 Glue = glue_base.GlueAttentionApproxTrainer
 
 RESULT_PKL = 'glue_benchmark_accum_absatt.pkl'
-PLOT_HEADER= '[F2-PREWIKI]'
+PLOT_HEADER= ''
 
 # %%
 subsets = ["cola","mnli","mrpc","qnli","qqp","rte","sst2","stsb","wnli",]
 kss = [0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.625, 0.75]
-subsets = ['mrpc']
+#subsets = ['mrpc']
 #kss = [0.05, 0.1, 0.15, 0.2, 0.3, 0.5]
 #kss = [0.1, 0.5]
+RUN_APPROX = False
 
 # %%
 results = {}
@@ -41,7 +42,7 @@ def run_exp():
             gc.collect()
             torch.cuda.empty_cache()
             trainer = Glue(subset, factor=2, batch_size=8, wiki_train=False)
-            trainer.load()
+            if RUN_APPROX: trainer.load()
             bert_score, _ = get_score(trainer.eval_base_model())
             results[(subset, 'bert')] = { 'score_bert':bert_score }
             print('bert', bert_score)
@@ -54,12 +55,13 @@ def run_exp():
         mask_occupy = sparse.benchmark_get_average('mask_occupy')
         print('sparse absatt', score_sparse, '@', mask_occupy)
 
-        trainer.set_batch_size(1)
-        ksx = [ks for _ in range(12)]
-        sparse.benchmark_reset()
-        score_approx, metric = get_score(trainer.eval_sparse_model(ks=ksx, run_original_attention=False, show_message=False))
-        mask_occupy_approx = sparse.benchmark_get_average('mask_occupy')
-        print('sparse approx', score_approx, '@', mask_occupy_approx)
+        if RUN_APPROX:
+            trainer.set_batch_size(1)
+            ksx = [ks for _ in range(12)]
+            sparse.benchmark_reset()
+            score_approx, metric = get_score(trainer.eval_sparse_model(ks=ksx, run_original_attention=False, show_message=False))
+            mask_occupy_approx = sparse.benchmark_get_average('mask_occupy')
+            print('sparse approx', score_approx, '@', mask_occupy_approx)
 
         trainer.set_batch_size(8)
         target_ks = mask_occupy
@@ -101,15 +103,15 @@ for subset in subsets:
         item = results[(subset, ks)]
         metric = item['metric']
         acc_sparse.append(item['score_sparse'])
-        acc_approx.append(item['score_sparse_approx'])
+        if RUN_APPROX: acc_approx.append(item['score_sparse_approx'])
         acc_forward.append(item['score_forward'])
         occupy.append(item['occupy'])
-        occupy_approx.append(item['occupy_approx'])
+        if RUN_APPROX: occupy_approx.append(item['occupy_approx'])
     acc_bert = results[(subset, 'bert')]['score_bert']
     occupy_bert = [min(occupy+occupy_approx), max(occupy+occupy_approx)]
     acc_bert = [acc_bert, acc_bert]
     plt.plot(occupy, acc_sparse, marker='o', label='sparse (abs.att.)')
-    plt.plot(occupy_approx, acc_approx, marker='o', label='sparse (approx.)')
+    if RUN_APPROX: plt.plot(occupy_approx, acc_approx, marker='o', label='sparse (approx.)')
     plt.plot(occupy, acc_forward, marker='o', label='forward only')
     plt.plot(occupy_bert, acc_bert, linestyle='--', label='bert-base')
     plt.xlabel('occupy')
