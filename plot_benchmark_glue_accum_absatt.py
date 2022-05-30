@@ -71,9 +71,11 @@ def run_exp():
 
         result = {
             'occupy':mask_occupy, 'score_sparse':score_sparse, 
-            'score_sparse_approx':score_approx, 'occupy_approx':mask_occupy_approx,
             'score_forward':score_forward, 'metric':metric
         }
+        if RUN_APPROX:
+            result['score_sparse_approx'] = score_approx
+            result['occupy_approx'] = mask_occupy_approx
         print(f"RESULT {subset}@{ks} ({i+1}/{len(cases)}) |", result)
         results[(subset, ks)] = result
 
