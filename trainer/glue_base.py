@@ -52,23 +52,23 @@ task_to_epochs = {
     "mrpc": 200,
     "qnli": 20,
     "qqp":  4,
-    "rte":  30,
-    "sst2": 10,
-    "stsb": 30,
-    "wnli": 30,
-    "bert": 30,
+    "rte":  300,
+    "sst2": 15,
+    "stsb": 250,
+    "wnli": 200,
+    "bert": 200,
 }
 
 task_to_batch_size = {
-    "cola": 8,
+    "cola": 64,
     "mnli": 8,
-    "mrpc": 8,
-    "qnli": 4,
-    "qqp":  8,
+    "mrpc": 32,
+    "qnli": 8,
+    "qqp":  16,
     "rte":  8,
-    "sst2": 8,
-    "stsb": 8,
-    "wnli": 8,
+    "sst2": 16,
+    "stsb": 16,
+    "wnli": 32,
     "bert": 8,
 }
 
@@ -294,7 +294,11 @@ class GlueAttentionApproxTrainer:
             load_loss = False
         state = torch.load(path, map_location='cpu')
         #self.model.load_state_dict(state['bert'])
-        self.approx_bert.load_state_dict(state['approx_bert'])
+        try:
+            self.approx_bert.load_state_dict(state['approx_bert'], strict=False)
+        except RuntimeError as ex:
+            print("Trainer: Error during state dict load")
+            print(ex)
         if load_loss:
             if 'last_metric_score' in state: self.last_metric_score = state['last_metric_score']
             if 'last_loss' in state: self.last_loss = state['last_loss']
