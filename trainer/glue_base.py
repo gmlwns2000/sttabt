@@ -20,9 +20,9 @@ import torch.multiprocessing as mp
 
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-def setup(rank, world_size):
+def setup(rank, world_size, port=32277):
     os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '32277'
+    os.environ['MASTER_PORT'] = str(port)
 
     # initialize the process group
     dist.init_process_group("nccl", rank=rank, world_size=world_size)
@@ -523,7 +523,7 @@ class GlueAttentionApproxTrainer:
 
 def main_ddp(rank, world_size, args):
     print(f"Running DDP instance on rank {rank}.")
-    setup(rank, world_size)
+    setup(rank, world_size, args.port)
 
     trainer = GlueAttentionApproxTrainer(
         args.subset,
@@ -575,6 +575,7 @@ if __name__ == '__main__':
     parser.add_argument('--init-checkpoint', type=str, default=None)
     parser.add_argument('--batch-size', type=int, default=-1)
     parser.add_argument('--factor', type=int, default=16)
+    parser.add_argument('--port', type=int, default=32277)
     parser.add_argument('--device', type=int, default=0)
     parser.add_argument('--n-gpus', type=int, default=128)
     parser.add_argument('--eval', action='store_true', default=False)
