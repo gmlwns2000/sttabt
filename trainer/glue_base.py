@@ -568,14 +568,14 @@ def main(args):
     )
 
 if __name__ == '__main__':
-    import argparse
+    import argparse, random
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--subset', type=str, default='mrpc')
     parser.add_argument('--init-checkpoint', type=str, default=None)
     parser.add_argument('--batch-size', type=int, default=-1)
     parser.add_argument('--factor', type=int, default=16)
-    parser.add_argument('--port', type=int, default=32277)
+    parser.add_argument('--port', type=int, default=-1)
     parser.add_argument('--device', type=int, default=0)
     parser.add_argument('--n-gpus', type=int, default=128)
     parser.add_argument('--eval', action='store_true', default=False)
@@ -585,6 +585,8 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     args.wiki = not args.not_wiki
+    if args.port < 0:
+        args.port = random.randint(32000, 37000)
     #ngpus = torch.cuda.device_count()
     #args.device = args.device % ngpus
     print(args)
