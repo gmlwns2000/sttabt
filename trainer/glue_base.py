@@ -50,7 +50,7 @@ task_to_epochs = {
     "cola": 100,
     "mnli": 4,
     "mrpc": 200,
-    "qnli": 20,
+    "qnli": 5,
     "qqp":  4,
     "rte":  300,
     "sst2": 15,
