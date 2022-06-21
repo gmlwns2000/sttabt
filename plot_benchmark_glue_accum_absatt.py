@@ -11,13 +11,13 @@ sparse.set_update_input_mask_accumulate_indices(True)
 Glue = glue_base.GlueAttentionApproxTrainer
 
 RESULT_PKL = 'glue_benchmark_accum_absatt.pkl'
-PLOT_HEADER= '[F4-PREWIKI]'
+PLOT_HEADER= '[TEMP]'
 
 # %%
 factor = 4
 subsets = ["cola","mnli","mrpc","qnli","qqp","rte","sst2","stsb","wnli",]
 kss = [0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.625, 0.75]
-subsets = ['mrpc']
+subsets = ['qnli']
 #kss = [0.05, 0.1, 0.15, 0.2, 0.3, 0.5]
 #kss = [0.1, 0.5]
 RUN_APPROX = True
@@ -42,7 +42,7 @@ def run_exp():
             trainer = None
             gc.collect()
             torch.cuda.empty_cache()
-            trainer = Glue(subset, factor=factor, batch_size=8, wiki_train=False)
+            trainer = Glue(subset, factor=factor, batch_size=1, wiki_train=False)
             if RUN_APPROX: trainer.load()
             bert_score, _ = get_score(trainer.eval_base_model())
             results[(subset, 'bert')] = { 'score_bert':bert_score }
@@ -64,7 +64,7 @@ def run_exp():
             mask_occupy_approx = sparse.benchmark_get_average('mask_occupy')
             print('sparse approx', score_approx, '@', mask_occupy_approx)
 
-        trainer.set_batch_size(8)
+        trainer.set_batch_size(1)
         target_ks = mask_occupy
         ksx = [target_ks*0.5+((1-x/11.0)**1.0) * target_ks for x in range(12)]
         score_forward, _ = get_score(trainer.eval_sparse_model(ks=ksx, use_forward=True, show_message=False))
