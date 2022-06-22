@@ -144,10 +144,17 @@ class MimicDDP(nn.Module):
         return self.module(*args, **kwargs)
 
 class GlueAttentionApproxTrainer:
-    def __init__(self, dataset, factor, batch_size=None, device=0, world_size=1, wiki_train=False, wiki_epochs=5, checkpoint_name=None, init_checkpoint=None):
+    def __init__(self, 
+        dataset, factor, 
+        batch_size=None, device=0, world_size=1, 
+        wiki_train=False, wiki_epochs=5, 
+        checkpoint_name=None, init_checkpoint=None,
+        enable_plot=False,
+    ):
         print('Trainer:', dataset)
         self.seed()
         
+        self.enable_plot = enable_plot
         self.init_checkpoint = init_checkpoint
         self.wiki_train = wiki_train
         self.wiki_epochs = wiki_epochs
@@ -395,23 +402,25 @@ class GlueAttentionApproxTrainer:
 
 # train functions
     def prepare_plots(self):
-        win = self.vis.line(
-            X=np.array([]),
-            Y=np.array([]),
-            win="loss",
-            name='loss',
-        )
+        if self.enable_plot:
+            win = self.vis.line(
+                X=np.array([]),
+                Y=np.array([]),
+                win="loss",
+                name='loss',
+            )
     
     def train_plot(self,
         loss, loss_att, loss_hid, loss_emb, loss_pred
     ):
-        self.vis.line(
-            X=np.array([self.steps]),
-            Y=np.array([loss.item()]),
-            win="loss",
-            name='loss',
-            update='append',
-        )
+        if self.enable_plot:
+            self.vis.line(
+                X=np.array([self.steps]),
+                Y=np.array([loss.item()]),
+                win="loss",
+                name='loss',
+                update='append',
+            )
 
     def train_epoch(self):
         if self.wiki_train:
@@ -534,7 +543,8 @@ def main_ddp(rank, world_size, args):
         wiki_train=args.wiki,
         wiki_epochs=args.wiki_epochs,
         checkpoint_name=args.checkpoint_name,
-        init_checkpoint=args.init_checkpoint
+        init_checkpoint=args.init_checkpoint,
+        enable_plot=args.enable_plot,
     )
     
     trainer.main()
@@ -582,6 +592,7 @@ if __name__ == '__main__':
     parser.add_argument('--not-wiki', action='store_true', default=False)
     parser.add_argument('--wiki-epochs', type=int, default=5)
     parser.add_argument('--checkpoint-name', type=str, default=None)
+    parser.add_argument('--enable-plot', action='store_true', default=False)
 
     args = parser.parse_args()
     args.wiki = not args.not_wiki
