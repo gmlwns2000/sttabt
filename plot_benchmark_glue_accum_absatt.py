@@ -11,13 +11,13 @@ sparse.set_update_input_mask_accumulate_indices(True)
 Glue = glue_base.GlueAttentionApproxTrainer
 
 RESULT_PKL = 'glue_benchmark_accum_absatt.pkl'
-PLOT_HEADER= '[TEMP]'
+PLOT_HEADER= '[F4-PREWIKI]'
 
 # %%
 factor = 4
 subsets = ["cola","mnli","mrpc","qnli","qqp","rte","sst2","stsb","wnli",]
 kss = [0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.625, 0.75]
-subsets = ['qnli']
+#subsets = ['mrpc']
 #kss = [0.05, 0.1, 0.15, 0.2, 0.3, 0.5]
 #kss = [0.1, 0.5]
 RUN_APPROX = True
@@ -64,9 +64,10 @@ def run_exp():
             mask_occupy_approx = sparse.benchmark_get_average('mask_occupy')
             print('sparse approx', score_approx, '@', mask_occupy_approx)
 
-        trainer.set_batch_size(1)
+        trainer.set_batch_size(8)
         target_ks = mask_occupy
         ksx = [target_ks*0.5+((1-x/11.0)**1.0) * target_ks for x in range(12)]
+        ksx[-1] = 0.99
         score_forward, _ = get_score(trainer.eval_sparse_model(ks=ksx, use_forward=True, show_message=False))
         print('forward', score_forward, '@', mask_occupy)
 
@@ -123,6 +124,7 @@ for subset in subsets:
     plt.title(f'{subset} ({metric})')
     plt.savefig(f'saves_plot/{PLOT_HEADER}accum_absolute_attention_{subset}.png', dpi=320)
     plt.show(block=False)
+    plt.clf()
 
 # %%
 
