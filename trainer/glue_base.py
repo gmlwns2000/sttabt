@@ -522,7 +522,7 @@ class GlueAttentionApproxTrainer:
                 dist.barrier()
 
 def main_ddp(rank, world_size, args):
-    print(f"Running DDP instance on rank {rank}.")
+    print(f"Running DDP instance on rank {rank}:{args.port}.")
     setup(rank, world_size, args.port)
 
     trainer = GlueAttentionApproxTrainer(
