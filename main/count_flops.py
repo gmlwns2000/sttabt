@@ -17,52 +17,66 @@ SOFTMAX_FLOPS = 5
 TOPK_FLOPS = 10
 UNIQUE_FLOPS = 10
 
-def bert(H, L=12, INTER_FACTOR=4, TOKENS=512, CLS=4, HEAD=4, layer_mask=False):
+def bert(H, L=12, INTER_FACTOR=4, TOKENS=512, OCCUPY=[1.0 for _ in range(13)], CLS=4, HEAD=12, layer_mask=False):
     flop = 0
     #bert.encoder
     #bert.encoder.layer
-    for _ in range(L):
+    for l in range(L):
+        T = TOKENS * OCCUPY[l]
+        T_NEXT = TOKENS * OCCUPY[l+1]
         #layer.attention
         #layer.attention.self
         #layer.attention.self.query
-        flop += TOKENS*H*H*2
+        flop += T_NEXT*H*H*2    #matmul
+        flop += T_NEXT*H        #bias
         #layer.attention.self.key
-        flop += TOKENS*H*H*2
+        flop += T*H*H*2
+        flop += T*H
         #layer.attention.self.value
-        flop += TOKENS*H*H*2
+        flop += T*H*H*2
+        flop += T*H
         #layer.attention.self.forward
-        flop += TOKENS*H*TOKENS*2 #attention matmul
-        flop += TOKENS*TOKENS #attention mask
-        flop += TOKENS*TOKENS*SOFTMAX_FLOPS #softmax
-        flop += TOKENS*TOKENS*H*2 #context matmul
+        flop += T_NEXT*H*T*2                #attention matmul
+        flop += T_NEXT*T                    #attention mask
+        flop += T_NEXT*T*SOFTMAX_FLOPS      #softmax
+        flop += T_NEXT*T*H*2                #context matmul
         #layer.attention.output
-        flop += TOKENS*H*H*2
-        flop += TOKENS*H*LAYER_NORM_FLOPS
+        flop += T_NEXT*H*H*2
+        flop += T_NEXT*H
+        flop += T_NEXT*H*LAYER_NORM_FLOPS
         #layer.intermediate
-        flop += TOKENS*H*H*INTER_FACTOR*2
-        flop += TOKENS*H*ACTIVATION_FLOPS
+        flop += T_NEXT*H*H*INTER_FACTOR*2   #weight
+        flop += T_NEXT*H*INTER_FACTOR       #bias
+        flop += T_NEXT*H*ACTIVATION_FLOPS   #act
         #layer.output
-        flop += TOKENS*H*INTER_FACTOR*H*2
-        flop += TOKENS*H*LAYER_NORM_FLOPS
-        #update layer mask
+        flop += T_NEXT*H*INTER_FACTOR*H*2
+        flop += T_NEXT*H
+        flop += T_NEXT*H*LAYER_NORM_FLOPS
+        #update_layer_mask
         if layer_mask:
-            flop += TOKENS*TOKENS*(HEAD+1) #mean
-            flop += TOKENS*TOKENS*3
-            flop += TOKENS*TOKENS + TOKENS
-            flop += TOKENS*TOKENS
-            flop += TOKENS*(TOKENS*math.log(TOKENS)*TOPK_FLOPS)
-            flop += TOKENS*(TOKENS*math.log(TOKENS)*UNIQUE_FLOPS)
+            flop += T*TOKENS*(HEAD+1) #mean
+            flop += T*TOKENS*3
+            flop += T*TOKENS + TOKENS
+            flop += T*TOKENS
+            flop += T*(TOKENS*math.log(TOKENS)*TOPK_FLOPS)
+            flop += T*(TOKENS*math.log(TOKENS)*UNIQUE_FLOPS)
     #bert.pooler
     flop += H*CLS*2
+    flop += CLS
     return flop
 
-H = 768
-T = 512
+def sparse_bert(H, FACTOR, OCCUPY, TOKENS=512, LAYERS=12):
+    assert len(OCCUPY) == LAYERS+1
+    return bert(H//FACTOR, TOKENS=TOKENS, L=LAYERS) + bert(H, TOKENS=TOKENS, OCCUPY=OCCUPY, layer_mask=True, L=LAYERS)
 
-base = bert(H, TOKENS=T)
-print('approx_net, factor=8', bert(H//8, TOKENS=T) / base, 1/64)
-print('approx_net, factor=4', bert(H//4, TOKENS=T) / base, 1/16)
-print(
-    'sparse_net, factor=4, occupy=0.25', 
-    (bert(H//4, TOKENS=T) + bert(768, TOKENS=T*0.25, layer_mask=True)) / base
-)
+if __name__ == '__main__':
+    H = 768
+    T = 512
+
+    base = bert(H, TOKENS=T)
+    print('approx_net, factor=8', bert(H//8, TOKENS=T) / base, 1/64)
+    print('approx_net, factor=4', bert(H//4, TOKENS=T) / base, 1/16)
+    occupy = [0.25 for _ in range(13)]
+    occupy[0] = 1.0
+    occupy[-1] = 1/T
+    print('sparse_net, factor=4, occupy=0.25', sparse_bert(H, 8, occupy, TOKENS=T) / base)
