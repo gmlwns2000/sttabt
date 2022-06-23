@@ -168,6 +168,7 @@ class GlueAttentionApproxTrainer:
         self.batch_size = batch_size
         self.device = device
         self.world_size = world_size
+        self.epoch = 0
 
         _, self.tokenizer = get_base_model(self.dataset, only_tokenizer=True)
 
@@ -316,6 +317,7 @@ class GlueAttentionApproxTrainer:
         torch.save({
             'bert':self.model.state_dict(),
             'approx_bert': self.approx_bert.state_dict(),
+            'trained_epoch': self.epoch,
             'epochs':self.epochs,
             'last_metric_score':self.last_metric_score,
             'last_loss':self.last_loss,
