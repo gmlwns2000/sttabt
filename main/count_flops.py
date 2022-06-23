@@ -67,6 +67,7 @@ def bert(H, L=12, INTER_FACTOR=4, TOKENS=512, OCCUPY=[1.0 for _ in range(13)], C
 
 def sparse_bert(H, FACTOR, OCCUPY, TOKENS=512, LAYERS=12):
     assert len(OCCUPY) == LAYERS+1
+    #print(bert(H//FACTOR, TOKENS=TOKENS, L=LAYERS), bert(H, TOKENS=TOKENS, OCCUPY=OCCUPY, layer_mask=True, L=LAYERS))
     return bert(H//FACTOR, TOKENS=TOKENS, L=LAYERS) + bert(H, TOKENS=TOKENS, OCCUPY=OCCUPY, layer_mask=True, L=LAYERS)
 
 if __name__ == '__main__':
@@ -74,9 +75,30 @@ if __name__ == '__main__':
     T = 512
 
     base = bert(H, TOKENS=T)
+    print('base flops', base)
     print('approx_net, factor=8', bert(H//8, TOKENS=T) / base, 1/64)
     print('approx_net, factor=4', bert(H//4, TOKENS=T) / base, 1/16)
-    occupy = [0.25 for _ in range(13)]
-    occupy[0] = 1.0
-    occupy[-1] = 1/T
-    print('sparse_net, factor=4, occupy=0.25', sparse_bert(H, 8, occupy, TOKENS=T) / base)
+    def sparse_occupy(occ, fac):
+        occupy = [occ for _ in range(13)]
+        occupy[0] = 1.0
+        occupy[-1] = 1/T
+        return sparse_bert(H, fac, occupy, TOKENS=T)
+    print('sparse_net, factor=4, occupy=0.25', sparse_occupy(0.25, 4) / base)
+    #print(sparse_occupy(1, 8) / base)
+
+    oxs = [i / 10 for i in range(11)]
+    fxs4 = [sparse_occupy(oxs[i], 4) / base for i in range(11)]
+    #print('f')
+    # occupy가 커지면 어느 순간 original보다 flops가 낮아진다. 그 이유는 무조건 마지막 레이어는 항상 1개의 토큰만 살아있기 때문.
+    fxs8 = [sparse_occupy(oxs[i], 8) / base for i in range(11)]
+
+    from matplotlib import pyplot as plt
+    plt.clf()
+    plt.plot(oxs, fxs4, label='factor:4')
+    plt.plot(oxs, fxs8, label='factor:8')
+    plt.plot(oxs, oxs, label='baseline')
+    plt.legend()
+    plt.xlabel('occupy')
+    plt.ylabel('relative flops')
+    plt.savefig("saves_plot/count_flops.png")
+    plt.show(block=False)
