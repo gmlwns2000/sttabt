@@ -36,8 +36,11 @@ for ld in lambdas:
 
     print(f'({ld}) evaluate sparse net. score: {metric}, occupy: {occupy}')
 
+plt.style.use("seaborn")
 plt.clf()
-plt.plot(occupies, metrics, label='LTP')
+points = [(occupies[i], metrics[i]) for i in range(len(occupies))]
+points = sorted(points, key = lambda x: x[0])
+plt.plot([p[0] for p in points], [p[1] for p in points], label='LTP')
 plt.xlabel('occupy')
 plt.ylabel(metric_name)
 plt.legend()
