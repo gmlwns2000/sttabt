@@ -10,6 +10,7 @@ plot_name = f'saves_plot/ltp-glue-{subset}'
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--subset', type=str, default=subset)
+parser.add_argument('--batch-size', type=int, default=-1)
 args = parser.parse_args()
 subset = args.subset
 
@@ -23,7 +24,7 @@ occupies = []
 metrics = []
 metric_name = None
 for ld in lambdas:
-    trainer = ltp.LtpTrainer(subset)
+    trainer = ltp.LtpTrainer(subset, batch_size=args.batch_size)
     trainer.sparse_bert.module.ltp_lambda = ld
     trainer.main()
 
