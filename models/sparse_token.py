@@ -558,7 +558,7 @@ class LTPPruneToken(nn.Module):
         if self.soft_pruning:
             #score (N, T)
             score = torch.mean(torch.mean(attention_score, dim=1), dim=1)
-            self.last_mask = F.sigmoid((score - self.threshold) / self.temperature)
+            self.last_mask = torch.sigmoid((score - self.threshold) / self.temperature)
         else:
             score = torch.mean(torch.mean(attention_score, dim=1), dim=1)
             self.last_mask = (score > self.threshold) * 1.0
@@ -961,8 +961,8 @@ class SparseBertModel(BertPreTrainedModel):
     def loss_ltp_regularization(self):
         loss = 0
         for layer in self.encoder.layer:
-            loss += torch.sum(torch.abs(layer.ltp_prune_token_module.last_mask))
-        return loss / len(self.encoder.layer)
+            loss += torch.mean(layer.ltp_prune_token_module.last_mask)
+        return loss
 
 class SparseBertForSequenceClassification(BertPreTrainedModel):
     def __init__(self, config):

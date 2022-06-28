@@ -5,14 +5,14 @@ import trainer.ltp_trainer as ltp
 
 # options
 subset = 'mrpc'
-lambdas = [0.01, 0.02, 0.035, 0.05, 0.1]
-plot_name = f'saves_plot/ltp-glue-{subset}'
+lambdas = [0.01, 0.2, 0.6, 1.8, 5.4]
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--subset', type=str, default=subset)
 parser.add_argument('--batch-size', type=int, default=-1)
 args = parser.parse_args()
 subset = args.subset
+plot_name = f'saves_plot/ltp-glue-{subset}'
 
 def get_score(score):
     if 'accuracy' in score:
@@ -44,5 +44,6 @@ points = sorted(points, key = lambda x: x[0])
 plt.plot([p[0] for p in points], [p[1] for p in points], label='LTP')
 plt.xlabel('occupy')
 plt.ylabel(metric_name)
+plt.title(subset)
 plt.legend()
 plt.savefig(plot_name+'.png', dpi=300)
