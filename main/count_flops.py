@@ -14,8 +14,8 @@ ACTIVATION_FLOPS = 8
 # max/substract (for stability), exp, sum, divide
 SOFTMAX_FLOPS = 5
 
-TOPK_FLOPS = 10
-UNIQUE_FLOPS = 10
+TOPK_FLOPS = 100
+UNIQUE_FLOPS = 100
 
 def bert(H, L=12, INTER_FACTOR=4, TOKENS=512, OCCUPY=[1.0 for _ in range(13)], CLS=4, HEAD=12, layer_mask=False):
     flop = 0
