@@ -48,7 +48,7 @@ task_to_keys = {
 task_to_epochs = {
     "cola": 10,
     "mnli": 2,
-    "mrpc": 10,
+    "mrpc": 2,
     "qnli": 2,
     "qqp":  2,
     "rte":  10,
@@ -155,7 +155,7 @@ class LtpTrainer:
         self.enable_plot = enable_plot
         self.init_checkpoint = init_checkpoint
         self.checkpoint_name = checkpoint_name
-        self.lr = 2e-5
+        self.lr = 5e-6
         self.weight_decay = 0
         self.dataset = dataset
         if batch_size is None or batch_size <= 0:
@@ -347,10 +347,7 @@ class LtpTrainer:
         torch.cuda.empty_cache()
         return score
 
-    def eval_sparse_model(self, 
-        ks=0.5, 
-        use_forward=False,
-        run_original_attention = False,
+    def eval_sparse_model(self,
         show_message=True,
         max_step=987654321
     ):
@@ -362,9 +359,9 @@ class LtpTrainer:
         self.load()
         
         bert_result = self.eval_base_model(model = self.model)
-        sparse_result = self.eval_sparse_model(ks = ks)
-        est_k = sparse.benchmark_get_average('est_k')
-        print('est_k', est_k)
+        sparse_result = self.eval_sparse_model()
+        est_k = sparse.benchmark_get_average('ltp_occupy')
+        print('ltp_occupy', est_k)
 
         print(bert_result, sparse_result)
 
@@ -462,8 +459,8 @@ class LtpTrainer:
 
             self.load_train_dataset()
 
-            if self.device == 0 or self.world_size == 1:
-                self.train_validate()
+            # if self.device == 0 or self.world_size == 1:
+            #     self.train_validate()
             if self.world_size > 1:
                 dist.barrier()
 

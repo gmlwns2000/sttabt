@@ -835,6 +835,11 @@ class SparseBertModel(BertPreTrainedModel):
     def set_ltp_prune_token_soft_pruning(self, v):
         for layer in self.encoder.layer:
             layer.ltp_prune_token_module.soft_pruning = v
+    
+    def set_ltp_temperature(self, v):
+        for layer in self.encoder.layer:
+            layer = layer # type: BertLayer
+            layer.ltp_prune_token_module.temperature = v
 
     def _prune_heads(self, heads_to_prune):
         """
@@ -843,7 +848,7 @@ class SparseBertModel(BertPreTrainedModel):
         """
         for layer, heads in heads_to_prune.items():
             self.encoder.layer[layer].attention.prune_heads(heads)
-            
+        
     def forward(
         self,
         input_ids=None,
