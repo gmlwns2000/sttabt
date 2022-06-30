@@ -48,7 +48,7 @@ task_to_keys = {
 task_to_epochs = {
     "cola": 10,
     "mnli": 2,
-    "mrpc": 2,
+    "mrpc": 10,
     "qnli": 2,
     "qqp":  2,
     "rte":  10,
@@ -152,10 +152,11 @@ class LtpTrainer:
         print('Trainer:', dataset)
         self.seed()
         
+        self.enable_checkpointing = True
         self.enable_plot = enable_plot
         self.init_checkpoint = init_checkpoint
         self.checkpoint_name = checkpoint_name
-        self.lr = 5e-6
+        self.lr = 2e-5
         self.weight_decay = 0
         self.dataset = dataset
         if batch_size is None or batch_size <= 0:
@@ -197,15 +198,8 @@ class LtpTrainer:
         self.model_bert = self.model.bert
         self.model_classifier = self.model.classifier
         
-        self.sparse_bert = sparse.SparseBertForSequenceClassification(self.model.config)
-        self.sparse_bert.load_state_dict(self.model.state_dict(), strict=False)
-        self.sparse_bert.to(self.device).train()
-        self.sparse_bert.bert.set_ltp_prune_token(True)
-        self.sparse_bert.bert.set_ltp_prune_token_soft_pruning(True)
-        if self.world_size > 1:
-            self.sparse_bert = DDP(self.sparse_bert, device_ids=[device], find_unused_parameters=False)
-        else:
-            self.sparse_bert = MimicDDP(self.sparse_bert)
+        self.init_sparse_bert()
+        
         self.optimizer = self.get_optimizer(self.sparse_bert)
         self.scaler = torch.cuda.amp.GradScaler()
 
@@ -218,6 +212,29 @@ class LtpTrainer:
             print('Trainer: From pretrained checkpoint', self.init_checkpoint)
             self.load(self.init_checkpoint)
     
+    def init_sparse_bert(self):
+        self.sparse_bert_inner = sparse.SparseBertForSequenceClassification(self.model.config)
+        self.sparse_bert_inner.load_state_dict(self.model.state_dict(), strict=False)
+        self.sparse_bert_inner.to(self.device).train()
+        self.sparse_bert_inner.bert.set_ltp_prune_token(True)
+        self.sparse_bert_inner.bert.set_ltp_prune_token_soft_pruning(True)
+        if self.world_size > 1:
+            self.sparse_bert = DDP(self.sparse_bert_inner, device_ids=[self.device], find_unused_parameters=False)
+        else:
+            self.sparse_bert = MimicDDP(self.sparse_bert_inner)
+    
+    def reset_train(self):
+        self.seed()
+
+        self.epoch = 0
+        self.last_metric_score = None
+        self.last_loss = None
+        
+        self.init_sparse_bert()
+
+        self.optimizer = self.get_optimizer(self.sparse_bert)
+        self.scaler = torch.cuda.amp.GradScaler()
+
     def load_train_dataset(self):
         self.train_dataloader = get_dataloader(
             self.dataset, self.tokenizer, self.batch_size)
@@ -444,7 +461,7 @@ class LtpTrainer:
         if self.best_test_loss >= valid_loss:
             if self.dataset != 'bert':
                 self.best_test_loss = valid_loss # always save
-            self.save()
+            if self.enable_checkpointing: self.save()
 
     def main(self):
         self.best_test_loss = 987654321
