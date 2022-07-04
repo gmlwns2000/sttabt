@@ -123,7 +123,7 @@ def update_input_mask_from_previous_attention(
     output_token_impact, 
     head_reduce_method = 'avg',
     token_reduce_method = 'avg',
-    apply_token_impact = True,         #apply token impact is not good?!
+    apply_token_impact = True,
     k=0.5,
     k_estimate = False,
     accumulate_indices = None,
@@ -225,6 +225,9 @@ class SparseChannelLinear(nn.Module):
         self.channel_indices= None #(N, K), K<=C
         self.force_dense = False
 
+        self.concrete_mask = None   #for concrete dropout
+        self.retain_prob = 1.0
+
     def reset_parameters(self) -> None:
         nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
         if self.bias is not None:
@@ -237,7 +240,6 @@ class SparseChannelLinear(nn.Module):
             timer_start('sparselinear.dense.linear')
             x = F.linear(input, self.weight, self.bias)
             timer_end('sparselinear.dense.linear')
-            return x
         else:
             timer_start('sparselinear')
             input_shape = input.shape
@@ -265,8 +267,13 @@ class SparseChannelLinear(nn.Module):
             x = x_zeros.scatter_(dim=1, index=channel_indices_unsqueeze.expand(-1,-1,self.out_features), src=x) 
             timer_end('sparselinear.scatter_')
             timer_end('sparselinear')
-            return x
             #return F.linear(input, self.weight, self.bias)
+        
+        if not self.concrete_mask is None:
+            x = x * self.concrete_mask
+            x = x / (self.retain_prob + 1e-7)
+        
+        return x
 
     def extra_repr(self) -> str:
         return 'in_features={}, out_features={}, bias={}'.format(
@@ -582,8 +589,18 @@ class BertLayer(nn.Module):
         self.intermediate = BertIntermediate(config)
         self.output = BertOutput(config)
 
+        #ltp
         self.ltp_prune_token = False
         self.ltp_prune_token_module = LTPPruneToken()
+
+        #concrete dropout
+        self.concrete_weight_regularizer = 1e-6
+        self.concrete_dropout_regularizer = 1e-5
+        self.concrete_init_min = 0.1
+        self.concrete_init_max = 0.1
+        self.p_logit = nn.Parameter(torch.empty(1).uniform_(self.concrete_init_min, self.concrete_init_max))
+        self.temperature = 0.1
+        self.input_dimensionality = 0
 
     def forward(
         self,
@@ -595,6 +612,8 @@ class BertLayer(nn.Module):
         past_key_value=None,
         output_attentions=False,
     ):
+        self.input_dimensionality = hidden_states[0].numel() # Number of elements of first item in batch
+
         # decoder uni-directional self-attention cached key/values tuple is at positions 1,2
         self_attn_past_key_value = past_key_value[:2] if past_key_value is not None else None
         self_attention_outputs = self.attention(
@@ -631,6 +650,24 @@ class BertLayer(nn.Module):
         intermediate_output = self.intermediate(attention_output)
         layer_output = self.output(intermediate_output, attention_output)
         return layer_output
+    
+    def loss_concrete(self):
+        if not self.output.dense.concrete_mask is None:
+            p = torch.sigmoid(self.p_logit)
+
+            sum_of_square = 0
+            for param in self.parameters():
+                sum_of_square += torch.sum(torch.pow(param, 2))
+            
+            weights_regularizer = self.concrete_weight_regularizer * sum_of_square / (1 - p)
+            
+            dropout_regularizer = p * torch.log(p) + (1. - p) * torch.log(1. - p)
+            dropout_regularizer *= self.concrete_dropout_regularizer * self.input_dimensionality
+            
+            loss = weights_regularizer + dropout_regularizer
+            return loss
+        else:
+            return 0
 
 class BertEncoder(nn.Module):
     def __init__(self, config):
@@ -999,12 +1036,6 @@ class SparseBertForSequenceClassification(BertPreTrainedModel):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple[torch.Tensor], SequenceClassifierOutput]:
-        r"""
-        labels (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
-            Labels for computing the sequence classification/regression loss. Indices should be in `[0, ...,
-            config.num_labels - 1]`. If `config.num_labels == 1` a regression loss is computed (Mean-Square loss), If
-            `config.num_labels > 1` a classification loss is computed (Cross-Entropy).
-        """
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         outputs = self.bert(
@@ -1252,6 +1283,7 @@ def reset_input_mask(sparse_bert):
         layer.attention.output.dense.channel_indices = None
         layer.intermediate.dense.channel_indices = None
         layer.output.dense.channel_indices = None
+        layer.output.dense.concrete_mask = None
         layer.attention.self.reset_input_mask()
 
 def run_bert_with_approx(
@@ -1297,6 +1329,64 @@ def run_bert_with_approx(
     return ret_sparse
     #return ret_approx
 
+def run_bert_with_concrete(
+    sparse_bert,
+    approx_bert, 
+    input_dict, 
+):
+    with torch.no_grad():
+        attention_input_dict = copy.deepcopy(input_dict)
+        attention_input_dict['output_attentions'] = True
+        ret_approx = approx_bert(**attention_input_dict)
+        attentions = ret_approx.attentions
+    
+    reset_input_mask(sparse_bert)
+    attention_mask = input_dict['attention_mask']
+    attention_mask = ((1.0 - attention_mask) * (-10000)).view(attention_mask.shape[0], 1, 1, attention_mask.shape[-1])
+    for i, layer in enumerate(sparse_bert.encoder.layer):
+        layer.attention.self.last_attention_probs = attentions[i]
+        layer.attention.self.last_approx_attention_probs = attentions[i]
+        layer.attention.self.last_attention_mask = attention_mask
+        
+    #update mask
+    TLEN = attentions[0].shape[-1]
+    N = attentions[0].shape[0]
+    device = attentions[0].device
+    last_score = torch.zeros((1, TLEN), dtype=torch.float32, device=device)
+    last_mask = torch.zeros((1, TLEN), dtype=torch.float32, device=device)
+    last_score[0, 0] = 1.0
+    last_mask[0, 0] = 1.0
+    last_mask = last_mask.expand((N, -1))
+    for j in range(len(sparse_bert.encoder.layer) - 1):
+        #layer indexing
+        i = len(sparse_bert.encoder.layer) - j - 1
+        prev_layer = sparse_bert.encoder.layer[i-1] # type: BertLayer
+        layer = sparse_bert.encoder.layer[i] # type: BertLayer
+
+        # score calculation from STTBT
+        att = layer.attention.self.last_attention_probs
+        att = torch.mean(att, dim=1)
+        att = last_score.view(-1, TLEN, 1) * att * 0.1 + att * 0.9
+        score = torch.mean(att, dim=1) # shape(N, TLEN)
+        last_score = score
+
+        # accumulate dropout mask from Concrete Dropout.
+        # use score as randomness source.
+        p = torch.sigmoid(prev_layer.p_logit).view(1, 1)
+        eps = 1e-7
+        temperature = prev_layer.temperature
+        mask = torch.sigmoid((torch.log(p + eps) - torch.log(1-p + eps) + torch.log(score + eps) - torch.log(1-score + eps)) / temperature)
+        #print(mask)
+        last_mask = torch.max(torch.stack([mask, last_mask], dim=0), dim=0)[0]  # this should be input mask of current layer, so set dropout mask to previous output layer.
+        
+        prev_layer.output.dense.concrete_mask = last_mask.view(-1, TLEN, 1)
+        benchmark_cum('concrete_occupy', last_mask.mean().item())
+        prev_layer.output.dense.retain_prob = 1 - p
+    
+    ret_sparse = sparse_bert(**input_dict)
+    return ret_sparse
+
+
 def zero_input_mask(sparse_bert, input_dict):
     tokens = input_dict['input_ids'] #N, T
     device = tokens.device
@@ -1310,6 +1400,7 @@ def zero_input_mask(sparse_bert, input_dict):
         layer.attention.output.dense.channel_indices = indices.clone()
         layer.intermediate.dense.channel_indices = indices.clone()
         layer.output.dense.channel_indices = indices.clone()
+        layer.output.dense.concrete_mask = None
         self = layer.attention.self
         self.input_mask = None
         self.input_indices = indices.clone()
@@ -1437,15 +1528,18 @@ class ApproxSparseBertModelWrapper(nn.Module):
         return output
 
 class ApproxSparseBertModel(nn.Module):
-    def __init__(self, bert, approx_bert=None, add_pooling_layer=True, ks=0.5):
+    def __init__(self, bert=None, approx_bert=None, sparse_bert=None, add_pooling_layer=True, ks=0.5):
         super().__init__()
 
-        self.sparse_bert = SparseBertModel(bert.config, add_pooling_layer=add_pooling_layer)
-        set_print(self.sparse_bert, False)
-        set_backup_last_inputs(self.sparse_bert, False)
-        set_output_masking(self.sparse_bert, False)
-        set_masking_timing(self.sparse_bert, 'before_softmax')
-        self.sparse_bert.load_state_dict(bert.state_dict())
+        if sparse_bert is None:
+            self.sparse_bert = SparseBertModel(bert.config, add_pooling_layer=add_pooling_layer)
+            set_print(self.sparse_bert, False)
+            set_backup_last_inputs(self.sparse_bert, False)
+            set_output_masking(self.sparse_bert, False)
+            set_masking_timing(self.sparse_bert, 'before_softmax')
+            self.sparse_bert.load_state_dict(bert.state_dict(), strict=False)
+        else:
+            self.sparse_bert = sparse_bert
 
         if approx_bert is None:
             self.approx_bert = ApproxBertModel(bert.config)
@@ -1459,18 +1553,26 @@ class ApproxSparseBertModel(nn.Module):
 
         self.use_forward_sparse = False
         self.run_original_attention = False
+        self.use_concrete_masking = False
     
     def forward(self, *args, **kwargs):
         if args is not None and len(args)==1:
             kwargs['input_ids'] = args[0]
         if not self.use_forward_sparse:
-            output = run_bert_with_approx(
-                sparse_bert = self.sparse_bert,
-                approx_bert = self.approx_bert,
-                input_dict  = kwargs,
-                ks          = self.ks,
-                run_original_attention= self.run_original_attention,
-            )
+            if not self.use_concrete_masking:
+                output = run_bert_with_approx(
+                    sparse_bert = self.sparse_bert,
+                    approx_bert = self.approx_bert,
+                    input_dict  = kwargs,
+                    ks          = self.ks,
+                    run_original_attention = self.run_original_attention,
+                )
+            else:
+                output = run_bert_with_concrete(
+                    sparse_bert = self.sparse_bert,
+                    approx_bert = self.approx_bert,
+                    input_dict  = kwargs
+                )
         else:
             output = run_bert_forward_sparsity(
                 sparse_bert = self.sparse_bert,
@@ -1478,5 +1580,106 @@ class ApproxSparseBertModel(nn.Module):
                 ks          = self.ks,
             )
         return output
+
+class ApproxSparseBertForSequenceClassification(BertPreTrainedModel):
+    def __init__(self, config, approx_bert):
+        super().__init__(config)
+        self.num_labels = config.num_labels
+        self.config = config
+
+        self.bert = SparseBertModel(config)
+        classifier_dropout = (
+            config.classifier_dropout if config.classifier_dropout is not None else config.hidden_dropout_prob
+        )
+        self.approx_bert = approx_bert
+        self.dropout = nn.Dropout(classifier_dropout)
+        self.classifier = nn.Linear(config.hidden_size, config.num_labels)
+
+        self.ltp_lambda = 0.01
+
+        self.ks = 0.5
+        self.use_forward_sparse = False
+        self.run_original_attention = False
+        self.use_concrete_masking = False
+
+        # Initialize weights and apply final processing
+        self.post_init()
+    
+    def forward(
+        self,
+        input_ids: Optional[torch.Tensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        token_type_ids: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.Tensor] = None,
+        head_mask: Optional[torch.Tensor] = None,
+        inputs_embeds: Optional[torch.Tensor] = None,
+        labels: Optional[torch.Tensor] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ) -> Union[Tuple[torch.Tensor], SequenceClassifierOutput]:
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        
+        wrapper = ApproxSparseBertModel(approx_bert=self.approx_bert, sparse_bert=self.bert, ks=self.ks)
+        wrapper.use_forward_sparse = self.use_forward_sparse
+        wrapper.use_concrete_masking = self.use_concrete_masking
+        wrapper.run_original_attention = self.run_original_attention
+        outputs = wrapper(
+            input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            head_mask=head_mask,
+            inputs_embeds=inputs_embeds,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+
+        pooled_output = outputs[1]
+
+        pooled_output = self.dropout(pooled_output)
+        logits = self.classifier(pooled_output)
+
+        loss = None
+        if labels is not None:
+            if self.config.problem_type is None:
+                if self.num_labels == 1:
+                    self.config.problem_type = "regression"
+                elif self.num_labels > 1 and (labels.dtype == torch.long or labels.dtype == torch.int):
+                    self.config.problem_type = "single_label_classification"
+                else:
+                    self.config.problem_type = "multi_label_classification"
+
+            if self.config.problem_type == "regression":
+                loss_fct = MSELoss()
+                if self.num_labels == 1:
+                    loss = loss_fct(logits.squeeze(), labels.squeeze())
+                else:
+                    loss = loss_fct(logits, labels)
+            elif self.config.problem_type == "single_label_classification":
+                loss_fct = CrossEntropyLoss()
+                loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+            elif self.config.problem_type == "multi_label_classification":
+                loss_fct = BCEWithLogitsLoss()
+                loss = loss_fct(logits, labels)
+        if not return_dict:
+            output = (logits,) + outputs[2:]
+            return ((loss,) + output) if loss is not None else output
+
+        first_layer = self.bert.encoder.layer[0] # type: BertLayer
+        if first_layer.ltp_prune_token and (loss is not None):
+            loss += self.bert.loss_ltp_regularization() * self.ltp_lambda
+        if first_layer.output.dense.concrete_mask is not None and (loss is not None):
+            for layer in self.bert.encoder.layer:
+                loss_reg = layer.loss_concrete()
+                loss = loss + loss_reg
+
+        return SequenceClassifierOutput(
+            loss=loss,
+            logits=logits,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions,
+        )
 
 #endregion

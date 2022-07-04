@@ -222,7 +222,8 @@ class GlueAttentionApproxTrainer:
 
         print('Trainer: Checkpoint path', self.checkpoint_path())
 
-        self.vis = visdom.Visdom()
+        if self.enable_plot:
+            self.vis = visdom.Visdom()
 
         if not (self.init_checkpoint is None):
             print('Trainer: From pretrained checkpoint', self.init_checkpoint)
