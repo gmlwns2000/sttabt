@@ -91,7 +91,7 @@ def get_dataloader(subset, tokenizer, batch_size, split='train'):
         return result
 
     dataset = dataset.map(lambda examples: {'labels': examples['label']}, batched=True, batch_size=1024)
-    if split == 'train':
+    if split.startswith('train[:'):
         dataset = dataset.sort('label')
         dataset = dataset.shuffle(seed=random.randint(0, 10000))
     dataset = dataset.map(encode, batched=True, batch_size=1024)
@@ -174,22 +174,10 @@ class LtpTrainer:
         if self.world_size > 1:
             dist.barrier()
 
-        self.load_train_dataset()
+        _batch_size = self.batch_size
+        self.batch_size = None
+        self.set_batch_size(_batch_size)
 
-        self.split = {
-            "cola": "validation",
-            "mnli": "validation_matched",
-            "mrpc": "test",
-            "qnli": "validation",
-            "qqp": "validation",
-            "rte": "validation",
-            "sst2": "validation",
-            "stsb": "validation",
-            "wnli": "validation",
-            "bert": "validation",
-        }[self.dataset]
-        self.test_dataloader = get_dataloader(
-            self.dataset, self.tokenizer, self.batch_size//self.world_size, split=self.split)
         self.epochs = task_to_epochs[self.dataset]
         
         self.model, self.tokenizer = get_base_model(self.dataset)
@@ -237,7 +225,7 @@ class LtpTrainer:
 
     def load_train_dataset(self):
         self.train_dataloader = get_dataloader(
-            self.dataset, self.tokenizer, self.batch_size)
+            self.dataset, self.tokenizer, self.batch_size, split='train[:90%]')
 
     def seed(self, seed=42):
         torch.manual_seed(seed)
@@ -267,9 +255,12 @@ class LtpTrainer:
         if new_value != self.batch_size:
             print("GlueAttentionApproxTrainer: update batch size", new_value)
             self.batch_size = new_value
+            
+            self.load_train_dataset()
 
-            self.train_dataloader = get_dataloader(
-                self.dataset, self.tokenizer, self.batch_size)
+            self.valid_dataloader = get_dataloader(
+                self.dataset, self.tokenizer, self.batch_size, split='train[-10%:]')
+
             split = {
                 "cola": "validation",
                 "mnli": "validation_matched",
@@ -324,7 +315,7 @@ class LtpTrainer:
 
 # eval functions
 
-    def eval_base_model(self, model = None, amp = False, show_messages=True, max_step=987654321):
+    def eval_base_model(self, model = None, amp = False, show_messages=True, max_step=987654321, split='test'):
         self.seed()
         if model is None:
             model = self.model
@@ -337,7 +328,14 @@ class LtpTrainer:
         avg_length = 0
         step_count = 0
         
-        for i, batch in enumerate(tqdm.tqdm(self.test_dataloader, desc='eval')):
+        if split == 'test':
+            dataloader = self.test_dataloader
+        elif split == 'valid':
+            dataloader = self.valid_dataloader
+        else:
+            raise Exception()
+        
+        for i, batch in enumerate(tqdm.tqdm(dataloader, desc='eval')):
             if i > max_step: break
             step_count += 1
 
@@ -366,16 +364,17 @@ class LtpTrainer:
 
     def eval_sparse_model(self,
         show_message=True,
-        max_step=987654321
+        max_step=987654321,
+        split='test'
     ):
         self.seed()
-        sparse_result = self.eval_base_model(model = self.sparse_bert, show_messages = show_message, max_step=max_step)
+        sparse_result = self.eval_base_model(model = self.sparse_bert, show_messages = show_message, max_step=max_step, split=split)
         return sparse_result
 
-    def eval_main(self, ks='dynamic'):
+    def eval_main(self, ks='dynamic', split='test'):
         self.load()
         
-        bert_result = self.eval_base_model(model = self.model)
+        bert_result = self.eval_base_model(model = self.model, split=split)
         sparse_result = self.eval_sparse_model()
         est_k = sparse.benchmark_get_average('ltp_occupy')
         print('ltp_occupy', est_k)
