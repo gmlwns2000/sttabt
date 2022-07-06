@@ -3,7 +3,7 @@ from matplotlib import pyplot as plt
 
 import trainer.concrete_trainer as concrete
 
-p_logits = [-8, -4, -2, -1, 0]
+p_logits = [-16, -8, -4, -2, -1, 0, 2, 4]
 
 def main():
     parser = argparse.ArgumentParser()
