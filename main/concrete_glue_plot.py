@@ -36,7 +36,7 @@ def main():
         trainer.main()
 
         concrete.sparse.benchmark_reset()
-        result = trainer.eval_sparse_model(show_message=False, split='valid')
+        result = trainer.eval_sparse_model(show_message=False)
         occupy = concrete.sparse.benchmark_get_average('concrete_occupy')
         metric, metric_name = get_score(result)
 
