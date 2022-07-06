@@ -11,7 +11,7 @@ sparse.set_update_input_mask_accumulate_indices(True)
 Glue = glue_base.GlueAttentionApproxTrainer
 
 PLOT_HEADER = '[F4-PREWIKI]'
-RESULT_NAME = PLOT_HEADER + 'glue_benchmark_accum_absatt'
+RESULT_NAME = 'saves_plot/' + PLOT_HEADER + 'glue_benchmark_accum_absatt'
 RESULT_PKL = RESULT_NAME + '.pkl'
 
 # %%
@@ -130,7 +130,7 @@ for subset in subsets:
     plt.ylabel(metric)
     plt.legend()
     plt.title(f'{subset} ({metric})')
-    plt.savefig(f'saves_plot/{PLOT_HEADER}accum_absolute_attention_{subset}.png', dpi=320)
+    plt.savefig(f'{RESULT_NAME}_{subset}.png', dpi=320)
     plt.show(block=False)
     plt.clf()
 
