@@ -52,7 +52,7 @@ task_to_epochs = {
     "qnli": 2,
     "qqp":  2,
     "rte":  10,
-    "sst2": 2,
+    "sst2": 4,
     "stsb": 10,
     "wnli": 10,
     "bert": 6,
@@ -224,6 +224,11 @@ class ConcreteTrainer:
 
     def init_sparse_bert(self):
         self.sparse_bert_inner = sparse.ApproxSparseBertForSequenceClassification(self.model.config, self.approx_bert)
+        # for name, p in self.sparse_bert_inner.named_parameters():
+        #     if name.find('p_logit') >= 0:
+        #         p.requires_grad = True
+        #     else:
+        #         p.requires_grad = False
         self.sparse_bert_inner.load_state_dict(self.model.state_dict(), strict=False)
         self.sparse_bert_inner.to(self.device).train()
         self.sparse_bert_inner.use_concrete_masking = True
@@ -260,10 +265,13 @@ class ConcreteTrainer:
     def get_optimizer(self, model):
         param_optimizer = list(model.named_parameters())
         no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
+        high_lr = ['']
         params = [
-            {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)], 'weight_decay': self.weight_decay},
+            {'params': [p for n, p in param_optimizer if (not any(nd in n for nd in no_decay)) and (not any(nd in n for nd in high_lr))], 'weight_decay': self.weight_decay},
+            {'params': [p for n, p in param_optimizer if (not any(nd in n for nd in no_decay)) and (any(nd in n for nd in high_lr))], 'lr':1e-4, 'weight_decay': self.weight_decay},
             {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
         ]
+        #print(params[1])
 
         kwargs = {
             'lr':self.lr,
@@ -303,7 +311,7 @@ class ConcreteTrainer:
     def checkpoint_path(self):
         if self.checkpoint_name is not None:
             return f'saves/{self.checkpoint_name}.pth'
-        return f'saves/concrete-glue-{self.dataset}.pth'
+        return f'saves/concrete-glue-{self.dataset}-{self.factor}.pth'
     
     def load(self, path = None, load_loss = True):
         if path is None:
@@ -418,8 +426,6 @@ class ConcreteTrainer:
         if print_log:
             pbar = tqdm.tqdm(pbar)
         
-        if self.epoch > self.epochs * 0.5 - 0.1:
-            print('you need to hard prune')
         self.sparse_bert.train()
 
         for step, batch in enumerate(pbar):
@@ -496,10 +502,18 @@ class ConcreteTrainer:
 
             self.load_train_dataset()
 
-            if self.device == 0 or self.world_size == 1:
+            if (self.device == 0 or self.world_size == 1) and self.enable_checkpointing:
                 self.train_validate()
+                print('- hard prune')
+                self.sparse_bert.module.bert.set_concrete_hard_threshold(0.5)
+                self.train_validate()
+                self.sparse_bert.module.bert.set_concrete_hard_threshold(None)
             if self.world_size > 1:
                 dist.barrier()
+        
+        for layer in self.sparse_bert.module.bert.encoder.layer:
+            layer = layer # type: sparse.BertLayer
+            print(layer.p_logit.item(), layer.concrete_prop_p_logit.item())
 
 def main_ddp(rank, world_size, args):
     print(f"Running DDP instance on rank {rank}:{args.port}.")

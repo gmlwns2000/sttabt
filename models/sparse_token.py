@@ -38,6 +38,9 @@ from transformers.utils import logging
 
 logger = logging.get_logger(__name__)
 
+EPS = 1e-7
+USE_LTP_ON_CONCRETE = False
+
 #region Timer
 
 __timer_cum = {}
@@ -225,7 +228,10 @@ class SparseChannelLinear(nn.Module):
         self.channel_indices= None #(N, K), K<=C
         self.force_dense = False
 
+        self.concrete_score = None
         self.concrete_mask = None   #for concrete dropout
+        self.concrete_mask_hard = None
+        self.concrete_hard_threshold = None
         self.retain_prob = 1.0
 
     def reset_parameters(self) -> None:
@@ -270,8 +276,15 @@ class SparseChannelLinear(nn.Module):
             #return F.linear(input, self.weight, self.bias)
         
         if not self.concrete_mask is None:
-            x = x * self.concrete_mask
-            x = x / (self.retain_prob + 1e-7)
+            mask = self.concrete_mask
+            if self.concrete_hard_threshold is not None:
+                mask = (mask > self.concrete_hard_threshold) * 1.0
+                self.concrete_mask_hard = mask
+            benchmark_cum('concrete_occupy', mask.mean().item())
+            #print(mask[0])
+            x = x * mask
+            x = x / (self.retain_prob + EPS)
+            #print(x.shape, self.concrete_mask.shape)
         
         return x
 
@@ -596,11 +609,19 @@ class BertLayer(nn.Module):
         #concrete dropout
         self.concrete_weight_regularizer = 1e-6
         self.concrete_dropout_regularizer = 1e-5
-        self.concrete_init_min = 0.1
-        self.concrete_init_max = 0.1
+        if USE_LTP_ON_CONCRETE:
+            self.concrete_init_min = 0.001
+            self.concrete_init_max = 0.1
+        else:
+            self.concrete_init_min = -3.0
+            self.concrete_init_max = self.concrete_init_min
+        self.concrete_prop_p_logit = nn.Parameter(torch.tensor(0.0, dtype=torch.float32))
         self.p_logit = nn.Parameter(torch.empty(1).uniform_(self.concrete_init_min, self.concrete_init_max))
         self.temperature = 0.1
         self.input_dimensionality = 0
+
+    def init_p_logits(self):
+        self.p_logit.data.uniform_(self.concrete_init_min, self.concrete_init_max)
 
     def forward(
         self,
@@ -651,20 +672,23 @@ class BertLayer(nn.Module):
         layer_output = self.output(intermediate_output, attention_output)
         return layer_output
     
-    def loss_concrete(self):
+    def loss_concrete(self, input_dict):
         if not self.output.dense.concrete_mask is None:
-            p = torch.sigmoid(self.p_logit)
+            if USE_LTP_ON_CONCRETE:
+                loss = torch.mean(torch.mean(self.output.dense.concrete_mask.squeeze(-1), dim=-1) / torch.mean(input_dict['attention_mask'].squeeze(-1) * 1.0, dim = -1)) * 1e-1
+            else:
+                p = torch.sigmoid(self.p_logit)
 
-            sum_of_square = 0
-            for param in self.parameters():
-                sum_of_square += torch.sum(torch.pow(param, 2))
-            
-            weights_regularizer = self.concrete_weight_regularizer * sum_of_square / (1 - p)
-            
-            dropout_regularizer = p * torch.log(p) + (1. - p) * torch.log(1. - p)
-            dropout_regularizer *= self.concrete_dropout_regularizer * self.input_dimensionality
-            
-            loss = weights_regularizer + dropout_regularizer
+                sum_of_square = 0
+                for param in self.parameters():
+                    sum_of_square += torch.sum(torch.pow(param, 2))
+                
+                weights_regularizer = self.concrete_weight_regularizer * sum_of_square / (1 - p + EPS)
+                
+                dropout_regularizer = p * torch.log(p + EPS) + (1. - p) * torch.log(1. - p + EPS)
+                dropout_regularizer *= self.concrete_dropout_regularizer * self.input_dimensionality
+                
+                loss = weights_regularizer + dropout_regularizer
             return loss
         else:
             return 0
@@ -877,6 +901,18 @@ class SparseBertModel(BertPreTrainedModel):
         for layer in self.encoder.layer:
             layer = layer # type: BertLayer
             layer.ltp_prune_token_module.temperature = v
+
+    def set_concrete_hard_threshold(self, v):
+        for layer in self.encoder.layer:
+            layer = layer # type: BertLayer
+            layer.output.dense.concrete_hard_threshold = v
+    
+    def set_concrete_init_p_logit(self, v):
+        for layer in self.encoder.layer:
+            layer = layer # type:BertLayer
+            layer.concrete_init_max = v
+            layer.concrete_init_min = v
+            layer.init_p_logits()
 
     def _prune_heads(self, heads_to_prune):
         """
@@ -1357,6 +1393,9 @@ def run_bert_with_concrete(
     last_score[0, 0] = 1.0
     last_mask[0, 0] = 1.0
     last_mask = last_mask.expand((N, -1))
+    last_layer = sparse_bert.encoder.layer[-1] # type: BertLayer
+    last_layer.output.dense.concrete_mask = last_mask.view(-1, TLEN, 1)
+    last_layer.output.dense.concrete_score = torch.zeros_like(last_mask)
     for j in range(len(sparse_bert.encoder.layer) - 1):
         #layer indexing
         i = len(sparse_bert.encoder.layer) - j - 1
@@ -1364,24 +1403,38 @@ def run_bert_with_concrete(
         layer = sparse_bert.encoder.layer[i] # type: BertLayer
 
         # score calculation from STTBT
+        prop_p = 0.5
         att = layer.attention.self.last_attention_probs
         att = torch.mean(att, dim=1)
-        att = last_score.view(-1, TLEN, 1) * att * 0.1 + att * 0.9
+        att = last_score.view(-1, TLEN, 1) * att * prop_p + att * (1 - prop_p)
         score = torch.mean(att, dim=1) # shape(N, TLEN)
         last_score = score
-
-        # accumulate dropout mask from Concrete Dropout.
-        # use score as randomness source.
-        p = torch.sigmoid(prev_layer.p_logit).view(1, 1)
-        eps = 1e-7
-        temperature = prev_layer.temperature
-        mask = torch.sigmoid((torch.log(p + eps) - torch.log(1-p + eps) + torch.log(score + eps) - torch.log(1-score + eps)) / temperature)
-        #print(mask)
+        prev_layer.output.dense.concrete_score = last_score
+        #print(score[0])
+        
+        if USE_LTP_ON_CONCRETE:
+            temperature = 0.01 #prev_layer.temperature
+            mask = torch.sigmoid((score - prev_layer.p_logit) / temperature) * input_dict['attention_mask']
+            prev_layer.output.dense.retain_prob = 1.0
+        else:
+            # accumulate dropout mask from Concrete Dropout.
+            # use score as randomness source.
+            p = torch.sigmoid(prev_layer.p_logit).view(1, 1)
+            eps = EPS
+            temperature = prev_layer.temperature
+            concrete_score = score
+            concrete_score_min = torch.min(concrete_score + (concrete_score < EPS) * 99, dim=1, keepdim=True)[0]
+            concrete_score_max = torch.max(concrete_score, dim=1, keepdim=True)[0]
+            concrete_score = torch.clamp_min(concrete_score - concrete_score_min + (concrete_score_max - concrete_score_min) * 0.1, 0)
+            concrete_score = concrete_score / (torch.max(concrete_score, dim=1, keepdim=True)[0] + EPS)
+            #print(concrete_score[0])
+            prev_layer.output.dense.concrete_score = concrete_score
+            mask = torch.sigmoid((torch.log(p + eps) - torch.log(1-p + eps) + torch.log(concrete_score + eps) - torch.log(1-concrete_score + eps)) / temperature)
+            prev_layer.output.dense.retain_prob = 1-p
+        #print(mask[0])
         last_mask = torch.max(torch.stack([mask, last_mask], dim=0), dim=0)[0]  # this should be input mask of current layer, so set dropout mask to previous output layer.
         
         prev_layer.output.dense.concrete_mask = last_mask.view(-1, TLEN, 1)
-        benchmark_cum('concrete_occupy', last_mask.mean().item())
-        prev_layer.output.dense.retain_prob = 1 - p
     
     ret_sparse = sparse_bert(**input_dict)
     return ret_sparse
@@ -1534,7 +1587,7 @@ class ApproxSparseBertModel(nn.Module):
         if sparse_bert is None:
             self.sparse_bert = SparseBertModel(bert.config, add_pooling_layer=add_pooling_layer)
             set_print(self.sparse_bert, False)
-            set_backup_last_inputs(self.sparse_bert, False)
+            set_backup_last_inputs(self.sparse_bert, True)
             set_output_masking(self.sparse_bert, False)
             set_masking_timing(self.sparse_bert, 'before_softmax')
             self.sparse_bert.load_state_dict(bert.state_dict(), strict=False)
@@ -1672,7 +1725,7 @@ class ApproxSparseBertForSequenceClassification(BertPreTrainedModel):
             loss += self.bert.loss_ltp_regularization() * self.ltp_lambda
         if first_layer.output.dense.concrete_mask is not None and (loss is not None):
             for layer in self.bert.encoder.layer:
-                loss_reg = layer.loss_concrete()
+                loss_reg = layer.loss_concrete({'attention_mask': attention_mask})
                 loss = loss + loss_reg
 
         return SequenceClassifierOutput(
