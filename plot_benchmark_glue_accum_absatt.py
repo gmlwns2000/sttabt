@@ -10,16 +10,16 @@ sparse.set_update_input_mask_accumulate_indices(True)
 
 Glue = glue_base.GlueAttentionApproxTrainer
 
-PLOT_HEADER = '[F4-PREWIKI]'
+PLOT_HEADER = '[F4-PREWIKI.v2]'
 RESULT_NAME = PLOT_HEADER + 'glue_benchmark_accum_absatt'
-RESULT_PKL = RESULT_NAME + '.pkl'
+RESULT_PKL = RESULT_NAME + '.pickle'
 
 # %%
 factor = 4
 subsets = ["cola","mnli","mrpc","qnli","qqp","rte","sst2","stsb","wnli",]
 kss = [0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.625, 0.75]
-#subsets = ['rte']
-#kss = [0.05, 0.1, 0.15, 0.2, 0.3, 0.5]
+subsets = ['rte']
+kss = [0.05, 0.1, 0.15, 0.2, 0.3, 0.5]
 #kss = [0.1, 0.5]
 RUN_APPROX = True
 
@@ -88,9 +88,6 @@ def run_exp():
 
     with open(RESULT_PKL, 'wb') as f:
         pickle.dump(results, f)
-    
-    with open(RESULT_NAME + '.json', 'w') as f:
-        json.dump(results, f)
     
     return results
 results = run_exp()
