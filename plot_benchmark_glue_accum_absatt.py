@@ -1,7 +1,7 @@
 # %%
 import trainer.glue_base as glue_base
 import models.sparse_token as sparse
-import pickle, importlib, itertools, gc
+import pickle, importlib, itertools, gc, json
 import torch
 from matplotlib import pyplot as plt
 importlib.reload(glue_base)
@@ -10,8 +10,9 @@ sparse.set_update_input_mask_accumulate_indices(True)
 
 Glue = glue_base.GlueAttentionApproxTrainer
 
-PLOT_HEADER= '[TEMP-0.9-F8-PREWIKI]'
-RESULT_PKL = PLOT_HEADER+'glue_benchmark_accum_absatt.pkl'
+PLOT_HEADER = '[TEMP-0.9-F8-PREWIKI]'
+RESULT_NAME = PLOT_HEADER + 'glue_benchmark_accum_absatt'
+RESULT_PKL = RESULT_NAME + '.pkl'
 
 # %%
 factor = 8
@@ -34,6 +35,7 @@ def get_score(score):
 def run_exp():
     global subsets, kss
 
+    results = {}
     cases = list(itertools.product(subsets, kss))
     current_subset = None
     trainer = None
@@ -86,6 +88,9 @@ def run_exp():
 
     with open(RESULT_PKL, 'wb') as f:
         pickle.dump(results, f)
+    
+    with open(RESULT_NAME + '.json', 'w') as f:
+        json.dump(results, f)
     
     return results
 results = run_exp()
