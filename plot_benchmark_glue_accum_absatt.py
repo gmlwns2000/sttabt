@@ -10,15 +10,15 @@ sparse.set_update_input_mask_accumulate_indices(True)
 
 Glue = glue_base.GlueAttentionApproxTrainer
 
-PLOT_HEADER = '[TEMP-0.9-F8-PREWIKI]'
+PLOT_HEADER = '[F4-PREWIKI]'
 RESULT_NAME = PLOT_HEADER + 'glue_benchmark_accum_absatt'
 RESULT_PKL = RESULT_NAME + '.pkl'
 
 # %%
-factor = 8
+factor = 4
 subsets = ["cola","mnli","mrpc","qnli","qqp","rte","sst2","stsb","wnli",]
 kss = [0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.625, 0.75]
-subsets = ['rte']
+#subsets = ['rte']
 #kss = [0.05, 0.1, 0.15, 0.2, 0.3, 0.5]
 #kss = [0.1, 0.5]
 RUN_APPROX = True
