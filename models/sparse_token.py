@@ -1374,10 +1374,11 @@ def run_bert_with_concrete(
     approx_bert: "ApproxBertModel",
     input_dict: "dict", 
 ):
-    attention_input_dict = copy.deepcopy(input_dict)
-    attention_input_dict['output_attentions'] = True
-    ret_approx = approx_bert(**attention_input_dict)
-    attentions = ret_approx.attentions
+    with torch.no_grad():
+        attention_input_dict = copy.deepcopy(input_dict)
+        attention_input_dict['output_attentions'] = True
+        ret_approx = approx_bert(**attention_input_dict)
+        attentions = ret_approx.attentions
     
     reset_input_mask(sparse_bert)
     attention_mask = input_dict['attention_mask']

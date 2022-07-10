@@ -1,3 +1,5 @@
+#%%
+
 from trainer.glue_base import GlueAttentionApproxTrainer as Trainer
 import models.sparse_token as sparse
 from torch import optim
