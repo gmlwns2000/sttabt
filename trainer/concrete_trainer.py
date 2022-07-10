@@ -218,12 +218,12 @@ class ConcreteTrainer:
         approx_bert = MimicDDP(approx_bert)
 
         state = torch.load(self.approx_checkpoint_path(), map_location='cpu')
-        approx_bert.load_state_dict(state['approx_bert'])
+        approx_bert.load_state_dict(state['approx_bert'], strict=False)
         del state
         return approx_bert
 
     def init_sparse_bert(self):
-        self.sparse_bert_inner = sparse.ApproxSparseBertForSequenceClassification(self.model.config, self.approx_bert)
+        self.sparse_bert_inner = sparse.ApproxSparseBertForSequenceClassification(self.model.config, self.approx_bert.module)
         # for name, p in self.sparse_bert_inner.named_parameters():
         #     if name.find('p_logit') >= 0:
         #         p.requires_grad = True

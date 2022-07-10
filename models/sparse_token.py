@@ -1137,7 +1137,11 @@ class ApproxBertModel(nn.Module):
         config.intermediate_size = origin_config.intermediate_size // self.factor
         self.config = config
 
-        self.bert = OriginalBertModel(config)
+        self.bert = SparseBertModel(config)
+        self.bert.set_print(False)
+        self.bert.set_backup_last_inputs(True)
+        reset_input_mask(self.bert)
+        
         classifier_dropout = (
             config.classifier_dropout if config.classifier_dropout is not None else config.hidden_dropout_prob
         )
@@ -1366,20 +1370,21 @@ def run_bert_with_approx(
     #return ret_approx
 
 def run_bert_with_concrete(
-    sparse_bert,
-    approx_bert, 
-    input_dict, 
+    sparse_bert: "SparseBertModel",
+    approx_bert: "ApproxBertModel",
+    input_dict: "dict", 
 ):
-    with torch.no_grad():
-        attention_input_dict = copy.deepcopy(input_dict)
-        attention_input_dict['output_attentions'] = True
-        ret_approx = approx_bert(**attention_input_dict)
-        attentions = ret_approx.attentions
+    attention_input_dict = copy.deepcopy(input_dict)
+    attention_input_dict['output_attentions'] = True
+    ret_approx = approx_bert(**attention_input_dict)
+    attentions = ret_approx.attentions
     
     reset_input_mask(sparse_bert)
     attention_mask = input_dict['attention_mask']
     attention_mask = ((1.0 - attention_mask) * (-10000)).view(attention_mask.shape[0], 1, 1, attention_mask.shape[-1])
     for i, layer in enumerate(sparse_bert.encoder.layer):
+        approx_layer = approx_bert.bert.encoder.layer[i] # type: BertLayer
+        layer.attention.self.last_attention_scores = approx_layer.attention.self.last_attention_scores
         layer.attention.self.last_attention_probs = attentions[i]
         layer.attention.self.last_approx_attention_probs = attentions[i]
         layer.attention.self.last_attention_mask = attention_mask
@@ -1427,6 +1432,8 @@ def run_bert_with_concrete(
             concrete_score_max = torch.max(concrete_score, dim=1, keepdim=True)[0]
             concrete_score = torch.clamp_min(concrete_score - concrete_score_min + (concrete_score_max - concrete_score_min) * 0.1, 0)
             concrete_score = concrete_score / (torch.max(concrete_score, dim=1, keepdim=True)[0] + EPS)
+            #concrete_score should be unifrom distribution
+
             #print(concrete_score[0])
             prev_layer.output.dense.concrete_score = concrete_score
             mask = torch.sigmoid((torch.log(p + eps) - torch.log(1-p + eps) + torch.log(concrete_score + eps) - torch.log(1-concrete_score + eps)) / temperature)

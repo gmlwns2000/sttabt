@@ -3,7 +3,8 @@ import models.sparse_token as sparse
 from torch import optim
 import torch
 
-trainer = Trainer('cola', 4, batch_size=128, enable_plot=False)
+trainer = Trainer('cola', 4, batch_size=32, enable_plot=False)
+trainer.load()
 model = sparse.ApproxSparseBertForSequenceClassification(trainer.model.config, approx_bert=trainer.approx_bert)
 model.load_state_dict(trainer.model.state_dict(), strict=False)
 # for name, p in model.named_parameters():
