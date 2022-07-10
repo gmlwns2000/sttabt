@@ -3,15 +3,16 @@ from matplotlib import pyplot as plt
 
 import trainer.concrete_trainer as concrete
 
-p_logits = [-16, -8, -4, -2, -1, 0, 2, 4]
+p_logits = [-4, -2, -1, 0, 2]
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--subset', type=str, default='cola')
     parser.add_argument('--batch-size', type=int, default=-1)
+    parser.add_argument('--header', type=str, default='')
     args = parser.parse_args()
     subset = args.subset
-    plot_name = f'saves_plot/concrete-glue-{subset}'
+    plot_name = f'saves_plot/concrete-glue-{args.header}{subset}'
 
     trainer = concrete.ConcreteTrainer(
         dataset=subset,

@@ -187,14 +187,12 @@ class ConcreteTrainer:
         self.model.to(self.device)
         self.model_bert = self.model.bert
         self.model_classifier = self.model.classifier
-
-        self.approx_bert = self.get_approx_bert()
-        self.approx_bert.to(self.device)
         
-        self.init_sparse_bert()
+        # self.init_sparse_bert()
         
-        self.optimizer = self.get_optimizer(self.sparse_bert)
-        self.scaler = torch.cuda.amp.GradScaler()
+        # self.optimizer = self.get_optimizer(self.sparse_bert)
+        # self.scaler = torch.cuda.amp.GradScaler()
+        self.reset_train()
 
         self.last_metric_score = None
         self.last_loss = None
@@ -216,20 +214,29 @@ class ConcreteTrainer:
     def get_approx_bert(self):
         approx_bert = sparse.ApproxBertModel(self.model.config, factor=self.factor, wiki_train=False)
         approx_bert = MimicDDP(approx_bert)
-
+    
         state = torch.load(self.approx_checkpoint_path(), map_location='cpu')
-        approx_bert.load_state_dict(state['approx_bert'], strict=False)
+        try:
+            approx_bert.load_state_dict(state['approx_bert'], strict=False)
+        except Exception as ex:
+            print(ex)
         del state
         return approx_bert
 
     def init_sparse_bert(self):
+        self.approx_bert = self.get_approx_bert()
+        self.approx_bert.to(self.device)
+
         self.sparse_bert_inner = sparse.ApproxSparseBertForSequenceClassification(self.model.config, self.approx_bert.module)
         # for name, p in self.sparse_bert_inner.named_parameters():
         #     if name.find('p_logit') >= 0:
         #         p.requires_grad = True
         #     else:
         #         p.requires_grad = False
-        self.sparse_bert_inner.load_state_dict(self.model.state_dict(), strict=False)
+        try:
+            self.sparse_bert_inner.load_state_dict(self.model.state_dict(), strict=False)
+        except Exception as ex:
+            print(ex)
         self.sparse_bert_inner.to(self.device).train()
         self.sparse_bert_inner.use_concrete_masking = True
         if self.world_size > 1:
@@ -311,7 +318,7 @@ class ConcreteTrainer:
     def checkpoint_path(self):
         if self.checkpoint_name is not None:
             return f'saves/{self.checkpoint_name}.pth'
-        return f'saves/concrete-glue-{self.dataset}-{self.factor}.pth'
+        return f'saves/concrete-glue-{self.dataset}{self.factor}.pth'
     
     def load(self, path = None, load_loss = True):
         if path is None:
@@ -321,7 +328,7 @@ class ConcreteTrainer:
         state = torch.load(path, map_location='cpu')
         #self.model.load_state_dict(state['bert'])
         try:
-            self.sparse_bert.load_state_dict(state['sparse_bert'], strict=False)
+            self.sparse_bert.load_state_dict(state['sparse_bert'])
         except RuntimeError as ex:
             print("Trainer: Error during state dict load")
             print(ex)

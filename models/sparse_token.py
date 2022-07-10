@@ -283,7 +283,7 @@ class SparseChannelLinear(nn.Module):
             benchmark_cum('concrete_occupy', mask.mean().item())
             #print(mask[0])
             x = x * mask
-            x = x / (self.retain_prob + EPS)
+            #x = x / (self.retain_prob + EPS) # retain prob makes thing worse and worse!!!
             #print(x.shape, self.concrete_mask.shape)
         
         return x
@@ -1369,16 +1369,18 @@ def run_bert_with_approx(
     return ret_sparse
     #return ret_approx
 
+STANDARD_NORMAL_DISTRIBUTION = torch.distributions.Normal(0, 1)
+
 def run_bert_with_concrete(
     sparse_bert: "SparseBertModel",
     approx_bert: "ApproxBertModel",
     input_dict: "dict", 
 ):
-    with torch.no_grad():
-        attention_input_dict = copy.deepcopy(input_dict)
-        attention_input_dict['output_attentions'] = True
-        ret_approx = approx_bert(**attention_input_dict)
-        attentions = ret_approx.attentions
+    # with torch.no_grad():
+    attention_input_dict = copy.deepcopy(input_dict)
+    attention_input_dict['output_attentions'] = True
+    ret_approx = approx_bert(**attention_input_dict)
+    attentions = ret_approx.attentions
     
     reset_input_mask(sparse_bert)
     attention_mask = input_dict['attention_mask']
@@ -1410,10 +1412,27 @@ def run_bert_with_concrete(
 
         # score calculation from STTBT
         prop_p = 0.5
-        att = layer.attention.self.last_attention_probs
-        att = torch.mean(att, dim=1)
-        att = last_score.view(-1, TLEN, 1) * att * prop_p + att * (1 - prop_p)
-        score = torch.mean(att, dim=1) # shape(N, TLEN)
+        concrete_mask_mode = 'prob'
+        if concrete_mask_mode == 'prob':
+            att = layer.attention.self.last_attention_probs
+            att = torch.mean(att, dim=1)
+            att = last_score.view(-1, TLEN, 1) * att * prop_p + att * (1 - prop_p)
+            score = torch.mean(att, dim=1) # shape(N, TLEN)
+        elif concrete_mask_mode == 'score_uniform':
+            att_mask = layer.attention.self.last_attention_mask
+            onehot_att_mask = (att_mask > -1) * 1.0
+            att_score = layer.attention.self.last_attention_scores
+            att_score_masked = att_score * onehot_att_mask
+            att_score_mean = torch.sum(att_score_masked, dim=-1, keepdim=True) / torch.sum(onehot_att_mask, dim=-1, keepdim=True)
+            att_score_mean_of_square = torch.sum(att_score_masked*att_score_masked, dim=-1, keepdim=True) / torch.sum(onehot_att_mask, dim=-1, keepdim=True)
+            att_score_std = torch.sqrt(att_score_mean_of_square - att_score_mean*att_score_mean)
+            std_att_score = (att_score - att_score_mean) / att_score_std
+            std_att_score = torch.mean(std_att_score, dim=1)
+            std_att_score = torch.mean(std_att_score, dim=1)
+            uni_att_score = STANDARD_NORMAL_DISTRIBUTION.cdf(std_att_score)
+            score = uni_att_score
+        else:
+            raise Exception()
         last_score = score
         prev_layer.output.dense.concrete_score = last_score
         #print(score[0])
@@ -1425,25 +1444,43 @@ def run_bert_with_concrete(
         else:
             # accumulate dropout mask from Concrete Dropout.
             # use score as randomness source.
-            p = torch.sigmoid(prev_layer.p_logit).view(1, 1)
-            eps = EPS
-            temperature = prev_layer.temperature
-            concrete_score = score
-            concrete_score_min = torch.min(concrete_score + (concrete_score < EPS) * 99, dim=1, keepdim=True)[0]
-            concrete_score_max = torch.max(concrete_score, dim=1, keepdim=True)[0]
-            concrete_score = torch.clamp_min(concrete_score - concrete_score_min + (concrete_score_max - concrete_score_min) * 0.1, 0)
-            concrete_score = concrete_score / (torch.max(concrete_score, dim=1, keepdim=True)[0] + EPS)
-            #concrete_score should be unifrom distribution
+            concrete_score_mode = 'score_uniform'
+            if concrete_score_mode == 'prob':
+                concrete_score = score
+                concrete_score_min = torch.min(concrete_score + (concrete_score < EPS) * 99, dim=1, keepdim=True)[0]
+                concrete_score_max = torch.max(concrete_score, dim=1, keepdim=True)[0]
+                concrete_score = torch.clamp_min(concrete_score - concrete_score_min + (concrete_score_max - concrete_score_min) * 0.1, 0)
+                concrete_score = concrete_score / (torch.max(concrete_score, dim=1, keepdim=True)[0] + EPS)
+            elif concrete_score_mode == 'score_uniform':
+                #concrete_score should be unifrom distribution
+                att_mask = layer.attention.self.last_attention_mask
+                onehot_att_mask = (att_mask > -1) * 1.0
+                att_score = layer.attention.self.last_attention_scores
+                att_score_masked = att_score * onehot_att_mask
+                att_score_mean = torch.sum(att_score_masked, dim=-1, keepdim=True) / torch.sum(onehot_att_mask, dim=-1, keepdim=True)
+                att_score_mean_of_square = torch.sum(att_score_masked*att_score_masked, dim=-1, keepdim=True) / torch.sum(onehot_att_mask, dim=-1, keepdim=True)
+                att_score_std = torch.sqrt(att_score_mean_of_square - att_score_mean*att_score_mean)
+                std_att_score = (att_score - att_score_mean) / att_score_std
+                std_att_score = torch.mean(std_att_score, dim=1)
+                std_att_score = torch.mean(std_att_score, dim=1)
+                uni_att_score = STANDARD_NORMAL_DISTRIBUTION.cdf(std_att_score)
+                uni_att_score = 0.1 + 0.9 * uni_att_score * (score > EPS)
+                concrete_score = uni_att_score
+            else:
+                raise Exception()
 
             #print(concrete_score[0])
+            p = torch.sigmoid(prev_layer.p_logit).view(1, 1)
+            temperature = prev_layer.temperature
             prev_layer.output.dense.concrete_score = concrete_score
-            mask = torch.sigmoid((torch.log(p + eps) - torch.log(1-p + eps) + torch.log(concrete_score + eps) - torch.log(1-concrete_score + eps)) / temperature)
+            mask = torch.sigmoid((torch.log(p + EPS) - torch.log(1-p + EPS) + torch.log(concrete_score + EPS) - torch.log(1-concrete_score + EPS)) / temperature)
             prev_layer.output.dense.retain_prob = 1-p
         #print(mask[0])
         last_mask = torch.max(torch.stack([mask, last_mask], dim=0), dim=0)[0]  # this should be input mask of current layer, so set dropout mask to previous output layer.
         
         prev_layer.output.dense.concrete_mask = last_mask.view(-1, TLEN, 1)
     
+    # forward
     ret_sparse = sparse_bert(**input_dict)
     return ret_sparse
 
