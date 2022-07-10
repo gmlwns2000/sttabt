@@ -390,9 +390,9 @@ class BertSelfAttention(nn.Module):
 
         query_layer = self.transpose_for_scores(mixed_query_layer)
         if self.backup_last_inputs:
-            self.last_query = query_layer.clone().detach()
-            self.last_key = key_layer.clone().detach()
-            self.last_value = value_layer.clone().detach()
+            self.last_query = query_layer.clone()
+            self.last_key = key_layer.clone()
+            self.last_value = value_layer.clone()
         timer_end('bert.attention.qkv')
 
         timer_start('bert.attention.scores.matmul')
@@ -413,7 +413,7 @@ class BertSelfAttention(nn.Module):
                 -10000)
         
         if self.backup_last_inputs:
-            self.last_attention_scores = attention_scores.clone().detach()
+            self.last_attention_scores = attention_scores.clone()
 
         # Normalize the attention scores to probabilities.
         attention_probs = nn.functional.softmax(attention_scores, dim=-1)
@@ -442,8 +442,8 @@ class BertSelfAttention(nn.Module):
         
         if self.backup_last_inputs:
             if self.print: print('SelfAttention.forward: last_attention_probs backuped')
-            self.last_attention_probs = attention_probs.detach().clone()
-            self.last_attention_mask = attention_mask.detach().clone()
+            self.last_attention_probs = attention_probs.clone()
+            self.last_attention_mask = attention_mask.clone()
 
         context_layer = torch.matmul(attention_probs, value_layer)
 
