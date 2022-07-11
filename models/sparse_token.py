@@ -1461,21 +1461,20 @@ def run_bert_with_concrete(
                 concrete_score = concrete_score / (torch.max(concrete_score, dim=1, keepdim=True)[0] + EPS)
             elif concrete_score_mode == 'score_uniform':
                 #concrete_score should be unifrom distribution
-                att_mask = raise_if_nan(layer.attention.self.last_attention_mask)
-                onehot_att_mask = (att_mask > -1) * 1.0
-                att_score = raise_if_nan(layer.attention.self.last_attention_scores)
+                att_mask = layer.attention.self.last_attention_mask
+                N, T = input_dict['attention_mask'].shape
+                onehot_att_mask = input_dict['attention_mask'].view(N, 1, 1, T) #N,T -> N, 1, 1, T
+                onehot_att_mask_sum = torch.sum(onehot_att_mask, dim=-1, keepdim=True)
+                att_score = layer.attention.self.last_attention_scores #N, H, T, T
                 att_score_masked = att_score * onehot_att_mask
-                att_score_mean = torch.sum(att_score_masked, dim=-1, keepdim=True) / (torch.sum(onehot_att_mask, dim=-1, keepdim=True) + EPS)
-                #att_score_mean_of_square = torch.sum(att_score_masked * att_score_masked, dim=-1, keepdim=True) / (torch.sum(onehot_att_mask, dim=-1, keepdim=True) + EPS)
-                att_score_var = torch.sum(torch.square((att_score_masked - att_score_mean) * onehot_att_mask), dim=-1, keepdim=True) / (torch.sum(onehot_att_mask, dim=-1, keepdim=True) + EPS)
-                #att_score_std = torch.sqrt(att_score_mean_of_square - att_score_mean*att_score_mean + EPS)
+                att_score_mean = torch.sum(att_score_masked, dim=-1, keepdim=True) / (onehot_att_mask_sum + EPS)
+                att_score_var = torch.sum(torch.square((att_score_masked - att_score_mean) * onehot_att_mask), dim=-1, keepdim=True) / (onehot_att_mask_sum + EPS)
                 att_score_std = torch.sqrt(att_score_var)
-                #raise_if_nan(att_score_std)
                 std_att_score = (att_score - att_score_mean) / (att_score_std + EPS)
                 std_att_score = torch.mean(std_att_score, dim=1)
                 std_att_score = torch.mean(std_att_score, dim=1)
-                uni_att_score = torch.sigmoid(raise_if_nan(std_att_score)) #torch.distributions.Normal(0, 1).cdf(std_att_score)
-                uni_att_score = 0.1 + 0.9 * uni_att_score * (score > EPS)
+                uni_att_score = STANDARD_NORMAL_DISTRIBUTION.cdf(std_att_score) #torch.distributions.Normal(0, 1).cdf(std_att_score)
+                uni_att_score = (0.05 + 0.95 * uni_att_score) * input_dict['attention_mask']
                 concrete_score = uni_att_score
             else:
                 raise Exception()
