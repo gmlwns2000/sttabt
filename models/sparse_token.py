@@ -232,6 +232,7 @@ class SparseChannelLinear(nn.Module):
         self.concrete_mask = None   #for concrete dropout
         self.concrete_mask_hard = None
         self.concrete_hard_threshold = None
+        self.concrete_debug = None
         self.retain_prob = 1.0
 
     def reset_parameters(self) -> None:
@@ -413,7 +414,7 @@ class BertSelfAttention(nn.Module):
                 -10000)
         
         if self.backup_last_inputs:
-            self.last_attention_scores = attention_scores.clone()
+            self.last_attention_scores = attention_scores
 
         # Normalize the attention scores to probabilities.
         attention_probs = nn.functional.softmax(attention_scores, dim=-1)
@@ -613,7 +614,7 @@ class BertLayer(nn.Module):
             self.concrete_init_min = 0.001
             self.concrete_init_max = 0.1
         else:
-            self.concrete_init_min = -3.0
+            self.concrete_init_min = 0.0
             self.concrete_init_max = self.concrete_init_min
         self.concrete_prop_p_logit = nn.Parameter(torch.tensor(0.0, dtype=torch.float32))
         self.p_logit = nn.Parameter(torch.empty(1).uniform_(self.concrete_init_min, self.concrete_init_max))
@@ -1371,6 +1372,11 @@ def run_bert_with_approx(
 
 STANDARD_NORMAL_DISTRIBUTION = torch.distributions.Normal(0, 1)
 
+def raise_if_nan(tensor):
+    if torch.isnan(tensor).any():
+        raise Exception(tensor)
+    return tensor
+
 def run_bert_with_concrete(
     sparse_bert: "SparseBertModel",
     approx_bert: "ApproxBertModel",
@@ -1387,10 +1393,11 @@ def run_bert_with_concrete(
     attention_mask = ((1.0 - attention_mask) * (-10000)).view(attention_mask.shape[0], 1, 1, attention_mask.shape[-1])
     for i, layer in enumerate(sparse_bert.encoder.layer):
         approx_layer = approx_bert.bert.encoder.layer[i] # type: BertLayer
+        layer.attention.self.last_attention_mask = attention_mask
         layer.attention.self.last_attention_scores = approx_layer.attention.self.last_attention_scores
         layer.attention.self.last_attention_probs = attentions[i]
         layer.attention.self.last_approx_attention_probs = attentions[i]
-        layer.attention.self.last_attention_mask = attention_mask
+        layer.attention.self.last_approx_attention_score = approx_layer.attention.self.last_attention_scores
         
     #update mask
     TLEN = attentions[0].shape[-1]
@@ -1419,18 +1426,19 @@ def run_bert_with_concrete(
             att = last_score.view(-1, TLEN, 1) * att * prop_p + att * (1 - prop_p)
             score = torch.mean(att, dim=1) # shape(N, TLEN)
         elif concrete_mask_mode == 'score_uniform':
-            att_mask = layer.attention.self.last_attention_mask
-            onehot_att_mask = (att_mask > -1) * 1.0
-            att_score = layer.attention.self.last_attention_scores
-            att_score_masked = att_score * onehot_att_mask
-            att_score_mean = torch.sum(att_score_masked, dim=-1, keepdim=True) / torch.sum(onehot_att_mask, dim=-1, keepdim=True)
-            att_score_mean_of_square = torch.sum(att_score_masked*att_score_masked, dim=-1, keepdim=True) / torch.sum(onehot_att_mask, dim=-1, keepdim=True)
-            att_score_std = torch.sqrt(att_score_mean_of_square - att_score_mean*att_score_mean)
-            std_att_score = (att_score - att_score_mean) / att_score_std
-            std_att_score = torch.mean(std_att_score, dim=1)
-            std_att_score = torch.mean(std_att_score, dim=1)
-            uni_att_score = STANDARD_NORMAL_DISTRIBUTION.cdf(std_att_score)
-            score = uni_att_score
+            raise Exception()
+            # att_mask = layer.attention.self.last_attention_mask
+            # onehot_att_mask = (att_mask > -1) * 1.0
+            # att_score = layer.attention.self.last_attention_scores
+            # att_score_masked = att_score * onehot_att_mask
+            # att_score_mean = torch.sum(att_score_masked, dim=-1, keepdim=True) / torch.sum(onehot_att_mask, dim=-1, keepdim=True)
+            # att_score_mean_of_square = torch.sum(att_score_masked*att_score_masked, dim=-1, keepdim=True) / torch.sum(onehot_att_mask, dim=-1, keepdim=True)
+            # att_score_std = torch.sqrt(att_score_mean_of_square - att_score_mean*att_score_mean)
+            # std_att_score = (att_score - att_score_mean) / att_score_std
+            # std_att_score = torch.mean(std_att_score, dim=1)
+            # std_att_score = torch.mean(std_att_score, dim=1)
+            # uni_att_score = STANDARD_NORMAL_DISTRIBUTION.cdf(std_att_score)
+            # score = uni_att_score
         else:
             raise Exception()
         last_score = score
@@ -1453,17 +1461,20 @@ def run_bert_with_concrete(
                 concrete_score = concrete_score / (torch.max(concrete_score, dim=1, keepdim=True)[0] + EPS)
             elif concrete_score_mode == 'score_uniform':
                 #concrete_score should be unifrom distribution
-                att_mask = layer.attention.self.last_attention_mask
+                att_mask = raise_if_nan(layer.attention.self.last_attention_mask)
                 onehot_att_mask = (att_mask > -1) * 1.0
-                att_score = layer.attention.self.last_attention_scores
+                att_score = raise_if_nan(layer.attention.self.last_attention_scores)
                 att_score_masked = att_score * onehot_att_mask
-                att_score_mean = torch.sum(att_score_masked, dim=-1, keepdim=True) / torch.sum(onehot_att_mask, dim=-1, keepdim=True)
-                att_score_mean_of_square = torch.sum(att_score_masked*att_score_masked, dim=-1, keepdim=True) / torch.sum(onehot_att_mask, dim=-1, keepdim=True)
-                att_score_std = torch.sqrt(att_score_mean_of_square - att_score_mean*att_score_mean)
-                std_att_score = (att_score - att_score_mean) / att_score_std
+                att_score_mean = torch.sum(att_score_masked, dim=-1, keepdim=True) / (torch.sum(onehot_att_mask, dim=-1, keepdim=True) + EPS)
+                #att_score_mean_of_square = torch.sum(att_score_masked * att_score_masked, dim=-1, keepdim=True) / (torch.sum(onehot_att_mask, dim=-1, keepdim=True) + EPS)
+                att_score_var = torch.sum(torch.square((att_score_masked - att_score_mean) * onehot_att_mask), dim=-1, keepdim=True) / (torch.sum(onehot_att_mask, dim=-1, keepdim=True) + EPS)
+                #att_score_std = torch.sqrt(att_score_mean_of_square - att_score_mean*att_score_mean + EPS)
+                att_score_std = torch.sqrt(att_score_var)
+                #raise_if_nan(att_score_std)
+                std_att_score = (att_score - att_score_mean) / (att_score_std + EPS)
                 std_att_score = torch.mean(std_att_score, dim=1)
                 std_att_score = torch.mean(std_att_score, dim=1)
-                uni_att_score = STANDARD_NORMAL_DISTRIBUTION.cdf(std_att_score)
+                uni_att_score = torch.sigmoid(raise_if_nan(std_att_score)) #torch.distributions.Normal(0, 1).cdf(std_att_score)
                 uni_att_score = 0.1 + 0.9 * uni_att_score * (score > EPS)
                 concrete_score = uni_att_score
             else:
@@ -1473,8 +1484,9 @@ def run_bert_with_concrete(
             p = torch.sigmoid(prev_layer.p_logit).view(1, 1)
             temperature = prev_layer.temperature
             prev_layer.output.dense.concrete_score = concrete_score
-            mask = torch.sigmoid((torch.log(p + EPS) - torch.log(1-p + EPS) + torch.log(concrete_score + EPS) - torch.log(1-concrete_score + EPS)) / temperature)
-            prev_layer.output.dense.retain_prob = 1-p
+            prev_layer.output.dense.concrete_debug = [temperature, p.item(), EPS]
+            mask = torch.sigmoid((torch.log(p + EPS) - torch.log(1 - p + EPS) + torch.log(concrete_score + EPS) - torch.log(1 - concrete_score + EPS)) / (temperature + EPS))
+            prev_layer.output.dense.retain_prob = 1 - p
         #print(mask[0])
         last_mask = torch.max(torch.stack([mask, last_mask], dim=0), dim=0)[0]  # this should be input mask of current layer, so set dropout mask to previous output layer.
         
@@ -1574,7 +1586,9 @@ def run_bert_forward_sparsity(
         last_att = layer.attention.self.last_attention_probs #(N, H, T, T)
         impact_factor = torch.mean(last_att, dim=1) #reduce head
         impact_factor = torch.mean(impact_factor, dim=1) #reduce tokens, (N, T)
-        _, indices = torch.topk(impact_factor, k=min(impact_factor.shape[1], int(ks[idx]*token_len)), dim=1)
+        _, indices = torch.topk(impact_factor, k=max(1, min(impact_factor.shape[1], int(ks[idx]*token_len))), dim=1)
+        if idx == (len(sparse_bert.encoder.layer) - 1):
+            indices = torch.zeros_like(indices)
 
         indices_unsqueeze = indices.unsqueeze(-1)
         layer.attention.output.dense.channel_indices = indices_unsqueeze
