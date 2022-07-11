@@ -46,15 +46,15 @@ task_to_keys = {
 }
 
 task_to_epochs = {
-    "cola": 10,
+    "cola": 5,
     "mnli": 2,
-    "mrpc": 10,
+    "mrpc": 5,
     "qnli": 2,
     "qqp":  2,
-    "rte":  10,
+    "rte":  5,
     "sst2": 4,
-    "stsb": 10,
-    "wnli": 10,
+    "stsb": 5,
+    "wnli": 5,
     "bert": 6,
 }
 
@@ -158,7 +158,7 @@ class ConcreteTrainer:
         self.enable_plot = enable_plot
         self.init_checkpoint = init_checkpoint
         self.checkpoint_name = checkpoint_name
-        self.lr = 2e-5
+        self.lr = 1e-5
         self.weight_decay = 0
         self.dataset = dataset
         if batch_size is None or batch_size <= 0:
