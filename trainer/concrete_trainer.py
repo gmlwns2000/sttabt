@@ -46,15 +46,15 @@ task_to_keys = {
 }
 
 task_to_epochs = {
-    "cola": 5,
+    "cola": 10,
     "mnli": 2,
-    "mrpc": 5,
+    "mrpc": 10,
     "qnli": 2,
     "qqp":  2,
-    "rte":  5,
+    "rte":  10,
     "sst2": 4,
-    "stsb": 5,
-    "wnli": 5,
+    "stsb": 10,
+    "wnli": 10,
     "bert": 6,
 }
 

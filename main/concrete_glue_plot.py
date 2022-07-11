@@ -5,8 +5,8 @@ import torch, pickle
 
 import trainer.concrete_trainer as concrete
 
-p_logits = [-4, -2, -1, 0, 1, 2, 4]
-p_logits = [-2, 0, 2,]
+p_logits = [-4, -2, -1.5, -1, -0.5, 0, 3]
+#p_logits = [-2, 0, 2,]
 
 def plot(occupies, metrics, metric_name, subset, plot_name):
     with open('saves_plot/[F4-PREWIKI.v2]glue_benchmark_accum_absatt.pickle', 'rb') as f:
