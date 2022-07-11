@@ -617,7 +617,7 @@ class BertLayer(nn.Module):
             self.concrete_init_min = 0.0
             self.concrete_init_max = self.concrete_init_min
         self.concrete_prop_p_logit = nn.Parameter(torch.tensor(0.0, dtype=torch.float32))
-        self.p_logit = nn.Parameter(torch.empty(1).uniform_(self.concrete_init_min, self.concrete_init_max), requires_grad=True)
+        self.p_logit = nn.Parameter(torch.empty(1).uniform_(self.concrete_init_min, self.concrete_init_max))
         self.temperature = 0.1
         self.input_dimensionality = 0
 
@@ -678,20 +678,20 @@ class BertLayer(nn.Module):
             if USE_LTP_ON_CONCRETE:
                 loss = torch.mean(torch.mean(self.output.dense.concrete_mask.squeeze(-1), dim=-1) / torch.mean(input_dict['attention_mask'].squeeze(-1) * 1.0, dim = -1)) * 1e-1
             else:
-                # p = torch.sigmoid(self.p_logit)
+                p = torch.sigmoid(self.p_logit)
 
-                # sum_of_square = 0
-                # for param in self.parameters():
-                #     sum_of_square += torch.sum(torch.pow(param, 2))
+                sum_of_square = 0
+                for param in self.parameters():
+                    sum_of_square += torch.sum(torch.pow(param, 2))
                 
-                # weights_regularizer = self.concrete_weight_regularizer * sum_of_square / (1 - p + EPS)
+                weights_regularizer = self.concrete_weight_regularizer * sum_of_square / (1 - p + EPS)
                 
-                # dropout_regularizer = p * torch.log(p + EPS) + (1. - p) * torch.log(1. - p + EPS)
-                # dropout_regularizer *= self.concrete_dropout_regularizer * self.input_dimensionality
+                dropout_regularizer = p * torch.log(p + EPS) + (1. - p) * torch.log(1. - p + EPS)
+                dropout_regularizer *= self.concrete_dropout_regularizer * self.input_dimensionality
                 
-                # loss = weights_regularizer + dropout_regularizer
+                loss = weights_regularizer + dropout_regularizer
                 #loss = ((self.p_logit - 0.0) ** 2) * 1e-6
-                loss = (torch.sigmoid(self.p_logit) ** 2) * 1e-6
+                #loss = (torch.sigmoid(self.p_logit) ** 2) * 1e-6
             return loss
         else:
             return 0
@@ -1491,11 +1491,12 @@ def run_bert_with_concrete(
             mask = torch.sigmoid((torch.log(p + EPS) - torch.log(1 - p + EPS) + torch.log(concrete_score + EPS) - torch.log(1 - concrete_score + EPS)) / (temperature + EPS))
             prev_layer.output.dense.retain_prob = 1 - p
         #print(mask[0])
-        #last_mask = torch.max(torch.stack([mask, last_mask], dim=0), dim=0)[0]  # this should be input mask of current layer, so set dropout mask to previous output layer.
         
-        last_masks.append(mask)
-        masks = torch.stack(last_masks, dim=-1)
-        last_mask = torch.sum(torch.softmax(masks, dim=-1) * masks, dim=-1)
+        last_mask = torch.max(torch.stack([mask, last_mask], dim=0), dim=0)[0]  # this should be input mask of current layer, so set dropout mask to previous output layer.
+        
+        # last_masks.append(mask)
+        # masks = torch.stack(last_masks, dim=-1)
+        # last_mask = torch.sum(torch.softmax(masks, dim=-1) * masks, dim=-1)
 
         prev_layer.output.dense.concrete_mask = last_mask.view(-1, TLEN, 1)
     
