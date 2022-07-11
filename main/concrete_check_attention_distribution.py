@@ -36,8 +36,8 @@ for step, batch in enumerate(dataloader):
             score = layer.attention.self.last_attention_scores
             score_masked = score * onehot_mask
             score_mean = torch.sum(score_masked, dim=-1, keepdim=True) / torch.sum(onehot_mask, dim=-1, keepdim=True)
-            score_mean_of_square = torch.sum(score_masked*score_masked, dim=-1, keepdim=True) / torch.sum(onehot_mask, dim=-1, keepdim=True)
-            score_std = torch.sqrt(score_mean_of_square - score_mean*score_mean)
+            score_var = torch.sum(torch.square((score_masked - score_mean) * onehot_mask), dim=-1, keepdim=True) / torch.sum(onehot_mask, dim=-1, keepdim=True)
+            score_std = torch.sqrt(score_var)
             std_score = (score - score_mean) / score_std
             std_score = torch.mean(std_score, dim=1)
             std_score = torch.mean(std_score, dim=1)
