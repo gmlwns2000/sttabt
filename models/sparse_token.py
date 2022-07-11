@@ -1298,6 +1298,7 @@ def update_input_mask(sparse_bert, ks=[0.999,0.5,0.25,0.1]):
         
         indices = torch.zeros(batch_size, 1, dtype=torch.int64, device=device)
         impacts = torch.ones(batch_size, 1, dtype=dtype, device=device)
+        benchmark_cum('mask_occupy', 1.0/token_len)
 
         if sparse_bert.pooler is not None:
             sparse_bert.pooler.dense.channel_indices = indices
