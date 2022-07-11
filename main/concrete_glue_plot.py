@@ -1,9 +1,10 @@
 import argparse, json
 from matplotlib import pyplot as plt
+from utils.glue import get_score
 
 import trainer.concrete_trainer as concrete
 
-p_logits = [-4, -2, -1, 0, 2]
+p_logits = [-4, -2, -1, 0, 2, 4]
 
 def main():
     parser = argparse.ArgumentParser()
@@ -20,12 +21,6 @@ def main():
         batch_size=args.batch_size
     )
     trainer.enable_checkpointing = False
-
-    def get_score(score):
-        if 'accuracy' in score:
-            return score['accuracy'], "acc"
-        first_metric = list(score.keys())[0]
-        return score[first_metric], first_metric
 
     occupies = []
     metrics = []
@@ -46,6 +41,7 @@ def main():
         metrics.append(metric)
     
     plt.style.use("seaborn")
+
     plt.clf()
     plt.plot(occupies, metrics, label='test')
     plt.xlabel('occupy')
@@ -61,7 +57,7 @@ def main():
             'metric_name': metric_name,
             'subset': subset,
             'p_logits': p_logits,
-        }, f)
+        }, f, indent=2)
 
 if __name__ == '__main__':
     main()

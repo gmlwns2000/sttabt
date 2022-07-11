@@ -1,6 +1,7 @@
 # %%
 import trainer.glue_base as glue_base
 import models.sparse_token as sparse
+from utils.glue import get_score
 import pickle, importlib
 importlib.reload(glue_base)
 importlib.reload(sparse)
@@ -20,12 +21,6 @@ kss = [
 sparse.benchmark_reset()
 # subsets = ["mrpc"]
 # kss = ['dynamic:avg:avg:f',0.1]
-
-def get_score(score):
-    if 'accuracy' in score:
-        return score['accuracy'], "acc"
-    first_metric = list(score.keys())[0]
-    return score[first_metric], first_metric
 
 results = {}
 i = 0

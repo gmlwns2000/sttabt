@@ -1,6 +1,7 @@
 # %%
 import trainer.glue_base as glue_base
 import models.sparse_token as sparse
+from utils.glue import get_score
 import pickle, importlib, itertools, gc, json
 import torch
 from matplotlib import pyplot as plt
@@ -25,12 +26,6 @@ RUN_APPROX = True
 
 # %%
 results = {}
-
-def get_score(score):
-    if 'accuracy' in score:
-        return score['accuracy'], "acc"
-    first_metric = list(score.keys())[0]
-    return score[first_metric], first_metric
 
 def run_exp():
     global subsets, kss

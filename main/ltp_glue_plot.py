@@ -1,5 +1,6 @@
 import argparse, json
 from matplotlib import pyplot as plt
+from utils.glue import get_score
 
 import trainer.ltp_trainer as ltp
 
@@ -16,12 +17,6 @@ def main():
     args = parser.parse_args()
     subset = args.subset
     plot_name = f'saves_plot/ltp-glue-{subset}'
-
-    def get_score(score):
-        if 'accuracy' in score:
-            return score['accuracy'], "acc"
-        first_metric = list(score.keys())[0]
-        return score[first_metric], first_metric
 
     occupies = []
     metrics = []
