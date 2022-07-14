@@ -1,12 +1,17 @@
-import argparse, json
+import argparse, json, math
 from matplotlib import pyplot as plt
 from utils.glue import get_score
 import torch, pickle
 
 import trainer.concrete_trainer as concrete
 
-p_logits = [-4, -2, -1.5, -1, -0.5, 0, 3]
-p_logits = [0, 2,]
+p_logits = [-2, -1.5, -1, -0.5, 0, 3, 6]
+epoch_factors = [1.0, 1.0, 1.0, 1.0, 1.0, 0.4, 0.4]
+# p_logits = [0, 3]
+# epoch_factors = [0.5, 0.2]
+
+#p_logits = [-1]
+#epoch_factors = [1.0 for _ in range(100)]
 
 def plot(occupies, metrics, metric_name, subset, plot_name):
     with open('saves_plot/[F4-PREWIKI.v2]glue_benchmark_accum_absatt.pickle', 'rb') as f:
@@ -63,24 +68,26 @@ def main():
     subset = args.subset
     plot_name = f'saves_plot/concrete-glue-{args.header}{subset}'
 
-    trainer = concrete.ConcreteTrainer(
-        dataset=subset,
-        factor=4,
-        batch_size=args.batch_size
-    )
-    trainer.enable_checkpointing = False
-
     occupies = []
     metrics = []
     metric_name = None
 
     for i, p_logit in enumerate(p_logits):
-        trainer.reset_train()
+        trainer = concrete.ConcreteTrainer(
+            dataset=subset,
+            factor=4,
+            batch_size=args.batch_size
+        )
+        trainer.enable_checkpointing = False
+        #trainer.reset_train()
+        trainer.epochs = int(math.ceil(concrete.task_to_epochs[subset] * epoch_factors[i]))
         trainer.sparse_bert.module.bert.set_concrete_init_p_logit(p_logit)
         trainer.main()
 
         concrete.sparse.benchmark_reset()
+        trainer.sparse_bert.module.bert.set_concrete_hard_threshold(0.5)
         result = trainer.eval_sparse_model(show_message=False)
+        trainer.sparse_bert.module.bert.set_concrete_hard_threshold(None)
         occupy = concrete.sparse.benchmark_get_average('concrete_occupy')
         metric, metric_name = get_score(result)
 

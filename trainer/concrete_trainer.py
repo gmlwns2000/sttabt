@@ -1,3 +1,4 @@
+import traceback
 import transformers, torch, tqdm, random, gc, visdom
 import numpy as np
 import transformers.models.bert.modeling_bert as berts
@@ -16,6 +17,8 @@ import torch.distributed as dist
 import torch.nn as nn
 import torch.optim as optim
 import torch.multiprocessing as mp
+
+torch.autograd.set_detect_anomaly(True)
 
 from torch.nn.parallel import DistributedDataParallel as DDP
 
@@ -46,13 +49,13 @@ task_to_keys = {
 }
 
 task_to_epochs = {
-    "cola": 2,
+    "cola": 5,
     "mnli": 2,
     "mrpc": 10,
     "qnli": 2,
     "qqp":  2,
     "rte":  10,
-    "sst2": 4,
+    "sst2": 2,
     "stsb": 10,
     "wnli": 10,
     "bert": 6,
@@ -158,8 +161,8 @@ class ConcreteTrainer:
         self.enable_plot = enable_plot
         self.init_checkpoint = init_checkpoint
         self.checkpoint_name = checkpoint_name
-        self.lr = 2e-5
-        self.weight_decay = 0
+        self.lr = 1e-5
+        self.weight_decay = 5e-2
         self.dataset = dataset
         if batch_size is None or batch_size <= 0:
             batch_size = task_to_batch_size[self.dataset]
@@ -176,10 +179,6 @@ class ConcreteTrainer:
         if self.world_size > 1:
             dist.barrier()
 
-        _batch_size = self.batch_size
-        self.batch_size = None
-        self.set_batch_size(_batch_size)
-
         self.epochs = task_to_epochs[self.dataset]
         
         self.model, self.tokenizer = get_base_model(self.dataset)
@@ -193,9 +192,6 @@ class ConcreteTrainer:
         # self.optimizer = self.get_optimizer(self.sparse_bert)
         # self.scaler = torch.cuda.amp.GradScaler()
         self.reset_train()
-
-        self.last_metric_score = None
-        self.last_loss = None
 
         print('Trainer: Checkpoint path', self.checkpoint_path())
 
@@ -246,6 +242,10 @@ class ConcreteTrainer:
     
     def reset_train(self):
         self.seed()
+
+        _batch_size = self.batch_size
+        self.batch_size = None
+        self.set_batch_size(_batch_size)
 
         self.epoch = 0
         self.last_metric_score = None
@@ -318,7 +318,7 @@ class ConcreteTrainer:
     def checkpoint_path(self):
         if self.checkpoint_name is not None:
             return f'saves/{self.checkpoint_name}.pth'
-        return f'saves/concrete-glue-{self.dataset}{self.factor}.pth'
+        return f'saves/concrete-glue-{self.dataset}-{self.factor}.pth'
     
     def load(self, path = None, load_loss = True):
         if path is None:
@@ -443,9 +443,16 @@ class ConcreteTrainer:
             #if 'labels' in batch: del batch['labels']
             
             with torch.cuda.amp.autocast():
-                output = self.sparse_bert(**batch)
+                try:
+                    output = self.sparse_bert(**batch)
+                except sparse.NanException as ex:
+                    traceback.print_exc()
+                    print('args[0][0]', ex.args[0][0])
+                    for n, param in self.sparse_bert.named_parameters():
+                        print(n, param.view(-1))
+                    exit()
                 loss = output.loss
-
+            #print(loss.item())
             self.scaler.scale(loss).backward()
             
             self.scaler.unscale_(self.optimizer)
@@ -520,7 +527,7 @@ class ConcreteTrainer:
         
         for layer in self.sparse_bert.module.bert.encoder.layer:
             layer = layer # type: sparse.BertLayer
-            print(layer.p_logit.item(), layer.concrete_prop_p_logit.item())
+            #print(layer.p_logit.item(), layer.concrete_prop_p_logit.item())
 
 def main_ddp(rank, world_size, args):
     print(f"Running DDP instance on rank {rank}:{args.port}.")

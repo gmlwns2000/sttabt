@@ -678,20 +678,22 @@ class BertLayer(nn.Module):
             if USE_LTP_ON_CONCRETE:
                 loss = torch.mean(torch.mean(self.output.dense.concrete_mask.squeeze(-1), dim=-1) / torch.mean(input_dict['attention_mask'].squeeze(-1) * 1.0, dim = -1)) * 1e-1
             else:
-                p = torch.sigmoid(self.p_logit)
+                # p = torch.sigmoid(self.p_logit)
 
-                sum_of_square = 0
-                for param in self.parameters():
-                    sum_of_square += torch.sum(torch.pow(param, 2))
+                # sum_of_square = 0
+                # for param in self.parameters():
+                #     sum_of_square += torch.sum(torch.pow(param, 2))
                 
-                weights_regularizer = self.concrete_weight_regularizer * sum_of_square / (1 - p + EPS)
+                # weights_regularizer = self.concrete_weight_regularizer * sum_of_square / (1 - p + EPS)
                 
-                dropout_regularizer = p * torch.log(p + EPS) + (1. - p) * torch.log(1. - p + EPS)
-                dropout_regularizer *= self.concrete_dropout_regularizer * self.input_dimensionality
+                # dropout_regularizer = p * torch.log(p + EPS) + (1. - p) * torch.log(1. - p + EPS)
+                # dropout_regularizer *= self.concrete_dropout_regularizer * self.input_dimensionality
                 
-                loss = weights_regularizer + dropout_regularizer
-                #loss = ((self.p_logit - 0.0) ** 2) * 1e-6
+                # loss = weights_regularizer + dropout_regularizer
+                loss = ((self.p_logit - self.concrete_init_min) ** 2) * 1e-4
                 #loss = (torch.sigmoid(self.p_logit) ** 2) * 1e-6
+                raise_if_nan(loss)
+                #loss = 0
             return loss
         else:
             return 0
@@ -1375,9 +1377,16 @@ def run_bert_with_approx(
 
 STANDARD_NORMAL_DISTRIBUTION = torch.distributions.Normal(0, 1)
 
+class NanException(Exception):
+    def __init__(self, *args: object) -> None:
+        super().__init__("NaN occure")
+
+        self.args = args
+
 def raise_if_nan(tensor):
+    #return tensor
     if torch.isnan(tensor).any():
-        raise Exception(tensor)
+        raise NanException(tensor)
     return tensor
 
 def run_bert_with_concrete(
@@ -1449,14 +1458,14 @@ def run_bert_with_concrete(
         prev_layer.output.dense.concrete_score = last_score
         #print(score[0])
         
-        if USE_LTP_ON_CONCRETE:
+        if True:
             temperature = 0.01 #prev_layer.temperature
             mask = torch.sigmoid((score - prev_layer.p_logit) / temperature) * input_dict['attention_mask']
             prev_layer.output.dense.retain_prob = 1.0
         else:
             # accumulate dropout mask from Concrete Dropout.
             # use score as randomness source.
-            concrete_score_mode = 'score_uniform'
+            concrete_score_mode = 'prob'
             if concrete_score_mode == 'prob':
                 concrete_score = score
                 concrete_score_min = torch.min(concrete_score + (concrete_score < EPS) * 99, dim=1, keepdim=True)[0]
@@ -1467,18 +1476,25 @@ def run_bert_with_concrete(
                 #concrete_score should be unifrom distribution
                 att_mask = layer.attention.self.last_attention_mask
                 N, T = input_dict['attention_mask'].shape
-                onehot_att_mask = input_dict['attention_mask'].view(N, 1, 1, T) #N,T -> N, 1, 1, T
+                onehot_att_mask = (att_mask > -1) * 1.0 #input_dict['attention_mask'].view(N, 1, 1, T) #N,T -> N, 1, 1, T
                 onehot_att_mask_sum = torch.sum(onehot_att_mask, dim=-1, keepdim=True)
                 att_score = layer.attention.self.last_attention_scores #N, H, T, T
+                raise_if_nan(att_score)
                 att_score_masked = att_score * onehot_att_mask
+                raise_if_nan(att_score_masked)
                 att_score_mean = torch.sum(att_score_masked, dim=-1, keepdim=True) / (onehot_att_mask_sum + EPS)
+                raise_if_nan(att_score_mean)
                 att_score_var = torch.sum(torch.square((att_score_masked - att_score_mean) * onehot_att_mask), dim=-1, keepdim=True) / (onehot_att_mask_sum + EPS)
+                raise_if_nan(att_score_var)
                 att_score_std = torch.sqrt(att_score_var)
+                raise_if_nan(att_score_std)
                 std_att_score = (att_score - att_score_mean) / (att_score_std + EPS)
+                raise_if_nan(std_att_score)
                 std_att_score = torch.mean(std_att_score, dim=1)
                 std_att_score = torch.mean(std_att_score, dim=1)
+                raise_if_nan(std_att_score)
                 uni_att_score = STANDARD_NORMAL_DISTRIBUTION.cdf(std_att_score) #torch.distributions.Normal(0, 1).cdf(std_att_score)
-                uni_att_score = (0.05 + 0.95 * uni_att_score) * input_dict['attention_mask']
+                uni_att_score = (0.05 + 0.95 * uni_att_score * (score > EPS)) * input_dict['attention_mask']
                 concrete_score = uni_att_score
             else:
                 raise Exception()
@@ -1492,11 +1508,11 @@ def run_bert_with_concrete(
             prev_layer.output.dense.retain_prob = 1 - p
         #print(mask[0])
         
-        last_mask = torch.max(torch.stack([mask, last_mask], dim=0), dim=0)[0]  # this should be input mask of current layer, so set dropout mask to previous output layer.
+        #last_mask = torch.max(torch.stack([mask, last_mask], dim=0), dim=0)[0]  # this should be input mask of current layer, so set dropout mask to previous output layer.
         
-        # last_masks.append(mask)
-        # masks = torch.stack(last_masks, dim=-1)
-        # last_mask = torch.sum(torch.softmax(masks, dim=-1) * masks, dim=-1)
+        last_masks.append(mask)
+        masks = torch.stack(last_masks, dim=-1)
+        last_mask = torch.sum(torch.softmax(masks, dim=-1) * masks, dim=-1)
 
         prev_layer.output.dense.concrete_mask = last_mask.view(-1, TLEN, 1)
     
