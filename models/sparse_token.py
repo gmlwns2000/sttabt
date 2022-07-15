@@ -641,7 +641,7 @@ class BertLayer(nn.Module):
             self.concrete_init_max = self.concrete_init_min
         self.concrete_prop_p_logit = nn.Parameter(torch.tensor(0.0, dtype=torch.float32))
         self.p_logit = nn.Parameter(torch.empty(1).uniform_(self.concrete_init_min, self.concrete_init_max))
-        self.temperature = 0.01
+        self.temperature = 0.1
         self.input_dimensionality = 0
 
     def init_p_logits(self):
@@ -713,7 +713,7 @@ class BertLayer(nn.Module):
                 # dropout_regularizer *= self.concrete_dropout_regularizer * self.input_dimensionality
                 
                 # loss = weights_regularizer + dropout_regularizer
-                loss = ((self.p_logit - self.concrete_init_min) ** 2) * 1e-5
+                loss = ((self.p_logit - self.concrete_init_min) ** 2) * 1e-6
                 #loss = (torch.sigmoid(self.p_logit) ** 2) * 1e-6
                 #raise_if_nan(loss)
                 #loss = 0
@@ -1532,7 +1532,8 @@ def run_bert_with_concrete(
                 std_att_score = torch.mean(std_att_score, dim=1)
                 raise_if_nan(std_att_score)
                 uni_att_score = STANDARD_NORMAL_DISTRIBUTION.cdf(std_att_score) #torch.distributions.Normal(0, 1).cdf(std_att_score)
-                uni_att_score = (0.05 + 0.95 * uni_att_score * (score > EPS)) * input_dict['attention_mask']
+                #uni_att_score = (0.05 + 0.95 * uni_att_score * (score > EPS)) * input_dict['attention_mask']
+                uni_att_score = (0.05 + 0.95 * uni_att_score) * input_dict['attention_mask']
                 concrete_score = uni_att_score
             else:
                 raise Exception()
@@ -1548,11 +1549,11 @@ def run_bert_with_concrete(
             #layer.output.dense.retain_prob = 1 - p
         #print(mask[0])
         
-        #last_mask = torch.max(torch.stack([mask, last_mask], dim=0), dim=0)[0]  # this should be input mask of current layer, so set dropout mask to previous output layer.
+        current_mask = torch.max(torch.stack([mask, last_mask], dim=0), dim=0)[0]  # this should be input mask of current layer, so set dropout mask to previous output layer.
         
-        last_masks.append(mask)
-        masks = torch.stack(last_masks, dim=-1)
-        current_mask = torch.sum(torch.softmax(masks, dim=-1) * masks, dim=-1)
+        # last_masks.append(mask)
+        # masks = torch.stack(last_masks, dim=-1)
+        # current_mask = torch.sum(torch.softmax(masks, dim=-1) * masks, dim=-1)
 
         # last_mask = mask
         
