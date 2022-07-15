@@ -18,9 +18,11 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.multiprocessing as mp
 
-torch.autograd.set_detect_anomaly(True)
+#torch.autograd.set_detect_anomaly(True)
 
 from torch.nn.parallel import DistributedDataParallel as DDP
+
+AMP_ENABLED = False
 
 def setup(rank, world_size, port=32277):
     os.environ['MASTER_ADDR'] = 'localhost'
@@ -254,7 +256,7 @@ class ConcreteTrainer:
         self.init_sparse_bert()
 
         self.optimizer = self.get_optimizer(self.sparse_bert)
-        self.scaler = torch.cuda.amp.GradScaler()
+        self.scaler = torch.cuda.amp.GradScaler(enabled=AMP_ENABLED)
 
     def load_train_dataset(self):
         self.train_dataloader = get_dataloader(
@@ -272,10 +274,10 @@ class ConcreteTrainer:
     def get_optimizer(self, model):
         param_optimizer = list(model.named_parameters())
         no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
-        high_lr = ['']
+        high_lr = []
         params = [
             {'params': [p for n, p in param_optimizer if (not any(nd in n for nd in no_decay)) and (not any(nd in n for nd in high_lr))], 'weight_decay': self.weight_decay},
-            {'params': [p for n, p in param_optimizer if (not any(nd in n for nd in no_decay)) and (any(nd in n for nd in high_lr))], 'lr':1e-4, 'weight_decay': self.weight_decay},
+            #{'params': [p for n, p in param_optimizer if (not any(nd in n for nd in no_decay)) and (any(nd in n for nd in high_lr))], 'lr':1e-4, 'weight_decay': self.weight_decay},
             {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
         ]
         #print(params[1])
@@ -286,6 +288,12 @@ class ConcreteTrainer:
         }
         
         return optim.AdamW(params, **kwargs)
+    
+    def set_concrete_init_p_logit(self, v):
+        self.sparse_bert.module.bert.set_concrete_init_p_logit(v)
+    
+    def set_concrete_hard_threshold(self, v):
+        self.sparse_bert.module.bert.set_concrete_hard_threshold(v)
 
     def set_batch_size(self, new_value):
         if new_value != self.batch_size:
@@ -381,7 +389,7 @@ class ConcreteTrainer:
             labels = batch['labels']
             del batch['labels']
             
-            with torch.no_grad(), torch.cuda.amp.autocast(enabled=amp):
+            with torch.no_grad(), torch.cuda.amp.autocast(enabled=amp and AMP_ENABLED):
                 outputs = model(**batch)
             predictions = outputs[0]
 
@@ -442,7 +450,7 @@ class ConcreteTrainer:
             batch['output_hidden_states'] = True
             #if 'labels' in batch: del batch['labels']
             
-            with torch.cuda.amp.autocast():
+            with torch.cuda.amp.autocast(enabled=AMP_ENABLED):
                 try:
                     output = self.sparse_bert(**batch)
                 except sparse.NanException as ex:
@@ -477,7 +485,7 @@ class ConcreteTrainer:
         for i, batch in enumerate(self.test_dataloader):
             if i > 100: break
             
-            with torch.no_grad(), torch.cuda.amp.autocast():
+            with torch.no_grad(), torch.cuda.amp.autocast(enabled = AMP_ENABLED):
                 batch = {k: v.to(self.device, non_blocking=True) for k, v in batch.items()}
                 batch['output_attentions'] = True
                 loss = self.sparse_bert(**batch).loss
@@ -527,7 +535,7 @@ class ConcreteTrainer:
         
         for layer in self.sparse_bert.module.bert.encoder.layer:
             layer = layer # type: sparse.BertLayer
-            #print(layer.p_logit.item(), layer.concrete_prop_p_logit.item())
+            print(layer.p_logit.item(), layer.concrete_prop_p_logit.item())
 
 def main_ddp(rank, world_size, args):
     print(f"Running DDP instance on rank {rank}:{args.port}.")

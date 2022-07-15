@@ -5,9 +5,9 @@ import torch, pickle
 
 import trainer.concrete_trainer as concrete
 
-p_logits = [-2, -1.5, -1, -0.5, 0, 3, 6]
+p_logits = [-2, -1.5, -1, -0.5, 0, 3, 12]
 epoch_factors = [1.0, 1.0, 1.0, 1.0, 1.0, 0.4, 0.4]
-# p_logits = [0, 3]
+#p_logits = [0, 3]
 # epoch_factors = [0.5, 0.2]
 
 #p_logits = [-1]
@@ -81,13 +81,13 @@ def main():
         trainer.enable_checkpointing = False
         #trainer.reset_train()
         trainer.epochs = int(math.ceil(concrete.task_to_epochs[subset] * epoch_factors[i]))
-        trainer.sparse_bert.module.bert.set_concrete_init_p_logit(p_logit)
+        trainer.set_concrete_init_p_logit(p_logit)
         trainer.main()
 
         concrete.sparse.benchmark_reset()
-        trainer.sparse_bert.module.bert.set_concrete_hard_threshold(0.5)
+        trainer.set_concrete_hard_threshold(0.5)
         result = trainer.eval_sparse_model(show_message=False)
-        trainer.sparse_bert.module.bert.set_concrete_hard_threshold(None)
+        trainer.set_concrete_hard_threshold(None)
         occupy = concrete.sparse.benchmark_get_average('concrete_occupy')
         metric, metric_name = get_score(result)
 

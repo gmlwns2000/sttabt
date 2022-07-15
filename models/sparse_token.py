@@ -96,7 +96,12 @@ def benchmark_get_average(name):
     global __benchmark
     if name in __benchmark:
         c, v = __benchmark[name]
-        return v/c
+        if isinstance(v, float) or isinstance(v, int):
+            return v/c
+        elif isinstance(v, torch.Tensor):
+            return (v/c).item()
+        else:
+            raise Exception('unknown benchmark dtype')
     return 0
 
 def benchmark_report():
@@ -108,6 +113,16 @@ def benchmark_report():
 def benchmark_reset():
     global __benchmark
     __benchmark = {}
+
+BENCHMARK_LTP_OCCUPY = True
+def benchmark_ltp_occupy(v):
+    global BENCHMARK_LTP_OCCUPY
+    BENCHMARK_LTP_OCCUPY = v
+
+BENCHMARK_CONCRETE_OCCUPY = True
+def benchmark_concrete_occupy(v):
+    global BENCHMARK_CONCRETE_OCCUPY
+    BENCHMARK_CONCRETE_OCCUPY = v
 
 #endregion
 
@@ -278,10 +293,11 @@ class SparseChannelLinear(nn.Module):
         
         if not self.concrete_mask is None:
             mask = self.concrete_mask
-            if self.concrete_hard_threshold is not None:
-                mask = (mask > self.concrete_hard_threshold) * 1.0
-                self.concrete_mask_hard = mask
-            benchmark_cum('concrete_occupy', mask.mean().item())
+            if self.concrete_mask_hard is not None:
+                # mask = (mask > self.concrete_hard_threshold) * 1.0
+                # self.concrete_mask_hard = mask
+                #assert self.concrete_mask_hard is not None
+                mask = self.concrete_mask_hard
             #print(mask[0])
             x = x * mask
             #x = x / (self.retain_prob + EPS) # retain prob makes thing worse and worse!!!
@@ -336,8 +352,14 @@ class BertSelfAttention(nn.Module):
         self.output_mask = None
         self.output_indices = None
         self.query.channel_indices = None
+        self.query.concrete_mask = None
+        self.query.concrete_mask_hard = None
         self.key.channel_indices = None
+        self.key.concrete_mask = None
+        self.key.concrete_mask_hard = None
         self.value.channel_indices = None
+        self.value.concrete_mask = None
+        self.value.concrete_mask_hard = None
     
     def update_input_mask_from_previous_attention(self, output_token_mask, output_token_indices, output_token_impact, k):
         input_mask, input_indices, input_impacts = update_input_mask_from_previous_attention(
@@ -391,9 +413,9 @@ class BertSelfAttention(nn.Module):
 
         query_layer = self.transpose_for_scores(mixed_query_layer)
         if self.backup_last_inputs:
-            self.last_query = query_layer.clone()
-            self.last_key = key_layer.clone()
-            self.last_value = value_layer.clone()
+            self.last_query = query_layer
+            self.last_key = key_layer
+            self.last_value = value_layer
         timer_end('bert.attention.qkv')
 
         timer_start('bert.attention.scores.matmul')
@@ -437,14 +459,14 @@ class BertSelfAttention(nn.Module):
             attention_probs = attention_probs * head_mask
 
         if self.input_mask is not None and self.attention_masking_timing == 'after_softmax':
-            print('not supported')
+            raise 'not supported'
             if self.print: print(f'apply input mask, after softmax. input_mask:{self.input_mask.shape}, attention_probs:{attention_probs.shape}')
             attention_probs = attention_probs * self.input_mask.view(self.input_mask.shape[0], 1, 1, self.input_mask.shape[-1])
         
         if self.backup_last_inputs:
             if self.print: print('SelfAttention.forward: last_attention_probs backuped')
-            self.last_attention_probs = attention_probs.clone()
-            self.last_attention_mask = attention_mask.clone()
+            self.last_attention_probs = attention_probs
+            self.last_attention_mask = attention_mask
 
         context_layer = torch.matmul(attention_probs, value_layer)
 
@@ -584,7 +606,7 @@ class LTPPruneToken(nn.Module):
             score = torch.mean(torch.mean(attention_score, dim=1), dim=1)
             self.last_mask = (score > self.threshold) * 1.0
         self.last_mask = self.last_mask.unsqueeze(-1)
-        benchmark_cum("ltp_occupy", self.last_mask.mean().item())
+        if BENCHMARK_LTP_OCCUPY: benchmark_cum("ltp_occupy", self.last_mask.mean())
         
         return x * self.last_mask
 
@@ -610,6 +632,7 @@ class BertLayer(nn.Module):
         #concrete dropout
         self.concrete_weight_regularizer = 1e-6
         self.concrete_dropout_regularizer = 1e-5
+        self.concrete_calc_loss = False
         if USE_LTP_ON_CONCRETE:
             self.concrete_init_min = 0.001
             self.concrete_init_max = 0.1
@@ -618,7 +641,7 @@ class BertLayer(nn.Module):
             self.concrete_init_max = self.concrete_init_min
         self.concrete_prop_p_logit = nn.Parameter(torch.tensor(0.0, dtype=torch.float32))
         self.p_logit = nn.Parameter(torch.empty(1).uniform_(self.concrete_init_min, self.concrete_init_max))
-        self.temperature = 0.1
+        self.temperature = 0.01
         self.input_dimensionality = 0
 
     def init_p_logits(self):
@@ -674,7 +697,7 @@ class BertLayer(nn.Module):
         return layer_output
     
     def loss_concrete(self, input_dict):
-        if not self.output.dense.concrete_mask is None:
+        if self.concrete_calc_loss:
             if USE_LTP_ON_CONCRETE:
                 loss = torch.mean(torch.mean(self.output.dense.concrete_mask.squeeze(-1), dim=-1) / torch.mean(input_dict['attention_mask'].squeeze(-1) * 1.0, dim = -1)) * 1e-1
             else:
@@ -690,9 +713,9 @@ class BertLayer(nn.Module):
                 # dropout_regularizer *= self.concrete_dropout_regularizer * self.input_dimensionality
                 
                 # loss = weights_regularizer + dropout_regularizer
-                loss = ((self.p_logit - self.concrete_init_min) ** 2) * 1e-4
+                loss = ((self.p_logit - self.concrete_init_min) ** 2) * 1e-5
                 #loss = (torch.sigmoid(self.p_logit) ** 2) * 1e-6
-                raise_if_nan(loss)
+                #raise_if_nan(loss)
                 #loss = 0
             return loss
         else:
@@ -1324,12 +1347,18 @@ def update_input_mask(sparse_bert, ks=[0.999,0.5,0.25,0.1]):
 def reset_input_mask(sparse_bert):
     if sparse_bert.pooler is not None:
         sparse_bert.pooler.dense.channel_indices = None
+        sparse_bert.pooler.dense.concrete_mask = None
     
     for layer in sparse_bert.encoder.layer:
         layer.attention.output.dense.channel_indices = None
+        layer.attention.output.dense.concrete_mask = None
+        
         layer.intermediate.dense.channel_indices = None
+        layer.intermediate.dense.concrete_mask = None
+        
         layer.output.dense.channel_indices = None
         layer.output.dense.concrete_mask = None
+        
         layer.attention.self.reset_input_mask()
 
 def run_bert_with_approx(
@@ -1384,7 +1413,7 @@ class NanException(Exception):
         self.args = args
 
 def raise_if_nan(tensor):
-    #return tensor
+    return tensor
     if torch.isnan(tensor).any():
         raise NanException(tensor)
     return tensor
@@ -1394,13 +1423,13 @@ def run_bert_with_concrete(
     approx_bert: "ApproxBertModel",
     input_dict: "dict", 
 ):
+    reset_input_mask(sparse_bert)
     # with torch.no_grad():
     attention_input_dict = copy.deepcopy(input_dict)
     attention_input_dict['output_attentions'] = True
     ret_approx = approx_bert(**attention_input_dict)
     attentions = ret_approx.attentions
     
-    reset_input_mask(sparse_bert)
     attention_mask = input_dict['attention_mask']
     attention_mask = ((1.0 - attention_mask) * (-10000)).view(attention_mask.shape[0], 1, 1, attention_mask.shape[-1])
     for i, layer in enumerate(sparse_bert.encoder.layer):
@@ -1420,14 +1449,23 @@ def run_bert_with_concrete(
     last_score[0, 0] = 1.0
     last_mask[0, 0] = 1.0
     last_mask = last_mask.expand((N, -1))
+    last_mask_un = last_mask.view(-1, TLEN, 1)
     last_layer = sparse_bert.encoder.layer[-1] # type: BertLayer
-    last_layer.output.dense.concrete_mask = last_mask.view(-1, TLEN, 1)
-    last_layer.output.dense.concrete_score = torch.zeros_like(last_mask)
+    last_layer.output.dense.concrete_mask = last_mask_un
+    last_layer.output.dense.concrete_mask_hard = last_mask_un
+    last_layer.intermediate.dense.concrete_mask = last_mask_un
+    last_layer.attention.output.dense.concrete_mask = last_mask_un
+    #last_layer.attention.self.query.concrete_mask = last_mask_un
+    if BENCHMARK_CONCRETE_OCCUPY: 
+        with torch.no_grad():
+            benchmark_cum('concrete_occupy', last_mask_un.mean())
     last_masks = [last_mask]
-    for j in range(len(sparse_bert.encoder.layer) - 1):
+    for j in range(len(sparse_bert.encoder.layer)):
         #layer indexing
         i = len(sparse_bert.encoder.layer) - j - 1
-        prev_layer = sparse_bert.encoder.layer[i-1] # type: BertLayer
+        prev_layer = None
+        if i-1 >= 0:
+            prev_layer = sparse_bert.encoder.layer[i-1] # type: BertLayer
         layer = sparse_bert.encoder.layer[i] # type: BertLayer
 
         # score calculation from STTBT
@@ -1455,17 +1493,17 @@ def run_bert_with_concrete(
         else:
             raise Exception()
         last_score = score
-        prev_layer.output.dense.concrete_score = last_score
+        layer.output.dense.concrete_score = last_score
         #print(score[0])
         
-        if True:
+        if False:
             temperature = 0.01 #prev_layer.temperature
-            mask = torch.sigmoid((score - prev_layer.p_logit) / temperature) * input_dict['attention_mask']
-            prev_layer.output.dense.retain_prob = 1.0
+            mask = torch.sigmoid((score - layer.p_logit) / temperature) * input_dict['attention_mask']
+            #prev_layer.output.dense.retain_prob = 1.0
         else:
             # accumulate dropout mask from Concrete Dropout.
             # use score as randomness source.
-            concrete_score_mode = 'prob'
+            concrete_score_mode = 'score_uniform'
             if concrete_score_mode == 'prob':
                 concrete_score = score
                 concrete_score_min = torch.min(concrete_score + (concrete_score < EPS) * 99, dim=1, keepdim=True)[0]
@@ -1500,21 +1538,65 @@ def run_bert_with_concrete(
                 raise Exception()
 
             #print(concrete_score[0])
-            p = torch.sigmoid(prev_layer.p_logit).view(1, 1)
-            temperature = prev_layer.temperature
-            prev_layer.output.dense.concrete_score = concrete_score
-            prev_layer.output.dense.concrete_debug = [temperature, p.item(), EPS]
-            mask = torch.sigmoid((torch.log(p + EPS) - torch.log(1 - p + EPS) + torch.log(concrete_score + EPS) - torch.log(1 - concrete_score + EPS)) / (temperature + EPS))
-            prev_layer.output.dense.retain_prob = 1 - p
+            p = torch.sigmoid(layer.p_logit).view(1, 1)
+            layer.concrete_calc_loss = True
+            temperature = layer.temperature
+            layer.output.dense.concrete_score = concrete_score
+            layer.output.dense.concrete_debug = [temperature, p, EPS]
+            mask = torch.sigmoid((torch.log(p + EPS) - torch.log(1 - p + EPS) + torch.log(concrete_score + EPS) - torch.log(1 - concrete_score + EPS)) / (temperature))
+            raise_if_nan(mask)
+            #layer.output.dense.retain_prob = 1 - p
         #print(mask[0])
         
         #last_mask = torch.max(torch.stack([mask, last_mask], dim=0), dim=0)[0]  # this should be input mask of current layer, so set dropout mask to previous output layer.
         
         last_masks.append(mask)
         masks = torch.stack(last_masks, dim=-1)
-        last_mask = torch.sum(torch.softmax(masks, dim=-1) * masks, dim=-1)
+        current_mask = torch.sum(torch.softmax(masks, dim=-1) * masks, dim=-1)
 
-        prev_layer.output.dense.concrete_mask = last_mask.view(-1, TLEN, 1)
+        # last_mask = mask
+        
+        concrete_hard_threshold = layer.output.dense.concrete_hard_threshold
+        current_mask_un = current_mask.view(-1, TLEN, 1)
+        current_mask_hard = None
+        if layer.output.dense.concrete_hard_threshold is not None:
+            current_mask_hard = (current_mask_un >= concrete_hard_threshold) * 1.0
+            if BENCHMARK_CONCRETE_OCCUPY:
+                with torch.no_grad(): benchmark_cum('concrete_occupy', current_mask_hard.mean())
+        else:
+            if BENCHMARK_CONCRETE_OCCUPY:
+                with torch.no_grad(): benchmark_cum('concrete_occupy', current_mask_un.mean())
+
+        # update mask for optimization
+        if prev_layer is not None: # if not top layer
+            prev_layer.output.dense.concrete_mask = current_mask_un
+            prev_layer.output.dense.concrete_mask_hard = current_mask_hard
+        # if current_mask_hard is None:
+        #     layer.attention.self.input_mask = current_mask_un.squeeze(-1)
+        # else:
+        #     layer.attention.self.input_mask = current_mask_hard.squeeze(-1)
+        
+        # if prev_layer is not None: # if not top layer
+        #     prev_layer.output.dense.concrete_mask = current_mask_un
+        #     prev_layer.output.dense.concrete_mask_hard = current_mask_hard
+        
+        if prev_layer is not None:
+            # prev_layer.attention.self.query.concrete_mask = current_mask_un
+            # prev_layer.attention.self.query.concrete_mask_hard = current_mask_hard
+
+            prev_layer.attention.output.dense.concrete_mask = current_mask_un
+            prev_layer.attention.output.dense.concrete_mask_hard = current_mask_hard
+            
+            prev_layer.intermediate.dense.concrete_mask = current_mask_un
+            prev_layer.intermediate.dense.concrete_mask_hard = current_mask_hard
+        
+        # layer.attention.self.key.concrete_mask = current_mask_un
+        # layer.attention.self.key.concrete_mask_hard = current_mask_hard
+        
+        # layer.attention.self.value.concrete_mask = current_mask_un
+        # layer.attention.self.value.concrete_mask_hard = current_mask_hard
+
+        last_mask = current_mask
     
     # forward
     ret_sparse = sparse_bert(**input_dict)
