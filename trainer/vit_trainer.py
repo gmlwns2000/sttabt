@@ -3,6 +3,56 @@ import numpy as np
 import transformers
 from datasets import load_dataset
 
+tasks_to_epoch = {
+    'food101_5000': 10,
+}
+
+class VitTrainer:
+    def __init__(self,
+        subset = 'food101_500',
+        batch_size = 4,
+        device = 0,
+    ):
+        self.subset = subset
+        self.epochs = tasks_to_epoch[self.subset]
+        self.device = device
+        self.batch_size = batch_size
+
+        self.init_dataloader()
+        self.reset_dataloader()
+
+        self.reset_train()
+
+# Initialize
+
+    def init_dataloader(self):
+        pass
+
+    def reset_dataloader(self):
+        pass
+
+    def reset_train(self):
+        self.extractor = transformers.ViTFeatureExtractor.from_pretrained("google/vit-base-patch16-224")
+        self.model = transformers.ViTForImageClassification.from_pretrained("google/vit-base-patch16-224")
+
+# Eval Impl
+
+    def eval_model(self, show_message=False):
+        pass
+
+# Train Impl
+
+    def train_epoch(self):
+        pass
+
+# Main
+
+    def main(self):
+        for epoch in range(self.epochs):
+            self.epoch = epoch
+            self.train_epoch()
+            self.eval_model(show_message=True)
+
 def main():
     vit_extractor = transformers.ViTFeatureExtractor.from_pretrained("google/vit-base-patch16-224")
     vit_model = transformers.ViTForImageClassification.from_pretrained("google/vit-base-patch16-224")
