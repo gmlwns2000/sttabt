@@ -2,7 +2,7 @@
 import trainer.concrete_trainer as concrete
 
 trainer = concrete.ConcreteTrainer(
-    'mrpc',
+    'mnli',
     factor=4,
 )
 
@@ -14,7 +14,7 @@ trainer.eval_sparse_model()
 print('occ', concrete.sparse.benchmark_get_average('concrete_occupy'))
 # %%
 trainer.reset_train()
-trainer.sparse_bert.module.bert.set_concrete_init_p_logit(-0.5)
+trainer.sparse_bert.module.bert.set_concrete_init_p_logit(0)
 trainer.sparse_bert.module.bert.set_concrete_hard_threshold(None)
 trainer.sparse_bert.module.use_concrete_masking = True
 concrete.sparse.benchmark_reset()
@@ -49,6 +49,7 @@ for step, batch in enumerate(tqdm.tqdm(trainer.test_dataloader)):
         for ib in range(mask.shape[0]):
             slice = layer.output.dense.concrete_score[ib, :int(torch.sum(mask[ib]).item())].view(-1)
             scores.append(slice)
+    if step > 500: break
 
 scores = torch.concat(scores)
 scores = scores.cpu().numpy()
