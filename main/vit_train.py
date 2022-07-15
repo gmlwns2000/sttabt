@@ -1,4 +1,3 @@
-from cv2 import transform
 import torch
 import numpy as np
 import transformers
