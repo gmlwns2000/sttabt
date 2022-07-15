@@ -641,7 +641,7 @@ class BertLayer(nn.Module):
             self.concrete_init_max = self.concrete_init_min
         self.concrete_prop_p_logit = nn.Parameter(torch.tensor(0.0, dtype=torch.float32))
         self.p_logit = nn.Parameter(torch.empty(1).uniform_(self.concrete_init_min, self.concrete_init_max))
-        self.temperature = 0.1
+        self.temperature = 0.01
         self.input_dimensionality = 0
 
     def init_p_logits(self):
@@ -1453,8 +1453,8 @@ def run_bert_with_concrete(
     last_layer = sparse_bert.encoder.layer[-1] # type: BertLayer
     last_layer.output.dense.concrete_mask = last_mask_un
     last_layer.output.dense.concrete_mask_hard = last_mask_un
-    #last_layer.intermediate.dense.concrete_mask = last_mask_un
-    #last_layer.attention.output.dense.concrete_mask = last_mask_un
+    last_layer.intermediate.dense.concrete_mask = last_mask_un
+    last_layer.attention.output.dense.concrete_mask = last_mask_un
     #last_layer.attention.self.query.concrete_mask = last_mask_un
     if BENCHMARK_CONCRETE_OCCUPY: 
         with torch.no_grad():
@@ -1576,26 +1576,25 @@ def run_bert_with_concrete(
         # else:
         #     layer.attention.self.input_mask = current_mask_hard.squeeze(-1)
         
-        # if current_mask_hard is not None or True:
-        #     if prev_layer is not None: # if not top layer
-        #         prev_layer.output.dense.concrete_mask = current_mask_un
-        #         prev_layer.output.dense.concrete_mask_hard = current_mask_hard
-            
-        #     if prev_layer is not None:
-        #         prev_layer.attention.self.query.concrete_mask = current_mask_un
-        #         prev_layer.attention.self.query.concrete_mask_hard = current_mask_hard
+        # if prev_layer is not None: # if not top layer
+        #     prev_layer.output.dense.concrete_mask = current_mask_un
+        #     prev_layer.output.dense.concrete_mask_hard = current_mask_hard
+        
+        if prev_layer is not None:
+            # prev_layer.attention.self.query.concrete_mask = current_mask_un
+            # prev_layer.attention.self.query.concrete_mask_hard = current_mask_hard
 
-        #         prev_layer.attention.output.dense.concrete_mask = current_mask_un
-        #         prev_layer.attention.output.dense.concrete_mask_hard = current_mask_hard
-                
-        #         prev_layer.intermediate.dense.concrete_mask = current_mask_un
-        #         prev_layer.intermediate.dense.concrete_mask_hard = current_mask_hard
+            prev_layer.attention.output.dense.concrete_mask = current_mask_un
+            prev_layer.attention.output.dense.concrete_mask_hard = current_mask_hard
             
-        #     layer.attention.self.key.concrete_mask = current_mask_un
-        #     layer.attention.self.key.concrete_mask_hard = current_mask_hard
-            
-        #     layer.attention.self.value.concrete_mask = current_mask_un
-            layer.attention.self.value.concrete_mask_hard = current_mask_hard
+            prev_layer.intermediate.dense.concrete_mask = current_mask_un
+            prev_layer.intermediate.dense.concrete_mask_hard = current_mask_hard
+        
+        # layer.attention.self.key.concrete_mask = current_mask_un
+        # layer.attention.self.key.concrete_mask_hard = current_mask_hard
+        
+        # layer.attention.self.value.concrete_mask = current_mask_un
+        # layer.attention.self.value.concrete_mask_hard = current_mask_hard
 
         last_mask = current_mask
     
