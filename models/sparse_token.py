@@ -641,7 +641,7 @@ class BertLayer(nn.Module):
             self.concrete_init_max = self.concrete_init_min
         self.concrete_prop_p_logit = nn.Parameter(torch.tensor(0.0, dtype=torch.float32))
         self.p_logit = nn.Parameter(torch.empty(1).uniform_(self.concrete_init_min, self.concrete_init_max))
-        self.temperature = 0.1
+        self.temperature = 0.05
         self.input_dimensionality = 0
 
     def init_p_logits(self):
