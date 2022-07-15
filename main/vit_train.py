@@ -8,7 +8,7 @@ def main():
     vit_extractor = transformers.ViTFeatureExtractor.from_pretrained("google/vit-base-patch16-224")
     vit_model = transformers.ViTForImageClassification.from_pretrained("google/vit-base-patch16-224")
 
-    data = load_dataset("food101", split="train[:5000]")
+    data = load_dataset("food101", split="train[:5000]", cache_dir='./cache/datasets')
     data = data.train_test_split(test_size=0.2)
     labels = data["train"].features["label"].names
     
@@ -28,7 +28,7 @@ def main():
     data_collator = transformers.DefaultDataCollator()
 
     training_args = transformers.TrainingArguments(
-        output_dir="./saves",
+        output_dir="./saves/vit-baseline/",
         per_device_train_batch_size=16,
         evaluation_strategy="steps",
         num_train_epochs=4,
