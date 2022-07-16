@@ -346,6 +346,7 @@ class BertSelfAttention(nn.Module):
         #self.query.force_dense = self.key.force_dense = self.value.force_dense = False
     
     def reset_input_mask(self):
+        self.concrete_input_mask = None
         self.input_mask = None
         self.input_indices = None
         self.input_impacts = None
@@ -452,6 +453,10 @@ class BertSelfAttention(nn.Module):
         timer_start('bert.attention.probs.dropout')
         attention_probs = self.dropout(attention_probs)
         timer_end('bert.attention.probs.dropout')
+
+        if self.concrete_input_mask is not None:
+            N, H, T, _ = attention_probs.shape
+            attention_probs = attention_probs * self.concrete_input_mask.view(N, 1, 1, T)
 
         # Mask heads if we want to
         if head_mask is not None:
@@ -1455,7 +1460,7 @@ def run_bert_with_concrete(
     last_layer.output.dense.concrete_mask_hard = last_mask_un
     last_layer.intermediate.dense.concrete_mask = last_mask_un
     last_layer.attention.output.dense.concrete_mask = last_mask_un
-    #last_layer.attention.self.query.concrete_mask = last_mask_un
+    last_layer.attention.self.query.concrete_mask = last_mask_un
     if BENCHMARK_CONCRETE_OCCUPY: 
         with torch.no_grad():
             benchmark_cum('concrete_occupy', last_mask_un.mean())
@@ -1572,18 +1577,10 @@ def run_bert_with_concrete(
         if prev_layer is not None: # if not top layer
             prev_layer.output.dense.concrete_mask = current_mask_un
             prev_layer.output.dense.concrete_mask_hard = current_mask_hard
-        # if current_mask_hard is None:
-        #     layer.attention.self.input_mask = current_mask_un.squeeze(-1)
-        # else:
-        #     layer.attention.self.input_mask = current_mask_hard.squeeze(-1)
-        
-        # if prev_layer is not None: # if not top layer
-        #     prev_layer.output.dense.concrete_mask = current_mask_un
-        #     prev_layer.output.dense.concrete_mask_hard = current_mask_hard
         
         if prev_layer is not None:
-            # prev_layer.attention.self.query.concrete_mask = current_mask_un
-            # prev_layer.attention.self.query.concrete_mask_hard = current_mask_hard
+            prev_layer.attention.self.query.concrete_mask = current_mask_un
+            prev_layer.attention.self.query.concrete_mask_hard = current_mask_hard
 
             prev_layer.attention.output.dense.concrete_mask = current_mask_un
             prev_layer.attention.output.dense.concrete_mask_hard = current_mask_hard
@@ -1591,11 +1588,16 @@ def run_bert_with_concrete(
             prev_layer.intermediate.dense.concrete_mask = current_mask_un
             prev_layer.intermediate.dense.concrete_mask_hard = current_mask_hard
         
-        # layer.attention.self.key.concrete_mask = current_mask_un
-        # layer.attention.self.key.concrete_mask_hard = current_mask_hard
+        # if current_mask_hard is None:
+        #     layer.attention.self.concrete_input_mask = current_mask_un.squeeze(-1)
+        # else:
+        #     layer.attention.self.concrete_input_mask = current_mask_hard.squeeze(-1)
         
-        # layer.attention.self.value.concrete_mask = current_mask_un
-        # layer.attention.self.value.concrete_mask_hard = current_mask_hard
+        layer.attention.self.key.concrete_mask = current_mask_un
+        layer.attention.self.key.concrete_mask_hard = current_mask_hard
+        
+        layer.attention.self.value.concrete_mask = current_mask_un
+        layer.attention.self.value.concrete_mask_hard = current_mask_hard
 
         last_mask = current_mask
     
