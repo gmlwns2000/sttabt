@@ -551,6 +551,9 @@ def main_ddp(rank, world_size, args):
         init_checkpoint=args.init_checkpoint,
         enable_plot=args.enable_plot,
     )
+
+    if args.p_logit is not None:
+        trainer.set_concrete_init_p_logit(args.p_logit)
     
     trainer.main()
     
@@ -591,6 +594,7 @@ if __name__ == '__main__':
     parser.add_argument('--factor', type=int, default=4)
     parser.add_argument('--init-checkpoint', type=str, default=None)
     parser.add_argument('--batch-size', type=int, default=-1)
+    parser.add_argument('--p-logit', type=float, default=None)
     parser.add_argument('--port', type=int, default=-1)
     parser.add_argument('--device', type=int, default=0)
     parser.add_argument('--n-gpus', type=int, default=128)
