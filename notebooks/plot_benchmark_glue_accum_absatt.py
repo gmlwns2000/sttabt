@@ -19,7 +19,7 @@ RESULT_PKL = RESULT_NAME + '.pickle'
 factor = 4
 subsets = ["cola","mnli","mrpc","qnli","qqp","rte","sst2","stsb","wnli",]
 kss = [0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.625, 0.75]
-#subsets = ['mrpc']
+#subsets = ['cola']
 #kss = [0.05, 0.1, 0.15, 0.2, 0.3, 0.5]
 #kss = [0.1, 0.5]
 RUN_APPROX = True
@@ -68,12 +68,14 @@ def run_exp():
         else:
             ksx = [(1-x/10.0)*(2-2*target_ks)+(2*target_ks-1) for x in range(12)]
         #ksx[-1] = 0.99
+        sparse.benchmark_reset()
         score_forward, _ = get_score(trainer.eval_sparse_model(ks=ksx, use_forward=True, show_message=False))
-        print('forward', score_forward, '@', mask_occupy)
+        mask_occupy_forward = sparse.benchmark_get_average('forward_occupy')
+        print('forward', score_forward, '@', mask_occupy_forward)
 
         result = {
             'occupy':mask_occupy, 'score_sparse':score_sparse, 
-            'score_forward':score_forward, 'metric':metric
+            'occupy_forward': mask_occupy_forward, 'score_forward':score_forward, 'metric':metric
         }
         if RUN_APPROX:
             result['score_sparse_approx'] = score_approx
@@ -102,6 +104,7 @@ for subset in subsets:
     acc_forward = []
     occupy = []
     occupy_approx = []
+    occupy_forward = []
     metric = None
     for ks in kss:
         item = results[(subset, ks)]
@@ -110,13 +113,14 @@ for subset in subsets:
         if RUN_APPROX: acc_approx.append(item['score_sparse_approx'])
         acc_forward.append(item['score_forward'])
         occupy.append(item['occupy'])
+        occupy_forward.append(item['occupy_forward'])
         if RUN_APPROX: occupy_approx.append(item['occupy_approx'])
     acc_bert = results[(subset, 'bert')]['score_bert']
     occupy_bert = [min(occupy+occupy_approx), max(occupy+occupy_approx)]
     acc_bert = [acc_bert, acc_bert]
     plt.plot(occupy, acc_sparse, marker='o', label='sparse (abs.att.)')
     if RUN_APPROX: plt.plot(occupy_approx, acc_approx, marker='o', label='sparse (approx.)')
-    plt.plot(occupy, acc_forward, marker='o', label='forward only')
+    plt.plot(occupy_forward, acc_forward, marker='o', label='forward only')
     plt.plot(occupy_bert, acc_bert, linestyle='--', label='bert-base')
     plt.xlabel('occupy')
     plt.ylabel(metric)

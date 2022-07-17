@@ -246,8 +246,11 @@ class SparseChannelLinear(nn.Module):
         self.concrete_score = None
         self.concrete_mask = None   #for concrete dropout
         self.concrete_mask_hard = None
+        self.concrete_mask_mm = None   #for concrete dropout
+        self.concrete_mask_mm_hard = None
         self.concrete_hard_threshold = None
         self.concrete_debug = None
+        self.concrete_print = False
         self.retain_prob = 1.0
 
     def reset_parameters(self) -> None:
@@ -260,6 +263,14 @@ class SparseChannelLinear(nn.Module):
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         if self.channel_indices is None or self.force_dense:
             timer_start('sparselinear.dense.linear')
+            if self.concrete_print:
+                print('value', input[0, :, 0].view(-1))
+                print('value mask', self.concrete_mask_mm[0].view(-1))
+            if self.concrete_mask_mm is not None:
+                if self.concrete_mask_mm_hard is not None:
+                    input = input * self.concrete_mask_mm_hard
+                else:
+                    input = input * self.concrete_mask_mm
             x = F.linear(input, self.weight, self.bias)
             timer_end('sparselinear.dense.linear')
         else:
@@ -457,6 +468,7 @@ class BertSelfAttention(nn.Module):
         if self.concrete_input_mask is not None:
             N, H, T, _ = attention_probs.shape
             attention_probs = attention_probs * self.concrete_input_mask.view(N, 1, 1, T)
+            attention_probs = attention_probs / (torch.sum(attention_probs, dim=-1, keepdim=True) + EPS)
 
         # Mask heads if we want to
         if head_mask is not None:
@@ -498,6 +510,12 @@ class BertSelfOutput(nn.Module):
         hidden_states = self.dense(hidden_states)
         hidden_states = self.dropout(hidden_states)
         hidden_states = self.LayerNorm(hidden_states + input_tensor)
+        # skip
+        # if self.dense.concrete_mask is not None:
+        #     if self.dense.concrete_mask_hard is not None:
+        #         hidden_states = hidden_states * self.dense.concrete_mask_hard
+        #     else:
+        #         hidden_states = hidden_states * self.dense.concrete_mask
         return hidden_states
 
 class BertAttention(nn.Module):
@@ -535,6 +553,7 @@ class BertAttention(nn.Module):
         past_key_value=None,
         output_attentions=False,
     ):
+        #print('att_preself', hidden_states[0,:,0].view(-1))
         self_outputs = self.self(
             hidden_states,
             attention_mask,
@@ -548,6 +567,7 @@ class BertAttention(nn.Module):
         attention_output = self.output(self_outputs[0], hidden_states)
         outputs = (attention_output,) + self_outputs[1:]  # add attentions if we output them
         timer_end('bert.attention.output')
+        #print('att_final', outputs[0][0,:,0].view(-1))
         return outputs
 
 class BertIntermediate(nn.Module):
@@ -578,6 +598,12 @@ class BertOutput(nn.Module):
         hidden_states = self.dense(hidden_states)
         hidden_states = self.dropout(hidden_states)
         hidden_states = self.LayerNorm(hidden_states + input_tensor)
+        # skip
+        # if self.dense.concrete_mask is not None:
+        #     if self.dense.concrete_mask_hard is not None:
+        #         hidden_states = hidden_states * self.dense.concrete_mask_hard
+        #     else:
+        #         hidden_states = hidden_states * self.dense.concrete_mask
         timer_end('bert.output')
         return hidden_states
 
@@ -646,7 +672,7 @@ class BertLayer(nn.Module):
             self.concrete_init_max = self.concrete_init_min
         self.concrete_prop_p_logit = nn.Parameter(torch.tensor(0.0, dtype=torch.float32))
         self.p_logit = nn.Parameter(torch.empty(1).uniform_(self.concrete_init_min, self.concrete_init_max))
-        self.temperature = 0.05
+        self.temperature = 0.1
         self.input_dimensionality = 0
 
     def init_p_logits(self):
@@ -1429,10 +1455,12 @@ def run_bert_with_concrete(
     input_dict: "dict", 
 ):
     reset_input_mask(sparse_bert)
-    # with torch.no_grad():
+    #with torch.no_grad():
     attention_input_dict = copy.deepcopy(input_dict)
     attention_input_dict['output_attentions'] = True
+    set_backup_last_inputs(sparse_bert, True)
     ret_approx = approx_bert(**attention_input_dict)
+    reset_input_mask(sparse_bert)
     attentions = ret_approx.attentions
     
     attention_mask = input_dict['attention_mask']
@@ -1450,17 +1478,19 @@ def run_bert_with_concrete(
     N = attentions[0].shape[0]
     device = attentions[0].device
     last_score = torch.zeros((1, TLEN), dtype=torch.float32, device=device)
+    last_concrete_score = torch.zeros((1, TLEN), dtype=torch.float32, device=device)
     last_mask = torch.zeros((1, TLEN), dtype=torch.float32, device=device)
     last_score[0, 0] = 1.0
+    last_concrete_score[0, 0] = 1.0
     last_mask[0, 0] = 1.0
     last_mask = last_mask.expand((N, -1))
     last_mask_un = last_mask.view(-1, TLEN, 1)
     last_layer = sparse_bert.encoder.layer[-1] # type: BertLayer
+    last_layer.attention.self.query.concrete_mask = last_mask_un
+    last_layer.attention.output.dense.concrete_mask = last_mask_un
+    last_layer.intermediate.dense.concrete_mask = last_mask_un
     last_layer.output.dense.concrete_mask = last_mask_un
     last_layer.output.dense.concrete_mask_hard = last_mask_un
-    last_layer.intermediate.dense.concrete_mask = last_mask_un
-    last_layer.attention.output.dense.concrete_mask = last_mask_un
-    last_layer.attention.self.query.concrete_mask = last_mask_un
     if BENCHMARK_CONCRETE_OCCUPY: 
         with torch.no_grad():
             benchmark_cum('concrete_occupy', last_mask_un.mean())
@@ -1517,9 +1547,10 @@ def run_bert_with_concrete(
                 concrete_score = concrete_score / (torch.max(concrete_score, dim=1, keepdim=True)[0] + EPS)
             elif concrete_score_mode == 'score_uniform':
                 #concrete_score should be unifrom distribution
+                
                 att_mask = layer.attention.self.last_attention_mask
                 N, T = input_dict['attention_mask'].shape
-                onehot_att_mask = (att_mask > -1) * 1.0 #input_dict['attention_mask'].view(N, 1, 1, T) #N,T -> N, 1, 1, T
+                onehot_att_mask = ((att_mask > -1) * 1.0) #input_dict['attention_mask'].view(N, 1, 1, T) #N,T -> N, 1, 1, T
                 onehot_att_mask_sum = torch.sum(onehot_att_mask, dim=-1, keepdim=True)
                 att_score = layer.attention.self.last_attention_scores #N, H, T, T
                 raise_if_nan(att_score)
@@ -1533,13 +1564,26 @@ def run_bert_with_concrete(
                 raise_if_nan(att_score_std)
                 std_att_score = (att_score - att_score_mean) / (att_score_std + EPS)
                 raise_if_nan(std_att_score)
-                std_att_score = torch.mean(std_att_score, dim=1)
-                std_att_score = torch.mean(std_att_score, dim=1)
-                raise_if_nan(std_att_score)
                 uni_att_score = STANDARD_NORMAL_DISTRIBUTION.cdf(std_att_score) #torch.distributions.Normal(0, 1).cdf(std_att_score)
+                uni_att_score = torch.mean(uni_att_score, dim=1) # head
+
+                #uni_att_score = torch.mean(layer.attention.self.last_attention_probs, dim=1)
+
+                #std_att_score = torch.mean(std_att_score, dim=1)
+
+                N, T, _ = uni_att_score.shape
+                uni_att_score = uni_att_score * last_mask.unsqueeze(-1)
+                score_prop = 0.1
+                uni_att_score = torch.sum(
+                    uni_att_score * last_concrete_score.unsqueeze(-1) * score_prop + uni_att_score * (1-score_prop), dim=1
+                ) / (torch.sum(last_mask, dim=1, keepdim=True) + EPS)
+                
+                uni_att_score = uni_att_score / (torch.max(uni_att_score, dim=-1, keepdim=True)[0] + EPS)
                 #uni_att_score = (0.05 + 0.95 * uni_att_score * (score > EPS)) * input_dict['attention_mask']
-                uni_att_score = (0.05 + 0.95 * uni_att_score) * input_dict['attention_mask']
+                empty_base = 0.05
+                uni_att_score = (empty_base + (1-empty_base) * uni_att_score) * input_dict['attention_mask']
                 concrete_score = uni_att_score
+                last_concrete_score = concrete_score
             else:
                 raise Exception()
 
@@ -1551,18 +1595,24 @@ def run_bert_with_concrete(
             layer.output.dense.concrete_debug = [temperature, p, EPS]
             mask = torch.sigmoid((torch.log(p + EPS) - torch.log(1 - p + EPS) + torch.log(concrete_score + EPS) - torch.log(1 - concrete_score + EPS)) / (temperature))
             raise_if_nan(mask)
+
+            #topk mask
+            # topk_mask = torch.zeros_like(mask)
+            # indices = torch.topk(concrete_score, k=max(1, int(concrete_score.shape[-1]*p)), dim=-1).indices
+            # topk_mask = topk_mask.scatter_(-1, indices, 1.0)
+            # mask = topk_mask
             #layer.output.dense.retain_prob = 1 - p
         #print(mask[0])
+
+        concrete_hard_threshold = layer.output.dense.concrete_hard_threshold
         
         current_mask = torch.max(torch.stack([mask, last_mask], dim=0), dim=0)[0]  # this should be input mask of current layer, so set dropout mask to previous output layer.
         
         # last_masks.append(mask)
         # masks = torch.stack(last_masks, dim=-1)
         # current_mask = torch.sum(torch.softmax(masks, dim=-1) * masks, dim=-1)
-
-        # last_mask = mask
+        # current_mask = current_mask / (torch.max(current_mask, dim=-1, keepdim=True)[0] + EPS)
         
-        concrete_hard_threshold = layer.output.dense.concrete_hard_threshold
         current_mask_un = current_mask.view(-1, TLEN, 1)
         current_mask_hard = None
         if layer.output.dense.concrete_hard_threshold is not None:
@@ -1574,10 +1624,6 @@ def run_bert_with_concrete(
                 with torch.no_grad(): benchmark_cum('concrete_occupy', current_mask_un.mean())
 
         # update mask for optimization
-        if prev_layer is not None: # if not top layer
-            prev_layer.output.dense.concrete_mask = current_mask_un
-            prev_layer.output.dense.concrete_mask_hard = current_mask_hard
-        
         if prev_layer is not None:
             prev_layer.attention.self.query.concrete_mask = current_mask_un
             prev_layer.attention.self.query.concrete_mask_hard = current_mask_hard
@@ -1587,17 +1633,24 @@ def run_bert_with_concrete(
             
             prev_layer.intermediate.dense.concrete_mask = current_mask_un
             prev_layer.intermediate.dense.concrete_mask_hard = current_mask_hard
+
+            prev_layer.output.dense.concrete_mask = current_mask_un
+            prev_layer.output.dense.concrete_mask_hard = current_mask_hard
         
-        # if current_mask_hard is None:
-        #     layer.attention.self.concrete_input_mask = current_mask_un.squeeze(-1)
-        # else:
-        #     layer.attention.self.concrete_input_mask = current_mask_hard.squeeze(-1)
+        if current_mask_hard is None:
+            layer.attention.self.concrete_input_mask = current_mask_un.squeeze(-1)
+        else:
+            layer.attention.self.concrete_input_mask = current_mask_hard.squeeze(-1)
         
         layer.attention.self.key.concrete_mask = current_mask_un
         layer.attention.self.key.concrete_mask_hard = current_mask_hard
         
+        #layer.attention.self.value.concrete_print = True
         layer.attention.self.value.concrete_mask = current_mask_un
         layer.attention.self.value.concrete_mask_hard = current_mask_hard
+
+        # layer.attention.self.query.concrete_mask = current_mask_un
+        # layer.attention.self.query.concrete_mask_hard = current_mask_hard
 
         last_mask = current_mask
     
@@ -1671,6 +1724,7 @@ def run_bert_forward_sparsity(
         attention_mask = input_dict['attention_mask']
         extended_attention_mask: torch.Tensor = sparse_bert.get_extended_attention_mask(attention_mask, input_shape, device)
 
+    benchmark_cum('forward_occupy', 1.0)
     for idx, layer in enumerate(sparse_bert.encoder.layer):
         input_mask = torch.zeros(batch_size, token_len, device=device, dtype=dtype)\
             .scatter_(1, indices, 1.0)
@@ -1698,6 +1752,9 @@ def run_bert_forward_sparsity(
         _, indices = torch.topk(impact_factor, k=max(1, min(impact_factor.shape[1], int(ks[idx]*token_len))), dim=1)
         if idx == (len(sparse_bert.encoder.layer) - 1):
             indices = torch.zeros_like(indices)
+            benchmark_cum('forward_occupy', 1.0 / token_len)
+        else:
+            benchmark_cum('forward_occupy', indices.shape[-1] / token_len)
 
         indices_unsqueeze = indices.unsqueeze(-1)
         layer.attention.output.dense.channel_indices = indices_unsqueeze
@@ -1812,7 +1869,6 @@ class ApproxSparseBertForSequenceClassification(BertPreTrainedModel):
         classifier_dropout = (
             config.classifier_dropout if config.classifier_dropout is not None else config.hidden_dropout_prob
         )
-        self.approx_bert = approx_bert
         self.dropout = nn.Dropout(classifier_dropout)
         self.classifier = nn.Linear(config.hidden_size, config.num_labels)
 
@@ -1825,6 +1881,8 @@ class ApproxSparseBertForSequenceClassification(BertPreTrainedModel):
 
         # Initialize weights and apply final processing
         self.post_init()
+
+        self.approx_bert = approx_bert
     
     def forward(
         self,

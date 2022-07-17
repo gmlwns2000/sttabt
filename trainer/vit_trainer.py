@@ -72,6 +72,8 @@ class VitTrainer:
     def reset_train(self):
         self.seed()
 
+        self.epoch = 0
+
         self.model = transformers.ViTForImageClassification.from_pretrained(
             "google/vit-base-patch16-224-in21k",
             num_labels=self.dataset.num_labels,
@@ -97,6 +99,29 @@ class VitTrainer:
         }
         
         return optim.AdamW(params, **kwargs)
+
+# IO
+
+    def get_checkpoint_path(self):
+        return f'./saves/vit-base-{self.subset}.pth'
+
+    def save(self):
+        torch.save({
+            'model': self.model.state_dict(),
+            'optimizer': self.optimizer.state_dict(),
+            'scaler': self.scaler.state_dict(),
+            'epoch': self.epoch,
+            'epochs': self.epochs,
+        }, self.get_checkpoint_path())
+        print('VitTrainer: Checkpoint saved', self.get_checkpoint_path())
+    
+    def load(self):
+        state = torch.load(self.get_checkpoint_path(), map_location='cpu')
+        self.model.load_state_dict(state['model'])
+        self.optimizer.load_state_dict(state['optimizer'])
+        self.scaler.load_state_dict(state['scaler'])
+        del state
+        print('VitTrainer: Checkpoint loaded', self.get_checkpoint_path())
 
 # Eval Impl
 

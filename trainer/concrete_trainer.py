@@ -51,15 +51,15 @@ task_to_keys = {
 }
 
 task_to_epochs = {
-    "cola": 10,
-    "mnli": 2,
-    "mrpc": 10,
-    "qnli": 2,
-    "qqp":  2,
-    "rte":  10,
+    "cola": 5,
+    "mnli": 1,
+    "mrpc": 5,
+    "qnli": 1,
+    "qqp":  1,
+    "rte":  5,
     "sst2": 2,
-    "stsb": 10,
-    "wnli": 10,
+    "stsb": 5,
+    "wnli": 5,
     "bert": 6,
 }
 
@@ -184,8 +184,8 @@ class ConcreteTrainer:
         self.epochs = task_to_epochs[self.dataset]
         
         self.model, self.tokenizer = get_base_model(self.dataset)
-        self.model.eval()
         self.model.to(self.device)
+        self.model.eval()
         self.model_bert = self.model.bert
         self.model_classifier = self.model.classifier
         
@@ -212,8 +212,10 @@ class ConcreteTrainer:
     def get_approx_bert(self):
         approx_bert = sparse.ApproxBertModel(self.model.config, factor=self.factor, wiki_train=False)
         approx_bert = MimicDDP(approx_bert)
-    
-        state = torch.load(self.approx_checkpoint_path(), map_location='cpu')
+
+        path = self.approx_checkpoint_path()
+        print('Trainer: Approx chkpt', path)
+        state = torch.load(path, map_location='cpu')
         try:
             approx_bert.load_state_dict(state['approx_bert'], strict=False)
         except Exception as ex:
@@ -274,10 +276,10 @@ class ConcreteTrainer:
     def get_optimizer(self, model):
         param_optimizer = list(model.named_parameters())
         no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
-        high_lr = []
+        high_lr = ['p_logit']
         params = [
             {'params': [p for n, p in param_optimizer if (not any(nd in n for nd in no_decay)) and (not any(nd in n for nd in high_lr))], 'weight_decay': self.weight_decay},
-            #{'params': [p for n, p in param_optimizer if (not any(nd in n for nd in no_decay)) and (any(nd in n for nd in high_lr))], 'lr':1e-4, 'weight_decay': self.weight_decay},
+            {'params': [p for n, p in param_optimizer if (not any(nd in n for nd in no_decay)) and (any(nd in n for nd in high_lr))], 'lr':self.lr * 10, 'weight_decay': 0},
             {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
         ]
         #print(params[1])
@@ -359,7 +361,7 @@ class ConcreteTrainer:
 
 # eval functions
 
-    def eval_base_model(self, model = None, amp = False, show_messages=True, max_step=987654321, split='test'):
+    def eval_base_model(self, model = None, amp = True, show_messages=True, max_step=987654321, split='test'):
         self.seed()
         if model is None:
             model = self.model
@@ -389,7 +391,7 @@ class ConcreteTrainer:
             labels = batch['labels']
             del batch['labels']
             
-            with torch.no_grad(), torch.cuda.amp.autocast(enabled=amp and AMP_ENABLED):
+            with torch.no_grad(), torch.cuda.amp.autocast(AMP_ENABLED):
                 outputs = model(**batch)
             predictions = outputs[0]
 
@@ -514,6 +516,18 @@ class ConcreteTrainer:
     def main(self):
         self.best_test_loss = 987654321
         self.steps = 0
+
+        if (self.device == 0 or self.world_size == 1) and self.enable_checkpointing:
+            for layer in self.sparse_bert.module.bert.encoder.layer:
+                print(layer.p_logit)
+            self.sparse_bert.module.bert.set_concrete_hard_threshold(None)
+            self.train_validate()
+            print('- hard prune')
+            self.sparse_bert.module.bert.set_concrete_hard_threshold(0.5)
+            self.train_validate()
+            self.sparse_bert.module.bert.set_concrete_hard_threshold(None)
+        if self.world_size > 1:
+            dist.barrier()
 
         for epoch in range(self.epochs):
             self.epoch = epoch
