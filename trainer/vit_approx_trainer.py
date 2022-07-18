@@ -93,7 +93,7 @@ class VitApproxTrainer:
         self.approx_bert = self.approx_bert.to(self.device)
 
         self.optimizer = self.get_optimizer(self.approx_bert)
-        self.scaler = torch.cuda.amp.GradScaler(enabled=self.amp_enable)
+        self.scaler = torch.cuda.amp.GradScaler(init_scale=2**8, enabled=self.amp_enable)
     
     def get_optimizer(self, model):
         param_optimizer = list(model.named_parameters())
