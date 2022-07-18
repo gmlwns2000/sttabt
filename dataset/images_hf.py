@@ -78,8 +78,8 @@ class ViTInputTransform:
                     transforms.GaussianBlur(3),
                     transforms.RandomVerticalFlip(),
                     transforms.RandomAdjustSharpness(3),
-                    transforms.RandomRotation(degrees=(0, 180)),
-                    transforms.RandomPosterize(bits=4)
+                    # transforms.RandomRotation(degrees=(0, 180)),
+                    # transforms.RandomPosterize(bits=4)
                 ]), p=0.3),
                 transforms.ToTensor(),
                 transforms.Normalize(mean=extractor.image_mean, std=extractor.image_std)
