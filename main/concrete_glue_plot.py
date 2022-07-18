@@ -5,8 +5,8 @@ import torch, pickle
 
 import trainer.concrete_trainer as concrete
 
-p_logits = [-2, -1.5, -1, -0.5, 0, 3]
-epoch_factors = [1.0, 1.0, 1.0, 1.0, 1.0, 0.4, 0.4]
+p_logits =      [-2.0, -1.5, -1.0, -0.5, 0.0, 3.0]
+epoch_factors = [ 1.0,  1.0,  1.0,  0.8, 0.4, 0.2]
 #p_logits = [0, 3]
 # epoch_factors = [0.5, 0.2]
 
@@ -83,9 +83,10 @@ def main():
 
     for i, p_logit in enumerate(p_logits):
         trainer = concrete.ConcreteTrainer(
-            dataset=subset,
-            factor=4,
-            batch_size=args.batch_size
+            dataset = subset,
+            factor = 4,
+            batch_size = args.batch_size,
+            lr = None if concrete.task_to_epochs[subset] * epoch_factors[i] >= 1.0 else (1e-5 * epoch_factors[i])
         )
         trainer.enable_checkpointing = False
         #trainer.reset_train()

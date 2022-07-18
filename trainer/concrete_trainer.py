@@ -152,7 +152,7 @@ class ConcreteTrainer:
         dataset, factor=4,
         batch_size=None, device=0, world_size=1, 
         checkpoint_name=None, init_checkpoint=None,
-        enable_plot=False,
+        enable_plot=False, lr=None,
     ):
         print('Trainer:', dataset)
         self.seed()
@@ -163,7 +163,7 @@ class ConcreteTrainer:
         self.enable_plot = enable_plot
         self.init_checkpoint = init_checkpoint
         self.checkpoint_name = checkpoint_name
-        self.lr = 1e-5
+        self.lr = 1e-5 if lr is None else lr
         self.weight_decay = 5e-2
         self.dataset = dataset
         if batch_size is None or batch_size <= 0:
