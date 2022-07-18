@@ -774,8 +774,8 @@ class BertLayer(nn.Module):
             return outputs
         elif self.arch == 'vit':
             self_attention_outputs = self.attention(
-                self.layernorm_before(hidden_states),  # in ViT, layernorm is applied before self-attention
-                head_mask,
+                hidden_states=self.layernorm_before(hidden_states),  # in ViT, layernorm is applied before self-attention
+                head_mask=head_mask,
                 output_attentions=output_attentions,
             )
             attention_output = self_attention_outputs[0]
@@ -950,7 +950,11 @@ class BertEncoder(nn.Module):
                         layer_head_mask,
                     )
                 else:
-                    layer_outputs = layer_module(hidden_states, layer_head_mask, output_attentions)
+                    layer_outputs = layer_module(
+                        hidden_states=hidden_states, 
+                        head_mask=layer_head_mask, 
+                        output_attentions=output_attentions
+                    )
 
                 hidden_states = layer_outputs[0]
 
@@ -1018,19 +1022,19 @@ class BertPreTrainedModel(PreTrainedModel):
 
 def set_print(sparse_bert, v):
     for layer in sparse_bert.encoder.layer:
-        layer.attention.self.print = v
+        layer.attention.get_attention().print = v
 
 def set_masking_timing(sparse_bert, v):
     for layer in sparse_bert.encoder.layer:
-        layer.attention.self.attention_masking_timing = v
+        layer.attention.get_attention().attention_masking_timing = v
 
 def set_output_masking(sparse_bert, v):
     for layer in sparse_bert.encoder.layer:
-        layer.attention.self.output_masking = v
+        layer.attention.get_attention().output_masking = v
 
 def set_backup_last_inputs(sparse_bert, v):
     for layer in sparse_bert.encoder.layer:
-        layer.attention.self.backup_last_inputs = v
+        layer.attention.get_attention().backup_last_inputs = v
 
 class SparseBertModel(BertPreTrainedModel):
 
@@ -1069,19 +1073,19 @@ class SparseBertModel(BertPreTrainedModel):
     
     def set_print(self, v):
         for layer in self.encoder.layer:
-            layer.attention.self.print = v
+            layer.attention.get_attention().print = v
 
     def set_masking_timing(self, v):
         for layer in self.encoder.layer:
-            layer.attention.self.attention_masking_timing = v
+            layer.attention.get_attention().attention_masking_timing = v
 
     def set_output_masking(self, v):
         for layer in self.encoder.layer:
-            layer.attention.self.output_masking = v
+            layer.attention.get_attention().output_masking = v
 
     def set_backup_last_inputs(self, v):
         for layer in self.encoder.layer:
-            layer.attention.self.backup_last_inputs = v
+            layer.attention.get_attention().backup_last_inputs = v
     
     def set_ltp_prune_token(self, v):
         for layer in self.encoder.layer:
@@ -1253,7 +1257,7 @@ class SparseBertModel(BertPreTrainedModel):
             embedding_output = self.embeddings(pixel_values, interpolate_pos_encoding=interpolate_pos_encoding)
 
             encoder_outputs = self.encoder(
-                embedding_output,
+                hidden_states=embedding_output,
                 head_mask=head_mask,
                 output_attentions=output_attentions,
                 output_hidden_states=output_hidden_states,
@@ -1371,25 +1375,31 @@ class SparseBertForSequenceClassification(BertPreTrainedModel):
         )
 
 class ApproxBertModel(nn.Module):
-    def __init__(self, origin_config, factor, wiki_train=False):
+    def __init__(self, origin_config, factor, wiki_train=False, arch='bert', ignore_pred=False):
         super().__init__()
 
+        self.arch = arch
         self.factor = factor
         config = copy.deepcopy(origin_config)
         config.hidden_size = origin_config.hidden_size // self.factor
         config.intermediate_size = origin_config.intermediate_size // self.factor
         self.config = config
 
-        self.bert = SparseBertModel(config)
+        self.bert = SparseBertModel(config, arch=arch)
         self.bert.set_print(False)
         self.bert.set_backup_last_inputs(True)
         reset_input_mask(self.bert)
         
-        classifier_dropout = (
-            config.classifier_dropout if config.classifier_dropout is not None else config.hidden_dropout_prob
-        )
-        self.dropout = nn.Dropout(classifier_dropout)
-        self.classifier = nn.Linear(config.hidden_size, config.num_labels)
+        if arch == 'bert':
+            classifier_dropout = (
+                config.classifier_dropout if config.classifier_dropout is not None else config.hidden_dropout_prob
+            )
+            self.dropout = nn.Dropout(classifier_dropout)
+            self.classifier = nn.Linear(config.hidden_size, config.num_labels)
+        elif arch == 'vit':
+            self.classifier = nn.Linear(config.hidden_size, config.num_labels) if config.num_labels > 0 else nn.Identity()
+        else:
+            raise Exception()
 
         self.transfer_hidden = nn.ModuleList([
             nn.Linear(config.hidden_size, origin_config.hidden_size)
@@ -1398,6 +1408,7 @@ class ApproxBertModel(nn.Module):
 
         self.transfer_embedding = nn.Linear(config.hidden_size, origin_config.hidden_size)
         self.wiki_train = wiki_train
+        self.ignore_pred = ignore_pred
     
     def forward(
         self,
@@ -1413,7 +1424,10 @@ class ApproxBertModel(nn.Module):
         return_dict=None,
         return_loss=False,
         original_output=None,
-        original_emb=None
+        original_emb=None,
+
+        pixel_values=None,
+        interpolate_pos_encoding=None,
     ):
         r"""
         labels (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
@@ -1424,7 +1438,7 @@ class ApproxBertModel(nn.Module):
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         outputs = self.bert(
-            input_ids,
+            input_ids=input_ids,
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
             position_ids=position_ids,
@@ -1433,11 +1447,17 @@ class ApproxBertModel(nn.Module):
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
+            pixel_values=pixel_values,
+            interpolate_pos_encoding=interpolate_pos_encoding
         )
 
         pooled_output = outputs[1]
 
-        pooled_output = self.dropout(pooled_output)
+        if self.arch == 'bert':
+            pooled_output = self.dropout(pooled_output)
+        elif self.arch == 'vit':
+            pass
+        else: raise Exception()
         logits = self.classifier(pooled_output)
 
         loss = None
@@ -1481,12 +1501,16 @@ class ApproxBertModel(nn.Module):
 
         # loss attention
         loss_att = 0
-        seq_len = torch.sum(attention_mask, dim=-1).to(approx_output.attentions[0].dtype)
+        if self.arch == 'bert':
+            seq_len = torch.sum(attention_mask, dim=-1).to(approx_output.attentions[0].dtype)
+        elif self.arch == 'vit':
+            seq_len = original_output.attentions[0].shape[-1]
+        else: raise Exception()
         for j in range(NLAYER):
             se = torch.square(approx_output.attentions[j] - original_output.attentions[j])
             se = se.view(se.shape[0], -1)
             se = torch.sum(se, dim=-1)
-            se = se / torch.square(seq_len)
+            se = se / (seq_len*seq_len)
             se = se.mean()
             loss_att += se
         loss_att /= NLAYER
@@ -1501,7 +1525,12 @@ class ApproxBertModel(nn.Module):
         loss_hid /= NLAYER
         
         # loss emb
-        approx_emb = self.bert.embeddings(input_ids)
+        if self.arch == 'bert':
+            input_values = input_ids
+        elif self.arch == 'vit':
+            input_values = pixel_values
+        else: raise Exception()
+        approx_emb = self.bert.embeddings(input_values)
         loss_emb = F.mse_loss(self.transfer_embedding(approx_emb), original_emb)
         
         # loss prediction
@@ -1515,7 +1544,7 @@ class ApproxBertModel(nn.Module):
         #     F.softmax(original_output.logits, dim=-1),
         # )
         #print(approx_output.logits[0], original_output.logits[0])
-        if self.wiki_train:
+        if self.wiki_train or self.ignore_pred:
             loss_pred *= 0
 
         loss = loss_att + loss_hid + loss_emb + loss_pred
@@ -1528,12 +1557,12 @@ class ApproxBertModel(nn.Module):
 
 def update_input_mask(sparse_bert, ks=[0.999,0.5,0.25,0.1]):
     with torch.no_grad():
-        dtype = sparse_bert.encoder.layer[0].attention.self.last_attention_probs.dtype
-        gpu_device = sparse_bert.encoder.layer[0].attention.self.last_attention_probs.device
+        dtype = sparse_bert.encoder.layer[0].attention.get_attention().last_attention_probs.dtype
+        gpu_device = sparse_bert.encoder.layer[0].attention.get_attention().last_attention_probs.device
         device = gpu_device
 
-        batch_size = sparse_bert.encoder.layer[0].attention.self.last_attention_mask.shape[0]
-        token_len = sparse_bert.encoder.layer[0].attention.self.last_attention_mask.shape[-1]
+        batch_size = sparse_bert.encoder.layer[0].attention.get_attention().last_attention_mask.shape[0]
+        token_len = sparse_bert.encoder.layer[0].attention.get_attention().last_attention_mask.shape[-1]
         
         mask = torch.zeros(batch_size, token_len, dtype=dtype, device=gpu_device)
         mask[:,0] = 1.0
@@ -1552,7 +1581,7 @@ def update_input_mask(sparse_bert, ks=[0.999,0.5,0.25,0.1]):
             layer.attention.output.dense.channel_indices = indices_unsqueeze
             layer.intermediate.dense.channel_indices = indices_unsqueeze
             layer.output.dense.channel_indices = indices_unsqueeze
-            mask, indices, impacts = layer.attention.self.update_input_mask_from_previous_attention(
+            mask, indices, impacts = layer.attention.get_attention().update_input_mask_from_previous_attention(
                 output_token_mask = mask,
                 output_token_indices = indices,
                 output_token_impact = impacts,
@@ -1574,7 +1603,7 @@ def reset_input_mask(sparse_bert):
         layer.output.dense.channel_indices = None
         layer.output.dense.concrete_mask = None
         
-        layer.attention.self.reset_input_mask()
+        layer.attention.get_attention().reset_input_mask()
 
 def run_bert_with_approx(
     sparse_bert, 
@@ -1603,9 +1632,9 @@ def run_bert_with_approx(
     attention_mask = ((1.0 - attention_mask) * (-10000)).view(attention_mask.shape[0], 1, 1, attention_mask.shape[-1])
     timer_end('eval.reset_mask.convert_mask')
     for i, layer in enumerate(sparse_bert.encoder.layer):
-        layer.attention.self.last_attention_probs = attentions[i]
-        layer.attention.self.last_approx_attention_probs = attentions[i]
-        layer.attention.self.last_attention_mask = attention_mask
+        layer.attention.get_attention().last_attention_probs = attentions[i]
+        layer.attention.get_attention().last_approx_attention_probs = attentions[i]
+        layer.attention.get_attention().last_attention_mask = attention_mask
     timer_end('eval.reset_mask')
 
     timer_start('eval.update_mask')
@@ -1651,11 +1680,11 @@ def run_bert_with_concrete(
     attention_mask = ((1.0 - attention_mask) * (-10000)).view(attention_mask.shape[0], 1, 1, attention_mask.shape[-1])
     for i, layer in enumerate(sparse_bert.encoder.layer):
         approx_layer = approx_bert.bert.encoder.layer[i] # type: BertLayer
-        layer.attention.self.last_attention_mask = attention_mask
-        layer.attention.self.last_attention_scores = approx_layer.attention.self.last_attention_scores
-        layer.attention.self.last_attention_probs = attentions[i]
-        layer.attention.self.last_approx_attention_probs = attentions[i]
-        layer.attention.self.last_approx_attention_score = approx_layer.attention.self.last_attention_scores
+        layer.attention.get_attention().last_attention_mask = attention_mask
+        layer.attention.get_attention().last_attention_scores = approx_layer.attention.get_attention().last_attention_scores
+        layer.attention.get_attention().last_attention_probs = attentions[i]
+        layer.attention.get_attention().last_approx_attention_probs = attentions[i]
+        layer.attention.get_attention().last_approx_attention_score = approx_layer.attention.get_attention().last_attention_scores
         
     #update mask
     TLEN = attentions[0].shape[-1]
@@ -1670,7 +1699,7 @@ def run_bert_with_concrete(
     last_mask = last_mask.expand((N, -1))
     last_mask_un = last_mask.view(-1, TLEN, 1)
     last_layer = sparse_bert.encoder.layer[-1] # type: BertLayer
-    last_layer.attention.self.query.concrete_mask = last_mask_un
+    last_layer.attention.get_attention().query.concrete_mask = last_mask_un
     last_layer.attention.output.dense.concrete_mask = last_mask_un
     last_layer.intermediate.dense.concrete_mask = last_mask_un
     last_layer.output.dense.concrete_mask = last_mask_un
@@ -1691,15 +1720,15 @@ def run_bert_with_concrete(
         prop_p = 0.5
         concrete_mask_mode = 'prob'
         if concrete_mask_mode == 'prob':
-            att = layer.attention.self.last_attention_probs
+            att = layer.attention.get_attention().last_attention_probs
             att = torch.mean(att, dim=1)
             att = last_score.view(-1, TLEN, 1) * att * prop_p + att * (1 - prop_p)
             score = torch.mean(att, dim=1) # shape(N, TLEN)
         elif concrete_mask_mode == 'score_uniform':
             raise Exception()
-            # att_mask = layer.attention.self.last_attention_mask
+            # att_mask = layer.attention.get_attention().last_attention_mask
             # onehot_att_mask = (att_mask > -1) * 1.0
-            # att_score = layer.attention.self.last_attention_scores
+            # att_score = layer.attention.get_attention().last_attention_scores
             # att_score_masked = att_score * onehot_att_mask
             # att_score_mean = torch.sum(att_score_masked, dim=-1, keepdim=True) / torch.sum(onehot_att_mask, dim=-1, keepdim=True)
             # att_score_mean_of_square = torch.sum(att_score_masked*att_score_masked, dim=-1, keepdim=True) / torch.sum(onehot_att_mask, dim=-1, keepdim=True)
@@ -1732,11 +1761,11 @@ def run_bert_with_concrete(
             elif concrete_score_mode == 'score_uniform':
                 #concrete_score should be unifrom distribution
                 
-                att_mask = layer.attention.self.last_attention_mask
+                att_mask = layer.attention.get_attention().last_attention_mask
                 N, T = input_dict['attention_mask'].shape
                 onehot_att_mask = ((att_mask > -1) * 1.0) #input_dict['attention_mask'].view(N, 1, 1, T) #N,T -> N, 1, 1, T
                 onehot_att_mask_sum = torch.sum(onehot_att_mask, dim=-1, keepdim=True)
-                att_score = layer.attention.self.last_attention_scores #N, H, T, T
+                att_score = layer.attention.get_attention().last_attention_scores #N, H, T, T
                 raise_if_nan(att_score)
                 att_score_masked = att_score * onehot_att_mask
                 raise_if_nan(att_score_masked)
@@ -1751,7 +1780,7 @@ def run_bert_with_concrete(
                 uni_att_score = STANDARD_NORMAL_DISTRIBUTION.cdf(std_att_score) #torch.distributions.Normal(0, 1).cdf(std_att_score)
                 uni_att_score = torch.mean(uni_att_score, dim=1) # head
 
-                #uni_att_score = torch.mean(layer.attention.self.last_attention_probs, dim=1)
+                #uni_att_score = torch.mean(layer.attention.get_attention().last_attention_probs, dim=1)
 
                 #std_att_score = torch.mean(std_att_score, dim=1)
 
@@ -1809,8 +1838,8 @@ def run_bert_with_concrete(
 
         # update mask for optimization
         if prev_layer is not None:
-            prev_layer.attention.self.query.concrete_mask = current_mask_un
-            prev_layer.attention.self.query.concrete_mask_hard = current_mask_hard
+            prev_layer.attention.get_attention().query.concrete_mask = current_mask_un
+            prev_layer.attention.get_attention().query.concrete_mask_hard = current_mask_hard
 
             prev_layer.attention.output.dense.concrete_mask = current_mask_un
             prev_layer.attention.output.dense.concrete_mask_hard = current_mask_hard
@@ -1822,19 +1851,19 @@ def run_bert_with_concrete(
             prev_layer.output.dense.concrete_mask_hard = current_mask_hard
         
         if current_mask_hard is None:
-            layer.attention.self.concrete_input_mask = current_mask_un.squeeze(-1)
+            layer.attention.get_attention().concrete_input_mask = current_mask_un.squeeze(-1)
         else:
-            layer.attention.self.concrete_input_mask = current_mask_hard.squeeze(-1)
+            layer.attention.get_attention().concrete_input_mask = current_mask_hard.squeeze(-1)
         
-        layer.attention.self.key.concrete_mask = current_mask_un
-        layer.attention.self.key.concrete_mask_hard = current_mask_hard
+        layer.attention.get_attention().key.concrete_mask = current_mask_un
+        layer.attention.get_attention().key.concrete_mask_hard = current_mask_hard
         
-        #layer.attention.self.value.concrete_print = True
-        layer.attention.self.value.concrete_mask = current_mask_un
-        layer.attention.self.value.concrete_mask_hard = current_mask_hard
+        #layer.attention.get_attention().value.concrete_print = True
+        layer.attention.get_attention().value.concrete_mask = current_mask_un
+        layer.attention.get_attention().value.concrete_mask_hard = current_mask_hard
 
-        # layer.attention.self.query.concrete_mask = current_mask_un
-        # layer.attention.self.query.concrete_mask_hard = current_mask_hard
+        # layer.attention.get_attention().query.concrete_mask = current_mask_un
+        # layer.attention.get_attention().query.concrete_mask_hard = current_mask_hard
 
         last_mask = current_mask
     
@@ -1857,7 +1886,7 @@ def zero_input_mask(sparse_bert, input_dict):
         layer.intermediate.dense.channel_indices = indices.clone()
         layer.output.dense.channel_indices = indices.clone()
         layer.output.dense.concrete_mask = None
-        self = layer.attention.self
+        self = layer.attention.get_attention()
         self.input_mask = None
         self.input_indices = indices.clone()
         self.input_impacts = None
@@ -1881,7 +1910,7 @@ def run_bert_forward_sparsity(
     batch_size, token_len = tokens.shape
     device = tokens.device
     # with torch.no_grad(): sparse_bert(**input_dict)
-    # dtype = sparse_bert.encoder.layer[0].attention.self.last_attention_probs.dtype
+    # dtype = sparse_bert.encoder.layer[0].attention.get_attention().last_attention_probs.dtype
     dtype = input_dict['input_ids'].dtype
 
     indices = torch.arange(token_len, device=device, dtype=torch.int64)
@@ -1912,11 +1941,11 @@ def run_bert_forward_sparsity(
     for idx, layer in enumerate(sparse_bert.encoder.layer):
         input_mask = torch.zeros(batch_size, token_len, device=device, dtype=dtype)\
             .scatter_(1, indices, 1.0)
-        layer.attention.self.input_mask = input_mask
+        layer.attention.get_attention().input_mask = input_mask
 
         indices_unsqueeze = indices.unsqueeze(-1)
-        layer.attention.self.key.channel_indices = indices_unsqueeze
-        layer.attention.self.value.channel_indices = indices_unsqueeze
+        layer.attention.get_attention().key.channel_indices = indices_unsqueeze
+        layer.attention.get_attention().value.channel_indices = indices_unsqueeze
         
         with torch.no_grad(): #sparse_bert(**input_dict)
             layer_outputs = layer(
@@ -1930,7 +1959,7 @@ def run_bert_forward_sparsity(
             )
             #hidden_states = layer_outputs[0]
 
-        last_att = layer.attention.self.last_attention_probs #(N, H, T, T)
+        last_att = layer.attention.get_attention().last_attention_probs #(N, H, T, T)
         impact_factor = torch.mean(last_att, dim=1) #reduce head
         impact_factor = torch.mean(impact_factor, dim=1) #reduce tokens, (N, T)
         _, indices = torch.topk(impact_factor, k=max(1, min(impact_factor.shape[1], int(ks[idx]*token_len))), dim=1)
@@ -1944,7 +1973,7 @@ def run_bert_forward_sparsity(
         layer.attention.output.dense.channel_indices = indices_unsqueeze
         layer.intermediate.dense.channel_indices = indices_unsqueeze
         layer.output.dense.channel_indices = indices_unsqueeze
-        #layer.attention.self.query.channel_indices = indices_unsqueeze 
+        #layer.attention.get_attention().query.channel_indices = indices_unsqueeze 
         # this should not be able, because query layer is already used previous attention calculation...
 
         with torch.no_grad(): #sparse_bert(**input_dict)

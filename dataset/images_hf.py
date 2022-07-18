@@ -13,7 +13,7 @@ class ImagesHfDataset:
         self.test_pool = ProcessPool(num_workers_test, test_transform)
 
         self.data = load_dataset(name, split=split, cache_dir='./cache/datasets')
-        self.data = self.data.train_test_split(test_size=0.2)
+        self.data = self.data.train_test_split(test_size=0.1)
         self.train_set = self.data['train']
         self.test_set = self.data['test']
         if 'labels' in self.train_set.features:
