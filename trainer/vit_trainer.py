@@ -17,34 +17,45 @@ from dataset.images_hf import ImagesHfDataset, ExamplesToBatchTransform, ViTInpu
 tasks_to_epoch = {
     'food101_5000': 10,
     'food101': 10,
+    'cifar100': 10,
     'imagenet': 10,
 }
 
 tasks_to_batch_size = {
     'food101_5000': 16,
     'food101': 16,
+    'cifar100': 16,
     'imagenet': 16,
 }
 
 tasks_to_dataset = {
     'food101_5000': 'food101',
     'food101': 'food101',
+    'cifar100': 'cifar100',
     'imagenet': 'imagenet-1k',
 }
 
 tasks_to_split = {
     'food101_5000': 'train[:5000]',
     'food101': 'train',
+    'cifar100': 'train',
     'imagenet': 'train',
+}
+
+tasks_to_test_split = {
+    'food101_5000': 'split',
+    'food101': 'split',
+    'cifar100': 'test',
+    'imagenet': 'test',
 }
 
 class VitTrainer:
     def __init__(self,
-        subset = 'food101_5000',
+        subset = 'cifar100',
         batch_size = -1,
         device = 0,
     ):
-        self.lr = 1e-5
+        self.lr = 5e-5
         self.weight_decay = 1e-3
         self.amp_enable = True
 
@@ -79,6 +90,7 @@ class VitTrainer:
             batch_size=self.batch_size,
             name=tasks_to_dataset[self.subset],
             split=tasks_to_split[self.subset],
+            test_split=tasks_to_test_split[self.subset],
         )
 
     def reset_train(self):
@@ -188,6 +200,7 @@ class VitTrainer:
             self.epoch = epoch
             self.train_epoch()
             self.eval_model(self.model, show_message=True)
+            self.save()
 
 def main():
     trainer = VitTrainer()
