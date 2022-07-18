@@ -8,21 +8,25 @@ from dataset.images_hf import ImagesHfDataset, ExamplesToBatchTransform, ViTInpu
 
 tasks_to_epoch = {
     'food101_5000': 10,
+    'food101': 10,
     'imagenet': 10,
 }
 
 tasks_to_batch_size = {
     'food101_5000': 16,
+    'food101': 16,
     'imagenet': 16,
 }
 
 tasks_to_dataset = {
     'food101_5000': 'food101',
+    'food101': 'food101',
     'imagenet': 'imagenet-1k',
 }
 
 tasks_to_split = {
     'food101_5000': 'train[:5000]',
+    'food101': 'train',
     'imagenet': 'train',
 }
 
