@@ -112,8 +112,8 @@ class ViTInputTransform:
                     transforms.GaussianBlur(3),
                     transforms.RandomVerticalFlip(),
                     transforms.RandomAdjustSharpness(3),
-                    transforms.RandomRotation(degrees=(0, 180)),
-                    transforms.RandomPosterize(bits=4)
+                    # transforms.RandomRotation(degrees=(0, 180)),
+                    # transforms.RandomPosterize(bits=4)
                 ]), p=0.3),
                 transforms.ToTensor(),
                 transforms.Normalize(mean=extractor.image_mean, std=extractor.image_std)
@@ -130,7 +130,7 @@ class ViTInputTransform:
 if __name__ == '__main__':
     import tqdm
     transform = ExamplesToBatchTransform(ViTInputTransform(transformers.ViTFeatureExtractor.from_pretrained("google/vit-base-patch16-224-in21k")))
-    data = ImagesHfDataset(transform, transform, name='cifar100', split='train', test_split='test')
+    data = ImagesHfDataset(transform, transform, name='cifar100', split='train', test_split='test', batch_size=64)
     for item in data.get_train_iter():
         print(item)
         break
