@@ -203,7 +203,18 @@ class VitTrainer:
             self.save()
 
 def main():
-    trainer = VitTrainer()
+    import argparse, random
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--subset', type=str, default='cifar100')
+    parser.add_argument('--batch-size', type=int, default=-1)
+
+    args = parser.parse_args()
+
+    trainer = VitTrainer(
+        batch_size=args.batch_size,
+        subset=args.subset
+    )
     trainer.main()
 
 if __name__ == '__main__':
