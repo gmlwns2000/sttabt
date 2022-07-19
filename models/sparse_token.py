@@ -1459,10 +1459,10 @@ class ApproxBertModel(nn.Module):
 
         if self.arch == 'bert':
             pooled_output = self.dropout(pooled_output)
+            logits = self.classifier(pooled_output)
         elif self.arch == 'vit':
-            pass
+            logits = self.classifier(outputs[0][:,0,:])
         else: raise Exception()
-        logits = self.classifier(pooled_output)
 
         loss = None
         if labels is not None:

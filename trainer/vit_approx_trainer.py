@@ -8,6 +8,8 @@ from dataset.images_hf import ImagesHfDataset, ExamplesToBatchTransform, ViTInpu
 
 import models.sparse_token as sparse
 
+from utils import ddp
+
 tasks_to_epoch = {
     'base': 100,
 }
@@ -58,6 +60,7 @@ class VitApproxTrainer:
         factor = 4,
         batch_size = -1,
         device = 0,
+        world_size = 1,
     ):
         self.seed()
 
@@ -74,6 +77,7 @@ class VitApproxTrainer:
         if batch_size <= 0:
             batch_size = tasks_to_batch_size[self.subset]
         self.batch_size = batch_size
+        self.world_size = world_size
 
         self.init_dataloader()
         
@@ -122,6 +126,7 @@ class VitApproxTrainer:
         )
         self.approx_bert = self.approx_bert.to(self.device)
         load_state_dict_interpolated(self.approx_bert.bert, self.model.vit.state_dict())
+        self.approx_bert = ddp.wrap_model(self.approx_bert)
 
         self.optimizer = self.get_optimizer(self.approx_bert)
         self.scaler = torch.cuda.amp.GradScaler(init_scale=2**12, enabled=self.amp_enable)
@@ -219,7 +224,10 @@ class VitApproxTrainer:
         self.model.eval()
         self.approx_bert.train()
 
-        pbar = tqdm.tqdm(self.dataset.get_train_iter())
+        pbar = self.dataset.get_train_iter()
+        if ddp.printable():
+            pbar = tqdm.tqdm(pbar)
+        
         for batch in pbar:
             batch = {k: batch[k].to(self.device, non_blocking=True) for k in batch.keys()}
             batch['output_attentions'] = True
@@ -247,7 +255,8 @@ class VitApproxTrainer:
             self.scaler.update()
             self.optimizer.zero_grad()
 
-            pbar.set_description(f'[{self.epoch+1}/{self.epochs}] L:{loss.item():.5f}, Latt:{loss_att.item():.5f}, Lhid:{loss_hid.item():.5f}, Lemb:{loss_emb.item():.5f}, Lprd:{loss_pred.item():.5f}')
+            if ddp.printable():
+                pbar.set_description(f'[{self.epoch+1}/{self.epochs}] L:{loss.item():.5f}, Latt:{loss_att.item():.5f}, Lhid:{loss_hid.item():.5f}, Lemb:{loss_emb.item():.5f}, Lprd:{loss_pred.item():.5f}')
 
 # Main
 
@@ -255,12 +264,22 @@ class VitApproxTrainer:
         for epoch in range(self.epochs):
             self.epoch = epoch
             self.train_epoch()
-            self.eval_model(self.model, self.approx_bert, show_message=True)
-            self.save()
+            ddp.barrier()
+            if ddp.printable():
+                self.eval_model(self.model, self.approx_bert.module, show_message=True)
+                self.save()
+            ddp.barrier()
 
-def main():
+def main_ddp(rank, world_size, ddp_port):
+    ddp.setup(rank, world_size, ddp_port)
+
     trainer = VitApproxTrainer()
     trainer.main()
+
+    ddp.cleanup()
+
+def main():
+    ddp.spawn(main_ddp)
 
 if __name__ == '__main__':
     main()
