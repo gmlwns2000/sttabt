@@ -62,6 +62,7 @@ class VitApproxTrainer:
         batch_size = -1,
         device = 0,
         world_size = 1,
+        init_checkpoint=None,
     ):
         self.seed()
 
@@ -79,10 +80,14 @@ class VitApproxTrainer:
             batch_size = tasks_to_batch_size[self.subset]
         self.batch_size = batch_size
         self.world_size = world_size
+        self.init_checkpoint = init_checkpoint
 
         self.init_dataloader()
         
         self.reset_train()
+
+        if self.init_checkpoint is not None:
+            self.load(self.init_checkpoint)
 
 # Initialize
 
@@ -169,14 +174,21 @@ class VitApproxTrainer:
         }, self.get_checkpoint_path())
         print('VitTrainer: Checkpoint saved', self.get_checkpoint_path())
     
-    def load(self):
-        state = torch.load(self.get_checkpoint_path(), map_location='cpu')
+    def load(self, path=None):
+        if path is None:
+            path = self.get_checkpoint_path()
+        state = torch.load(path, map_location='cpu')
         self.model.load_state_dict(state['model'])
         self.approx_bert.load_state_dict(state['approx_bert'])
         self.optimizer.load_state_dict(state['optimizer'])
         self.scaler.load_state_dict(state['scaler'])
+        print('VitTrainer: Checkpoint loaded', path, { 
+            'epoch': state['epoch'], 
+            'epochs': state['epochs'],
+            'subset': state['subset'],
+            'factor': state['factor']
+        })
         del state
-        print('VitTrainer: Checkpoint loaded', self.get_checkpoint_path())
 
 # Eval Impl
 
@@ -271,19 +283,34 @@ class VitApproxTrainer:
                 self.save()
             ddp.barrier()
 
-def main_ddp(rank, world_size, ddp_port):
+def main_ddp(rank, world_size, ddp_port, args):
     ddp.setup(rank, world_size, ddp_port)
+
     print('Worker:', rank, world_size, ddp_port, ddp.printable())
     trainer = VitApproxTrainer(
         device=rank,
         world_size=world_size,
+        batch_size=args.batch_size,
+        subset=args.subset,
+        factor=args.factor,
+        init_checkpoint=args.init_checkpoint
     )
     trainer.main()
 
     ddp.cleanup()
 
 def main():
-    ddp.spawn(main_ddp)
+    import argparse, random
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--subset', type=str, default='base')
+    parser.add_argument('--factor', type=int, default=4)
+    parser.add_argument('--init-checkpoint', type=str, default=None)
+    parser.add_argument('--batch-size', type=int, default=-1)
+
+    args = parser.parse_args()
+
+    ddp.spawn(main_ddp, args=(args,))
 
 if __name__ == '__main__':
     main()

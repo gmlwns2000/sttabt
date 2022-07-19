@@ -1540,6 +1540,8 @@ class ApproxBertModel(nn.Module):
                 original_output.hidden_states[j]
             )
         loss_hid /= NLAYER
+        if self.arch == 'vit':
+            loss_hid *= (1/20)
         
         # loss emb
         if self.arch == 'bert':
