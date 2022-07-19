@@ -197,7 +197,7 @@ class VitApproxTrainer:
         self.approx_bert.eval()
 
         pbar = tqdm.tqdm(self.dataset.get_test_iter())
-        loss_sum = {'loss':0, 'loss_att':0, 'loss_hid':0, 'loss_emb':0, 'loss_pred':0}
+        loss_sum = {'loss':0, 'loss_att':0, 'loss_hid':0, 'loss_emb':0, 'loss_pred':0, 'att_mse':0}
         count = 0
         for batch in pbar:
             batch = {k: batch[k][self.device*math.ceil(self.batch_size / self.world_size):(self.device + 1)*math.ceil(self.batch_size / self.world_size)].to(self.device, non_blocking=True) for k in batch.keys()}
@@ -221,6 +221,8 @@ class VitApproxTrainer:
                 loss_sum['loss_hid'] += loss_hid.item()
                 loss_sum['loss_emb'] += loss_emb.item()
                 loss_sum['loss_pred'] += loss_pred.item()
+                for i in range(len(approx_output.attentions)):
+                    loss_sum['att_mse'] += torch.square(approx_output.attentions[i] - original_output.attentions[i]).mean().item() / len(approx_output.attentions)
                 count += 1
 
             pbar.set_description(f'eval [{self.epoch+1}/{self.epochs}]')
@@ -309,6 +311,7 @@ def main():
     parser.add_argument('--batch-size', type=int, default=-1)
 
     args = parser.parse_args()
+    print(args)
 
     ddp.spawn(main_ddp, args=(args,))
 

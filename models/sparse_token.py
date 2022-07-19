@@ -1426,6 +1426,7 @@ class ApproxBertModel(nn.Module):
         self.transfer_embedding = nn.Linear(config.hidden_size, origin_config.hidden_size)
         self.wiki_train = wiki_train
         self.ignore_pred = ignore_pred
+        self.loss_att_method = 'kldiv'
     
     def forward(
         self,
@@ -1518,19 +1519,32 @@ class ApproxBertModel(nn.Module):
 
         # loss attention
         loss_att = 0
-        if self.arch == 'bert':
-            seq_len = torch.sum(attention_mask, dim=-1).to(approx_output.attentions[0].dtype)
-        elif self.arch == 'vit':
-            seq_len = original_output.attentions[0].shape[-1]
-        else: raise Exception()
-        for j in range(NLAYER):
-            se = torch.square(approx_output.attentions[j] - original_output.attentions[j])
-            se = se.view(se.shape[0], -1)
-            se = torch.sum(se, dim=-1)
-            se = se / (seq_len*seq_len)
-            se = se.mean()
-            loss_att += se
-        loss_att /= NLAYER
+        loss_att_method = self.loss_att_method
+        if loss_att_method == 'tinybert':
+            if self.arch == 'bert':
+                seq_len = torch.sum(attention_mask, dim=-1).to(approx_output.attentions[0].dtype)
+            elif self.arch == 'vit':
+                seq_len = original_output.attentions[0].shape[-1]
+            else: raise Exception()
+            for j in range(NLAYER):
+                se = torch.square(approx_output.attentions[j] - original_output.attentions[j])
+                se = se.view(se.shape[0], -1)
+                se = torch.sum(se, dim=-1)
+                se = se / (seq_len*seq_len)
+                se = se.mean()
+                loss_att += se
+            loss_att /= NLAYER
+            if self.arch == 'vit':
+                loss_att *= 10
+        elif loss_att_method == 'kldiv':
+            kl_loss = nn.KLDivLoss(reduction='batchmean')
+            N, H, T, T = approx_output.attentions[0].shape
+            for j in range(NLAYER):
+                loss_att += kl_loss(approx_output.attentions[j].log(), original_output.attentions[j])
+            loss_att /= NLAYER
+            loss_att *= 1/100
+        else:
+            raise Exception()
         
         # loss hidden
         loss_hid = 0
@@ -1541,7 +1555,7 @@ class ApproxBertModel(nn.Module):
             )
         loss_hid /= NLAYER
         if self.arch == 'vit':
-            loss_hid *= (1/20)
+            loss_hid *= (1/100)
         
         # loss emb
         if self.arch == 'bert':
