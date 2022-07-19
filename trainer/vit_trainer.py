@@ -49,16 +49,25 @@ tasks_to_test_split = {
     'imagenet': 'test',
 }
 
+base_model_to_hf = {
+    'vit-base': "google/vit-base-patch16-224-in21k",
+}
+
 class VitTrainer:
     def __init__(self,
         subset = 'cifar100',
+        base_model = 'vit-base',
         batch_size = -1,
         device = 0,
     ):
+        self.seed()
+        
         self.lr = 5e-5
         self.weight_decay = 1e-3
         self.amp_enable = True
 
+        self.base_model_id = base_model
+        self.base_model_id_hf = base_model_to_hf[base_model]
         self.subset = subset
         self.device = device
         self.epochs = tasks_to_epoch[self.subset]
@@ -83,7 +92,7 @@ class VitTrainer:
         torch.backends.cudnn.deterministic = True
 
     def init_dataloader(self):
-        self.extractor = transformers.ViTFeatureExtractor.from_pretrained("google/vit-base-patch16-224-in21k")
+        self.extractor = transformers.ViTFeatureExtractor.from_pretrained(self.base_model_id_hf)
         self.dataset = ImagesHfDataset(
             ExamplesToBatchTransform(ViTInputTransform(self.extractor)),
             ExamplesToBatchTransform(ViTInputTransform(self.extractor, test=True)),
@@ -99,7 +108,7 @@ class VitTrainer:
         self.epoch = 0
 
         self.model = transformers.ViTForImageClassification.from_pretrained(
-            "google/vit-base-patch16-224-in21k",
+            self.base_model_id_hf,
             num_labels=self.dataset.num_labels,
             id2label=self.dataset.id2label,
             label2id=self.dataset.label2id

@@ -1385,7 +1385,11 @@ class ApproxBertModel(nn.Module):
         config.intermediate_size = origin_config.intermediate_size // self.factor
         self.config = config
 
-        self.bert = SparseBertModel(config, arch=arch)
+        if arch == 'bert':
+            self.bert = SparseBertModel(config, arch=arch)
+        elif arch == 'vit':
+            self.bert = SparseBertModel(config, arch=arch, add_pooling_layer=False)
+        else: raise Exception()
         self.bert.set_print(False)
         self.bert.set_backup_last_inputs(True)
         reset_input_mask(self.bert)

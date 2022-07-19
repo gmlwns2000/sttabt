@@ -24,17 +24,49 @@ tasks_to_split = {
     'base': 'train',
 }
 
+model_to_hf = {
+    'vit-base': 'google/vit-base-patch16-224-in21k'
+}
+
+def load_state_dict_interpolated(to_model, from_dict, ignores=['p_logit', 'ltp']):
+    for name, to_param in to_model.named_parameters():
+        if name in from_dict:
+            from_data = from_dict[name].clone()
+            to_shape = to_param.shape
+            from_shape = from_data.shape
+            if to_shape != from_shape:
+                from_data = from_data.view(1, 1, -1)
+                to_dim = 1
+                for i in to_shape: to_dim *= i
+                from_data = torch.nn.functional.interpolate(from_data, to_dim)
+                from_data = from_data.view(*to_shape)
+                to_param.data.copy_(from_data)
+            else:
+                to_param.data.copy_(from_data)
+        else:
+            ignored = False
+            for ig in ignores:
+                if ig in name:
+                    ignored = True
+                    break
+            if not ignored: print(name, 'not found')
+
 class VitApproxTrainer:
     def __init__(self,
         subset = 'base',
+        model = 'vit-base',
         factor = 4,
         batch_size = -1,
         device = 0,
     ):
+        self.seed()
+
         self.lr = 1e-4
         self.weight_decay = 0
         self.amp_enable = True
 
+        self.model_id = model
+        self.model_id_hf = model_to_hf[model]
         self.subset = subset
         self.device = device
         self.factor = factor
@@ -59,7 +91,7 @@ class VitApproxTrainer:
         torch.backends.cudnn.deterministic = True
 
     def init_dataloader(self):
-        self.extractor = transformers.ViTFeatureExtractor.from_pretrained("google/vit-base-patch16-224-in21k")
+        self.extractor = transformers.ViTFeatureExtractor.from_pretrained(self.model_id_hf)
         self.dataset = ImagesHfDataset(
             ExamplesToBatchTransform(ViTInputTransform(self.extractor)),
             ExamplesToBatchTransform(ViTInputTransform(self.extractor, test=True)),
@@ -68,11 +100,9 @@ class VitApproxTrainer:
             split=tasks_to_split[self.subset],
         )
 
-    def get_base_model(self):
+    def get_base_model(self) -> "transformers.ViTForImageClassification":
         if self.subset == 'base':
-            return transformers.ViTForImageClassification.from_pretrained(
-                "google/vit-base-patch16-224-in21k",
-            )
+            return transformers.ViTForImageClassification.from_pretrained(self.model_id_hf)
         else:
             raise Exception()
 
@@ -91,9 +121,10 @@ class VitApproxTrainer:
             ignore_pred=self.subset=='base'
         )
         self.approx_bert = self.approx_bert.to(self.device)
+        load_state_dict_interpolated(self.approx_bert.bert, self.model.vit.state_dict())
 
         self.optimizer = self.get_optimizer(self.approx_bert)
-        self.scaler = torch.cuda.amp.GradScaler(init_scale=2**8, enabled=self.amp_enable)
+        self.scaler = torch.cuda.amp.GradScaler(init_scale=2**12, enabled=self.amp_enable)
     
     def get_optimizer(self, model):
         param_optimizer = list(model.named_parameters())
@@ -113,16 +144,22 @@ class VitApproxTrainer:
 # IO
 
     def get_checkpoint_path(self):
-        return f'./saves/vit-{self.subset}-{self.factor}.pth'
+        return f'./saves/vit-approx-{self.model_id}-{self.subset}-{self.factor}.pth'
 
     def save(self):
         torch.save({
             'model': self.model.state_dict(),
             'approx_bert': self.approx_bert.state_dict(),
+
             'optimizer': self.optimizer.state_dict(),
             'scaler': self.scaler.state_dict(),
+
             'epoch': self.epoch,
             'epochs': self.epochs,
+            'model_id': self.model_id,
+            'model_id_hf': self.model_id_hf,
+            'subset':self.subset,
+            'factor':self.factor,
         }, self.get_checkpoint_path())
         print('VitTrainer: Checkpoint saved', self.get_checkpoint_path())
     
