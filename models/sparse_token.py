@@ -819,10 +819,10 @@ class BertLayer(nn.Module):
                 # dropout_regularizer *= self.concrete_dropout_regularizer * self.input_dimensionality
                 
                 # loss = weights_regularizer + dropout_regularizer
-                loss = ((self.p_logit - self.concrete_init_min) ** 2) * 1e-6
+                #loss = ((self.p_logit - self.concrete_init_min) ** 2) * 1e-6
                 #loss = (torch.sigmoid(self.p_logit) ** 2) * 1e-6
                 #raise_if_nan(loss)
-                #loss = 0
+                loss = 0
             return loss
         else:
             return 0
@@ -973,6 +973,19 @@ class BertEncoder(nn.Module):
             )
         else:
             raise Exception()
+    
+    def loss_concrete(self):
+        layer = self.layer[0] #type: BertLayer
+        target = torch.sigmoid(torch.tensor(layer.concrete_init_min, device = layer.concrete_prop_p_logit.device, dtype=torch.float32))
+        occupy = 0
+        count = 0
+        for layer in self.layer:
+            layer = layer #type: BertLayer
+            if layer.output.dense.concrete_mask is not None:
+                occupy += torch.mean(layer.output.dense.concrete_mask)
+                count += 1
+        occupy /= count
+        return ((target - occupy) ** 2) * 1e-2
 
 class BertPooler(nn.Module):
     def __init__(self, config):
@@ -1782,6 +1795,7 @@ def run_bert_with_concrete(
                 std_att_score = (att_score - att_score_mean) / (att_score_std + EPS)
                 raise_if_nan(std_att_score)
                 uni_att_score = STANDARD_NORMAL_DISTRIBUTION.cdf(std_att_score) #torch.distributions.Normal(0, 1).cdf(std_att_score)
+                layer.output.dense.concrete_score_std = std_att_score
                 uni_att_score = torch.mean(uni_att_score, dim=1) # head
 
                 #uni_att_score = torch.mean(layer.attention.get_attention().last_attention_probs, dim=1)
@@ -2170,6 +2184,7 @@ class ApproxSparseBertForSequenceClassification(BertPreTrainedModel):
             for layer in self.bert.encoder.layer:
                 loss_reg = layer.loss_concrete({'attention_mask': attention_mask})
                 loss = loss + loss_reg
+            loss = loss + self.bert.encoder.loss_concrete()
 
         return SequenceClassifierOutput(
             loss=loss,

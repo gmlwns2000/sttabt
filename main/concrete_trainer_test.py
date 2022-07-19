@@ -2,7 +2,7 @@
 import trainer.concrete_trainer as concrete
 
 trainer = concrete.ConcreteTrainer(
-    'mnli',
+    'cola',
     factor=4,
 )
 

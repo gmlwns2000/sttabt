@@ -1,3 +1,4 @@
+import math
 import random
 import torch
 from torch import optim, nn
@@ -126,7 +127,7 @@ class VitApproxTrainer:
         )
         self.approx_bert = self.approx_bert.to(self.device)
         load_state_dict_interpolated(self.approx_bert.bert, self.model.vit.state_dict())
-        self.approx_bert = ddp.wrap_model(self.approx_bert)
+        self.approx_bert = ddp.wrap_model(self.approx_bert, find_unused_paramters=True)
 
         self.optimizer = self.get_optimizer(self.approx_bert)
         self.scaler = torch.cuda.amp.GradScaler(init_scale=2**12, enabled=self.amp_enable)
@@ -187,7 +188,7 @@ class VitApproxTrainer:
         loss_sum = {'loss':0, 'loss_att':0, 'loss_hid':0, 'loss_emb':0, 'loss_pred':0}
         count = 0
         for batch in pbar:
-            batch = {k: batch[k].to(self.device, non_blocking=True) for k in batch.keys()}
+            batch = {k: batch[k][self.device*math.ceil(self.batch_size / self.world_size):(self.device + 1)*math.ceil(self.batch_size / self.world_size)].to(self.device, non_blocking=True) for k in batch.keys()}
             batch['output_attentions'] = True
             batch['output_hidden_states'] = True
             if 'labels' in batch: del batch['labels']
@@ -272,8 +273,11 @@ class VitApproxTrainer:
 
 def main_ddp(rank, world_size, ddp_port):
     ddp.setup(rank, world_size, ddp_port)
-
-    trainer = VitApproxTrainer()
+    print('Worker:', rank, world_size, ddp_port, ddp.printable())
+    trainer = VitApproxTrainer(
+        device=rank,
+        world_size=world_size,
+    )
     trainer.main()
 
     ddp.cleanup()

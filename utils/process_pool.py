@@ -13,7 +13,6 @@ class ProcessPool:
         self.worker_finished = -1
         self.worker_ready = 0
         self.num_worker = num_worker
-        self.fetch_queue = queue.Queue()
         self.procs = []
         self.thread = None
 
@@ -47,6 +46,7 @@ class ProcessPool:
                 self.return_queue.put(ret)
 
     def start_fetch(self):
+        self.fetch_queue = queue.Queue()
         self.thread = threading.Thread(target=self.fetch_main, daemon=True)
         self.thread.start()
 

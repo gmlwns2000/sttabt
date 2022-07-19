@@ -6,7 +6,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 
 ddp_rank = 0
 ddp_world_size = 1
-ddp_disabled = True
+ddp_disabled = False
 
 def setup(rank, world_size, port):
     global ddp_rank, ddp_world_size
@@ -58,6 +58,7 @@ def wrap_model(model, find_unused_paramters=False):
     if ddp_world_size == 1:
         return MimicDDP(model)
     else:
+        print('DDP: Model wrapped', ddp_rank, find_unused_paramters)
         return DDP(
             model,
             device_ids=[ddp_rank], 
