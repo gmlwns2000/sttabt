@@ -2,6 +2,7 @@ import math
 import queue, time
 import threading
 import multiprocessing as mp
+import traceback
 import torch
 import numpy as np
 
@@ -51,8 +52,19 @@ class ProcessPool:
         self.thread.start()
 
     def fetch_main(self):
+        accum_errors = 10
         while True:
-            item = self.return_queue.get()
+            try:
+                item = self.return_queue.get()
+            except RuntimeError as ex:
+                traceback.print_exc()
+                print('Pool.FetchThread: error while get return_queue', ex)
+                accum_errors -= 1
+                if accum_errors < 0:
+                    raise ex
+                else:
+                    time.sleep(0.1)
+                    continue
             if item == 'EOF':
                 self.worker_finished += 1
                 if self.worker_finished >= self.num_worker:

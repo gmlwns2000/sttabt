@@ -57,7 +57,7 @@ task_to_epochs = {
     "qnli": 1,
     "qqp":  1,
     "rte":  5,
-    "sst2": 2,
+    "sst2": 1,
     "stsb": 5,
     "wnli": 5,
     "bert": 6,
