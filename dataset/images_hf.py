@@ -10,7 +10,7 @@ from utils.process_pool import ProcessPool, BatchIterator
 class ImagesHfDataset:
     def __init__(self, 
         train_transform, test_transform, 
-        batch_size=4, num_workers_train=8, num_workers_test=4, 
+        batch_size=4, num_workers_train=16, num_workers_test=4, 
         name='food101', split='train[:5000]', test_split='split'
     ):
         self.train_pool = ProcessPool(num_workers_train, train_transform)
