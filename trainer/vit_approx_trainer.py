@@ -77,7 +77,7 @@ class VitApproxTrainer:
 
         self.lr = 1e-4
         self.weight_decay = 0
-        self.amp_enable = True
+        self.amp_enable = False
 
         self.model_id = model
         self.model_id_hf = model_to_hf[model]
