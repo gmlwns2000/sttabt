@@ -65,6 +65,10 @@ class ImagesHfDataset:
 
     def get_test_iter(self):
         return BatchIterator(self.test_set, self.test_pool, self.batch_size)
+    
+    def dispose(self):
+        self.train_pool.close()
+        self.test_pool.close()
 
 class ExamplesToBatchTransform:
     def __init__(self, item_transform):

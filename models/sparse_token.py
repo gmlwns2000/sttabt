@@ -130,13 +130,13 @@ def benchmark_concrete_occupy(v):
 #region Model Definition
 
 #very bad bad global flags. THIS IS BAD EVILs
-__mask_acc_indices = False
+__mask_acc_indices = True
 def set_update_input_mask_accumulate_indices(value):
     global __mask_acc_indices
     __mask_acc_indices = value
 
 def update_input_mask_from_previous_attention(
-    attention_mask, 
+    attention_mask, # mask may None (vit)
     previous_attention, 
     output_token_indices, 
     output_token_impact, 
@@ -152,9 +152,11 @@ def update_input_mask_from_previous_attention(
         accumulate_indices = __mask_acc_indices
     
     timer_start('update_mask')
-    attention_mask_shape = attention_mask.shape
-    NBATCH = attention_mask_shape[0]
-    TLEN = attention_mask_shape[-1]
+    # attention_mask_shape = attention_mask.shape
+    # NBATCH = attention_mask_shape[0]
+    # TLEN = attention_mask_shape[-1]
+    NBATCH, NHEAD, TLEN, _T = previous_attention.shape
+    assert TLEN == _T
     dtype = previous_attention.dtype
     device = previous_attention.device
     if isinstance(k, str):
@@ -240,7 +242,7 @@ class SparseChannelLinear(nn.Module):
         else:
             self.register_parameter('bias', None)
         self.reset_parameters()
-
+        
         self.channel_indices= None #(N, K), K<=C
         self.force_dense = False
 
@@ -1469,7 +1471,8 @@ class ApproxBertModel(nn.Module):
             interpolate_pos_encoding=interpolate_pos_encoding
         )
 
-        pooled_output = outputs[1]
+        if len(outputs) > 1:
+            pooled_output = outputs[1]
 
         if self.arch == 'bert':
             pooled_output = self.dropout(pooled_output)
@@ -1517,6 +1520,7 @@ class ApproxBertModel(nn.Module):
         approx_output = ret
         NLAYER = len(approx_output.attentions)
 
+        # from tinybert paper
         # loss attention
         loss_att = 0
         loss_att_method = self.loss_att_method
@@ -1537,6 +1541,7 @@ class ApproxBertModel(nn.Module):
             if self.arch == 'vit':
                 loss_att *= 10
         elif loss_att_method == 'kldiv':
+            #from miniLM paper
             N, H, T, T = approx_output.attentions[0].shape
             for j in range(NLAYER):
                 y_pred = approx_output.attentions[j].view(N*H*T, T)
@@ -1588,6 +1593,8 @@ class ApproxBertModel(nn.Module):
         #     F.softmax(original_output.logits, dim=-1),
         # )
         #print(approx_output.logits[0], original_output.logits[0])
+        if self.arch == 'vit':
+            loss_pred *= 1/10
         if self.wiki_train or self.ignore_pred:
             loss_pred *= 0
 
@@ -1605,8 +1612,10 @@ def update_input_mask(sparse_bert, ks=[0.999,0.5,0.25,0.1]):
         gpu_device = sparse_bert.encoder.layer[0].attention.get_attention().last_attention_probs.device
         device = gpu_device
 
-        batch_size = sparse_bert.encoder.layer[0].attention.get_attention().last_attention_mask.shape[0]
-        token_len = sparse_bert.encoder.layer[0].attention.get_attention().last_attention_mask.shape[-1]
+        batch_size, head_num, token_len, _T = sparse_bert.encoder.layer[0].attention.get_attention().last_attention_probs.shape
+        assert _T == token_len
+        # batch_size = sparse_bert.encoder.layer[0].attention.get_attention().last_attention_mask.shape[0]
+        # token_len = sparse_bert.encoder.layer[0].attention.get_attention().last_attention_mask.shape[-1]
         
         mask = torch.zeros(batch_size, token_len, dtype=dtype, device=gpu_device)
         mask[:,0] = 1.0
@@ -1673,7 +1682,8 @@ def run_bert_with_approx(
     reset_input_mask(sparse_bert)
     timer_start('eval.reset_mask.convert_mask')
     attention_mask = input_dict['attention_mask']
-    attention_mask = ((1.0 - attention_mask) * (-10000)).view(attention_mask.shape[0], 1, 1, attention_mask.shape[-1])
+    if attention_mask is not None:
+        attention_mask = ((1.0 - attention_mask) * (-10000)).view(attention_mask.shape[0], 1, 1, attention_mask.shape[-1])
     timer_end('eval.reset_mask.convert_mask')
     for i, layer in enumerate(sparse_bert.encoder.layer):
         layer.attention.get_attention().last_attention_probs = attentions[i]
@@ -1942,7 +1952,7 @@ def zero_input_mask(sparse_bert, input_dict):
         self.value.channel_indices = indices.clone()
 
 def run_bert_forward_sparsity(
-    sparse_bert, input_dict, ks=0.5
+    sparse_bert: "SparseBertModel", input_dict, ks=0.5
 ):
     #clear mask
     reset_input_mask(sparse_bert)
@@ -1951,38 +1961,48 @@ def run_bert_forward_sparsity(
     #update mask in forward path
     set_backup_last_inputs(sparse_bert, True)
     set_print(sparse_bert, False)
-    tokens = input_dict['input_ids'] #N, T
-    batch_size, token_len = tokens.shape
-    device = tokens.device
-    # with torch.no_grad(): sparse_bert(**input_dict)
-    # dtype = sparse_bert.encoder.layer[0].attention.get_attention().last_attention_probs.dtype
-    dtype = input_dict['input_ids'].dtype
-
-    indices = torch.arange(token_len, device=device, dtype=torch.int64)
-    indices = indices.repeat(*tokens.shape)
 
     #forward bert model
     with torch.no_grad():
-        input_ids = input_dict['input_ids']
-        input_shape = input_ids.size()
-        batch_size, seq_length = input_shape
-        if hasattr(sparse_bert.embeddings, "token_type_ids"):
-            buffered_token_type_ids = sparse_bert.embeddings.token_type_ids[:, :seq_length]
-            buffered_token_type_ids_expanded = buffered_token_type_ids.expand(batch_size, seq_length)
-            token_type_ids = buffered_token_type_ids_expanded
+        if sparse_bert.arch == 'bert':
+            input_ids = input_dict['input_ids']
+            device = input_ids.device
+            input_shape = input_ids.size()
+            batch_size, seq_length = input_shape
+            if hasattr(sparse_bert.embeddings, "token_type_ids"):
+                buffered_token_type_ids = sparse_bert.embeddings.token_type_ids[:, :seq_length]
+                buffered_token_type_ids_expanded = buffered_token_type_ids.expand(batch_size, seq_length)
+                token_type_ids = buffered_token_type_ids_expanded
+            else:
+                token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=device)
+            hidden_states = embedding_output = sparse_bert.embeddings(
+                input_ids=input_ids,
+                position_ids=None,
+                token_type_ids=token_type_ids,
+                inputs_embeds=None,
+                past_key_values_length=0,
+            )
+            attention_mask = input_dict['attention_mask']
+            extended_attention_mask = sparse_bert.get_extended_attention_mask(attention_mask, input_shape, device)
+        elif sparse_bert.arch == 'vit':
+            pixel_values = input_dict['pixel_values']
+            hidden_states = embedding_output = sparse_bert.embeddings(
+                pixel_values, 
+                interpolate_pos_encoding = input_dict.get('interpolate_pos_encoding', None)
+            )
+            attention_mask = None
+            extended_attention_mask = None
         else:
-            token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=device)
-        hidden_states = embedding_output = sparse_bert.embeddings(
-            input_ids=input_ids,
-            position_ids=None,
-            token_type_ids=token_type_ids,
-            inputs_embeds=None,
-            past_key_values_length=0,
-        )
-        attention_mask = input_dict['attention_mask']
-        extended_attention_mask: torch.Tensor = sparse_bert.get_extended_attention_mask(attention_mask, input_shape, device)
+            raise Exception()
 
     benchmark_cum('forward_occupy', 1.0)
+    #tokens = input_dict['input_ids'] #N, T
+    batch_size, token_len, hidden_dim = hidden_states.shape
+    device = hidden_states.device
+    dtype = hidden_states.dtype
+
+    indices = torch.arange(token_len, device=device, dtype=torch.int64)
+    indices = indices.repeat(batch_size, token_len)
     for idx, layer in enumerate(sparse_bert.encoder.layer):
         input_mask = torch.zeros(batch_size, token_len, device=device, dtype=dtype)\
             .scatter_(1, indices, 1.0)
@@ -2064,11 +2084,13 @@ class ApproxSparseBertModelWrapper(nn.Module):
         return output
 
 class ApproxSparseBertModel(nn.Module):
-    def __init__(self, bert=None, approx_bert=None, sparse_bert=None, add_pooling_layer=True, ks=0.5):
+    def __init__(self, bert=None, approx_bert=None, sparse_bert=None, add_pooling_layer=True, ks=0.5, arch='bert'):
         super().__init__()
 
+        self.arch = arch
+
         if sparse_bert is None:
-            self.sparse_bert = SparseBertModel(bert.config, add_pooling_layer=add_pooling_layer)
+            self.sparse_bert = SparseBertModel(bert.config, add_pooling_layer=add_pooling_layer, arch=arch)
             set_print(self.sparse_bert, False)
             set_backup_last_inputs(self.sparse_bert, True)
             set_output_masking(self.sparse_bert, False)
@@ -2076,12 +2098,14 @@ class ApproxSparseBertModel(nn.Module):
             self.sparse_bert.load_state_dict(bert.state_dict(), strict=False)
         else:
             self.sparse_bert = sparse_bert
+            assert self.sparse_bert.arch == arch
 
         if approx_bert is None:
-            self.approx_bert = ApproxBertModel(bert.config)
+            self.approx_bert = ApproxBertModel(bert.config, arch=arch)
             print('approx_bert reset')
         else:
             self.approx_bert = approx_bert
+            assert self.approx_bert.arch == arch
         
         if isinstance(ks, list): pass
         else: ks = [ks for _ in range(len(self.sparse_bert.encoder.layer))]
@@ -2093,7 +2117,14 @@ class ApproxSparseBertModel(nn.Module):
     
     def forward(self, *args, **kwargs):
         if args is not None and len(args)==1:
-            kwargs['input_ids'] = args[0]
+            if self.arch == 'bert':
+                kwargs['input_ids'] = args[0]
+            elif self.arch == 'vit':
+                kwargs['pixel_values'] = args[0]
+            else: raise Exception()
+        if 'attention_mask' not in kwargs:
+            kwargs['attention_mask'] = None
+
         if not self.use_forward_sparse:
             if not self.use_concrete_masking:
                 output = run_bert_with_approx(

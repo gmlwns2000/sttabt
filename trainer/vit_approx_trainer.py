@@ -13,7 +13,7 @@ from utils import ddp
 
 tasks_to_epoch = {
     'base': 100,
-    'cifar100': 10,
+    'cifar100': 20,
 }
 
 tasks_to_batch_size = {
@@ -123,9 +123,16 @@ class VitApproxTrainer:
     def get_base_model(self) -> "transformers.ViTForImageClassification":
         if self.subset == 'base':
             return transformers.ViTForImageClassification.from_pretrained(self.model_id_hf)
-        elif self.subset in ['cifar1001']:
-            base_model = transformers.ViTForImageClassification.from_pretrained(self.model_id_hf)
-            
+        elif self.subset in ['cifar100']:
+            base_model = transformers.ViTForImageClassification.from_pretrained(
+                self.model_id_hf,
+                num_labels=self.dataset.num_labels,
+                id2label=self.dataset.id2label,
+                label2id=self.dataset.label2id
+            )
+            state = torch.load(f'./saves/vit-base-{self.subset}.pth', map_location='cpu')
+            base_model.load_state_dict(state['model'])
+            del state
             return base_model
         else:
             raise Exception()
@@ -165,6 +172,9 @@ class VitApproxTrainer:
         }
         
         return optim.AdamW(params, **kwargs)
+    
+    def set_batch_size(self, v):
+        self.dataset.batch_size = self.batch_size = v
 
 # IO
 
@@ -192,11 +202,16 @@ class VitApproxTrainer:
         if path is None:
             path = self.get_checkpoint_path()
         state = torch.load(path, map_location='cpu')
-        self.model.load_state_dict(state['model'])
-        self.approx_bert.load_state_dict(state['approx_bert'])
-        self.optimizer.load_state_dict(state['optimizer'])
-        self.scaler.load_state_dict(state['scaler'])
-        print('VitTrainer: Checkpoint loaded', path, { 
+        #self.model.load_state_dict(state['model'])
+        try:
+            self.approx_bert.load_state_dict(state['approx_bert'])
+        except Exception as ex:
+            print('VitApproxTrainer: Error while loading approx bert')
+            print(ex)
+        if 'subset' in state and state['subset'] == self.subset:
+            self.optimizer.load_state_dict(state['optimizer'])
+            self.scaler.load_state_dict(state['scaler'])
+        print('VitTrainer: Checkpoint loaded', path, {
             'epoch': state['epoch'], 
             'epochs': state['epochs'],
             'subset': state['subset'],
@@ -205,6 +220,74 @@ class VitApproxTrainer:
         del state
 
 # Eval Impl
+
+    def eval_model_metric(self, model, show_message=False):
+        model.eval()
+        from datasets import load_metric
+
+        metric = load_metric("accuracy")
+
+        pbar = tqdm.tqdm(self.dataset.get_test_iter(), desc='eval')
+        for batch in pbar:
+            batch = {k: batch[k].to(self.device, non_blocking=True) for k in batch.keys()}
+            labels = batch['labels']
+            del batch['labels']
+
+            with torch.no_grad(), torch.cuda.amp.autocast(enabled=self.amp_enable):
+                output = model(**batch)
+
+            metric.add_batch(predictions=torch.argmax(output[0], dim=-1), references=labels)
+        score = metric.compute()
+        if show_message: print(score)
+        return score
+    
+    def eval_model_metric_base(self, show_message=False):
+        return self.eval_model_metric(self.model, show_message=show_message)
+
+    def eval_model_metric_approx(self, show_message=False):
+        return self.eval_model_metric(self.approx_bert, show_message=show_message)
+    
+    def eval_model_metric_sparse(self, ks=0.5, mode='sparse', show_message=False):
+        sparse_bert = sparse.SparseBertModel(self.model.config, add_pooling_layer=False, arch='vit')
+        try:
+            report = sparse_bert.load_state_dict(self.model.vit.state_dict(), strict=False)
+            ignored_term = ['p_logit', 'ltp']
+            missing_keys = [k for k in report.missing_keys if not any(n in k for n in ignored_term)]
+            unexpected_keys = [k for k in report.unexpected_keys if not any(n in k for n in ignored_term)]
+            if len(missing_keys) > 0:
+                print('VitApproxTrainer.eval_model_metric_sparse: missing_keys', missing_keys)
+            if len(unexpected_keys) > 0:
+                print('VitApproxTrainer.eval_model_metric_sparse: unexpected_keys', unexpected_keys)
+        except Exception as ex:
+            print('Error while create sparse bert', ex)
+        wrapped_bert = sparse.ApproxSparseBertModel(sparse_bert=sparse_bert, approx_bert=self.approx_bert.module, ks=ks, arch='vit')
+        occupy_metric = None
+        if mode == 'forward':
+            wrapped_bert.use_forward_sparse = True
+            wrapped_bert.run_original_attention = False
+            occupy_metric = 'forward_occupy'
+        elif mode == 'absatt':
+            wrapped_bert.use_forward_sparse = False
+            wrapped_bert.run_original_attention = True
+            occupy_metric = 'mask_occupy'
+        elif mode == 'sparse':
+            wrapped_bert.use_forward_sparse = False
+            wrapped_bert.run_original_attention = False
+            occupy_metric = 'mask_occupy'
+        else:
+            raise Exception('unknown mode')
+        
+        sparse_cls_vit = transformers.ViTForImageClassification(self.model.config)
+        sparse_cls_vit.load_state_dict(self.model.state_dict())
+        sparse_cls_vit.vit = wrapped_bert
+        sparse_cls_vit.to(self.device).eval()
+
+        sparse.benchmark_reset()
+        metric = self.eval_model_metric(sparse_cls_vit, show_message=show_message)
+        occupy = sparse.benchmark_get_average(occupy_metric)
+        metric['occupy'] = occupy
+
+        return metric
 
     def eval_model(self, model, approx_bert, show_message=False):
         self.model.eval()
@@ -243,6 +326,11 @@ class VitApproxTrainer:
         
         for k in loss_sum.keys():
             loss_sum[k] /= count
+        
+        if self.subset != 'base':
+            metric = self.eval_model_metric_approx()
+            for k in metric.keys():
+                loss_sum[k] = metric[k]
         
         if show_message: print(loss_sum)
         return loss_sum
@@ -290,6 +378,10 @@ class VitApproxTrainer:
 # Main
 
     def main(self):
+        if self.subset != 'base':
+            print('Evaluate loaded base model')
+            self.eval_model_metric_base(show_message=True)
+        
         for epoch in range(self.epochs):
             self.epoch = epoch
             self.train_epoch()
@@ -298,22 +390,56 @@ class VitApproxTrainer:
                 self.eval_model(self.model, self.approx_bert.module, show_message=True)
                 self.save()
             ddp.barrier()
+        
+        self.dispose()
+    
+    def main_eval(self):
+        self.load()
+        batch_size = self.batch_size
+        metric_baseline = self.eval_model_metric_base()
+        print('baseline', metric_baseline)
+        metric_distil = self.eval_model_metric_approx()
+        print('distil', metric_distil)
+        target_ks = 0.45
+        if target_ks <= 0.666:
+            ksx = [target_ks*0.5+((1-x/10.0)**1.0) * target_ks for x in range(12)]
+        else:
+            ksx = [(1-x/10.0)*(2-2*target_ks)+(2*target_ks-1) for x in range(12)]
+        metric_forward = self.eval_model_metric_sparse(ks=ksx, mode='forward')
+        print('forward', metric_forward)
+        self.dataset.batch_size = self.batch_size = 1
+        metric_sparse = self.eval_model_metric_sparse(ks=0.25, mode='sparse')
+        print('forward', metric_sparse)
+        metric_absatt = self.eval_model_metric_sparse(ks=0.25, mode='absatt')
+        print('forward', metric_absatt)
+        self.dataset.batch_size = self.batch_size = batch_size
+
+        self.dispose()
+    
+    def dispose(self):
+        self.dataset.dispose()
 
 def main_ddp(rank, world_size, ddp_port, args):
     ddp.setup(rank, world_size, ddp_port)
 
     print('Worker:', rank, world_size, ddp_port, ddp.printable())
+    main_trainer(rank, world_size)
+
+    ddp.cleanup()
+
+def main_trainer(device, world_size, args):
     trainer = VitApproxTrainer(
-        device=rank,
+        device=device,
         world_size=world_size,
         batch_size=args.batch_size,
         subset=args.subset,
         factor=args.factor,
         init_checkpoint=args.init_checkpoint
     )
-    trainer.main()
-
-    ddp.cleanup()
+    if not args.eval:
+        trainer.main()
+    else:
+        trainer.main_eval()
 
 def main():
     import argparse, random
@@ -323,11 +449,15 @@ def main():
     parser.add_argument('--factor', type=int, default=4)
     parser.add_argument('--init-checkpoint', type=str, default=None)
     parser.add_argument('--batch-size', type=int, default=-1)
+    parser.add_argument('--eval', default=False, action='store_true')
 
     args = parser.parse_args()
     print(args)
 
-    ddp.spawn(main_ddp, args=(args,))
+    if not args.eval:
+        ddp.spawn(main_ddp, args=(args,))
+    else:
+        main_trainer(0, 1, args)
 
 if __name__ == '__main__':
     main()

@@ -18,6 +18,7 @@ class ProcessPool:
         self.num_worker = num_worker
         self.procs = []
         self.thread = None
+        self.closed = False
 
         self.start_proc()
         self.start_fetch()
@@ -55,7 +56,7 @@ class ProcessPool:
 
     def fetch_main(self):
         accum_errors = 10
-        while True:
+        while not self.closed:
             try:
                 item = self.return_queue.get()
             except RuntimeError as ex:
@@ -87,6 +88,9 @@ class ProcessPool:
                 break
 
     def close(self):
+        if self.closed: return
+        
+        self.closed = True
         for proc in self.procs:
             proc.kill()
         self.job_queue.close()
