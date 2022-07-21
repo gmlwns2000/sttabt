@@ -49,6 +49,13 @@ tasks_to_test_split = {
     'imagenet': 'test',
 }
 
+tasks_to_base_model = {
+    'food101_5000': 'vit-base',
+    'food101': 'vit-base',
+    'cifar100': 'vit-base',
+    'imagenet': 'vit-base',
+}
+
 base_model_to_hf = {
     'vit-base': "google/vit-base-patch16-224-in21k",
 }
@@ -56,7 +63,6 @@ base_model_to_hf = {
 class VitTrainer:
     def __init__(self,
         subset = 'cifar100',
-        base_model = 'vit-base',
         batch_size = -1,
         device = 0,
     ):
@@ -66,6 +72,7 @@ class VitTrainer:
         self.weight_decay = 1e-3
         self.amp_enable = True
 
+        base_model = tasks_to_base_model[subset]
         self.base_model_id = base_model
         self.base_model_id_hf = base_model_to_hf[base_model]
         self.subset = subset
@@ -143,6 +150,9 @@ class VitTrainer:
             'model': self.model.state_dict(),
             'optimizer': self.optimizer.state_dict(),
             'scaler': self.scaler.state_dict(),
+            'subset': self.subset,
+            'base_model_id': self.base_model_id,
+            'base_model_id_hf': self.base_model_id_hf,
             'epoch': self.epoch,
             'epochs': self.epochs,
         }, self.get_checkpoint_path())

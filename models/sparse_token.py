@@ -1537,12 +1537,23 @@ class ApproxBertModel(nn.Module):
             if self.arch == 'vit':
                 loss_att *= 10
         elif loss_att_method == 'kldiv':
-            kl_loss = nn.KLDivLoss(reduction='batchmean')
             N, H, T, T = approx_output.attentions[0].shape
             for j in range(NLAYER):
-                loss_att += kl_loss(approx_output.attentions[j].log(), original_output.attentions[j])
+                y_pred = approx_output.attentions[j].view(N*H*T, T)
+                y_target = original_output.attentions[j].view(N*H*T, T)
+                kl_loss = y_target * ((y_target + EPS).log() - (y_pred + EPS).log())
+                kl_loss = torch.sum(kl_loss.view(N, H, T, T), dim=-1) # shape: N, H, T
+                if attention_mask is None:
+                    kl_loss = torch.mean(kl_loss, dim=-1)
+                else: # need to sum() / token_len
+                    assert attention_mask.shape == (N, T) or attention_mask.shape == (1, T)
+                    kl_loss = torch.sum(kl_loss, dim=-1)
+                    kl_loss = kl_loss / torch.sum(attention_mask, dim=-1).view(N, 1)
+                    kl_loss = kl_loss
+                kl_loss = kl_loss.mean() # head and batch mean
+                loss_att += kl_loss
             loss_att /= NLAYER
-            loss_att *= 1/100
+            #loss_att *= 1/100
         else:
             raise Exception()
         
