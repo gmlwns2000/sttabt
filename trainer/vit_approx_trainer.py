@@ -13,18 +13,27 @@ from utils import ddp
 
 tasks_to_epoch = {
     'base': 100,
+    'cifar100': 10,
 }
 
 tasks_to_batch_size = {
-    'base': 16
+    'base': 16,
+    'cifar100': 16,
 }
 
 tasks_to_dataset = {
     'base': 'food101',
+    'cifar100': 'cifar100',
 }
 
 tasks_to_split = {
     'base': 'train',
+    'cifar100': 'train',
+}
+
+tasks_to_test_split = {
+    'base': 'split',
+    'cifar100': 'test',
 }
 
 model_to_hf = {
@@ -108,11 +117,16 @@ class VitApproxTrainer:
             batch_size=self.batch_size,
             name=tasks_to_dataset[self.subset],
             split=tasks_to_split[self.subset],
+            test_split=tasks_to_test_split[self.subset],
         )
 
     def get_base_model(self) -> "transformers.ViTForImageClassification":
         if self.subset == 'base':
             return transformers.ViTForImageClassification.from_pretrained(self.model_id_hf)
+        elif self.subset in ['cifar1001']:
+            base_model = transformers.ViTForImageClassification.from_pretrained(self.model_id_hf)
+            
+            return base_model
         else:
             raise Exception()
 
