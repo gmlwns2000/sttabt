@@ -1,10 +1,12 @@
 import math
 import queue, time
 import threading
-import multiprocessing as mp
+import torch.multiprocessing as mp
 import traceback
 import torch
 import numpy as np
+
+mp.set_sharing_strategy('file_system')
 
 class ProcessPool:
     def __init__(self, num_worker, func) -> None:
