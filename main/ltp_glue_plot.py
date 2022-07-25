@@ -61,7 +61,7 @@ def main():
 
         max_test_occupies.append(test_occupy)
         max_test_metrics.append(test_metric)
-        print(f'[(test){il+1}/{len(lambdas)}] (l:{ld}) eval best test. score: {metric}, occupy: {occupy}')
+        print(f'[(test){il+1}/{len(lambdas)}] (l:{ld}) eval best test. score: {test_metric}, occupy: {test_occupy} (valid. score: {metric}, occupy: {occupy})')
 
         occupies.append(occupies_t)
         metrics.append(metrics_t)
