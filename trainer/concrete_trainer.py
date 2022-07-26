@@ -151,7 +151,7 @@ class ConcreteTrainer:
     def __init__(self, 
         dataset, factor=4,
         batch_size=None, device=0, world_size=1, 
-        checkpoint_name=None, init_checkpoint=None,
+        checkpoint_name=None, init_checkpoint=None, epochs=None,
         enable_plot=False, lr=None,
     ):
         print('Trainer:', dataset)
@@ -180,8 +180,11 @@ class ConcreteTrainer:
                 self.dataset, self.tokenizer, self.batch_size)
         if self.world_size > 1:
             dist.barrier()
-
-        self.epochs = task_to_epochs[self.dataset]
+        
+        if epochs is not None:
+            self.epochs = epochs
+        else:
+            self.epochs = task_to_epochs[self.dataset]
         
         self.model, self.tokenizer = get_base_model(self.dataset)
         self.model.to(self.device)
@@ -262,7 +265,7 @@ class ConcreteTrainer:
 
     def load_train_dataset(self):
         self.train_dataloader = get_dataloader(
-            self.dataset, self.tokenizer, self.batch_size, split='train[:90%]')
+            self.dataset, self.tokenizer, self.batch_size, split='train')
 
     def seed(self, seed=42):
         torch.manual_seed(seed)
@@ -304,8 +307,9 @@ class ConcreteTrainer:
             
             self.load_train_dataset()
 
-            self.valid_dataloader = get_dataloader(
-                self.dataset, self.tokenizer, self.batch_size, split='train[-10%:]')
+            # self.valid_dataloader = get_dataloader(
+            #     self.dataset, self.tokenizer, self.batch_size, split='train[-10%:]')
+            self.valid_dataloader = None
 
             split = {
                 "cola": "validation",
@@ -321,7 +325,7 @@ class ConcreteTrainer:
             }[self.dataset]
             self.test_dataloader = get_dataloader(
                 self.dataset, self.tokenizer, self.batch_size, split=split)
-            self.epochs = task_to_epochs[self.dataset]
+            #self.epochs = task_to_epochs[self.dataset]
 
 # checkpoint functions
 
@@ -377,6 +381,7 @@ class ConcreteTrainer:
         if split == 'test':
             dataloader = self.test_dataloader
         elif split == 'valid':
+            raise Exception()
             dataloader = self.valid_dataloader
         else:
             raise Exception()
@@ -534,11 +539,16 @@ class ConcreteTrainer:
             gc.collect()
             torch.cuda.empty_cache()
             
+            if epoch >= min(self.epochs - 1, (self.epochs - 1) * 0.8):
+                #print('train hard prune')
+                self.sparse_bert.module.bert.set_concrete_hard_threshold(0.5)
+
             self.train_epoch()
 
             self.load_train_dataset()
 
             if (self.device == 0 or self.world_size == 1) and self.enable_checkpointing:
+                self.sparse_bert.module.bert.set_concrete_hard_threshold(None)
                 self.train_validate()
                 print('- hard prune')
                 self.sparse_bert.module.bert.set_concrete_hard_threshold(0.5)
@@ -564,6 +574,7 @@ def main_ddp(rank, world_size, args):
         checkpoint_name=args.checkpoint_name,
         init_checkpoint=args.init_checkpoint,
         enable_plot=args.enable_plot,
+        epochs=args.epochs,
     )
 
     if args.p_logit is not None:
@@ -608,6 +619,7 @@ if __name__ == '__main__':
     parser.add_argument('--factor', type=int, default=4)
     parser.add_argument('--init-checkpoint', type=str, default=None)
     parser.add_argument('--batch-size', type=int, default=-1)
+    parser.add_argument('--epochs', type=int, default=None)
     parser.add_argument('--p-logit', type=float, default=None)
     parser.add_argument('--port', type=int, default=-1)
     parser.add_argument('--device', type=int, default=0)

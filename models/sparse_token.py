@@ -827,10 +827,10 @@ class BertLayer(nn.Module):
                 # dropout_regularizer *= self.concrete_dropout_regularizer * self.input_dimensionality
                 
                 # loss = weights_regularizer + dropout_regularizer
-                #loss = ((self.p_logit - self.concrete_init_min) ** 2) * 1e-6
+                loss = ((self.p_logit - self.concrete_init_min) ** 2) * 1e-4
                 #loss = (torch.sigmoid(self.p_logit) ** 2) * 1e-6
                 #raise_if_nan(loss)
-                loss = 0
+                #loss = 0
             return loss
         else:
             return 0
@@ -998,7 +998,7 @@ class BertEncoder(nn.Module):
                 occupy += torch.mean(layer.output.dense.concrete_mask)
                 count += 1
         occupy /= count
-        return ((target - occupy) ** 2) * 1e-2
+        return ((target - occupy) ** 2) * 1e-4
 
 class BertPooler(nn.Module):
     def __init__(self, config):
@@ -1885,6 +1885,17 @@ def run_bert_with_concrete(
 
         concrete_hard_threshold = layer.output.dense.concrete_hard_threshold
         
+        #dropout
+        #mask = layer.attention.get_attention().dropout(mask) # will this help?
+
+        #random flip
+        # if layer.attention.get_attention().dropout.training:
+        #     flip_prob = 0.1
+        #     flip_rand = torch.rand_like(mask)
+        #     flip_mask = flip_rand < flip_prob
+        #     not_flip_mask = flip_rand >= flip_prob
+        #     mask = mask * not_flip_mask + (1-mask) * flip_mask
+
         current_mask = torch.max(torch.stack([mask, last_mask], dim=0), dim=0)[0]  # this should be input mask of current layer, so set dropout mask to previous output layer.
         
         # last_masks.append(mask)

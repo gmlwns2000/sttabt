@@ -6,7 +6,7 @@ import torch, pickle
 import trainer.concrete_trainer as concrete
 
 p_logits =      [-2.0, -1.5, -1.0, -0.5, 0.0, 3.0]
-epoch_factors = [ 1.0,  1.0,  1.0,  0.8, 0.4, 0.2]
+epoch_factors = [ 1.0,  1.0,  1.0,  1.0, 1.0, 1.0]
 #p_logits = [0, 3]
 # epoch_factors = [0.5, 0.2]
 
