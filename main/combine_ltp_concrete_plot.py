@@ -124,7 +124,7 @@ def main():
             'ks': ks,
         }
         with open(plot_name + '.json', 'w') as f:
-            json.dump(data, f)
+            json.dump(data, f, indent=2)
         
         # render plot
         metric_display_name = metric_to_name[metric_name]

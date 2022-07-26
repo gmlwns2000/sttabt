@@ -684,9 +684,11 @@ class LTPPruneToken(nn.Module):
         else:
             score = torch.mean(torch.mean(attention_score, dim=1), dim=1)
             self.last_mask = (score > self.threshold) * 1.0
-            new_attention_mask = (1-self.last_mask) * (-10000) # have to update attention mask when hard pruning
+            # this is replace the attention mask for next layer. so equivalent to drop the token.
+            # have to update attention mask when hard pruning, according to LTP implementation.
+            new_attention_mask = (1-self.last_mask) * (-10000)
             attention_mask = new_attention_mask.view(*attention_mask.shape)
-        self.last_mask = self.last_mask.unsqueeze(-1)
+        self.last_mask = self.last_mask.unsqueeze(-1) # masking layer output
         if BENCHMARK_LTP_OCCUPY: benchmark_cum("ltp_occupy", self.last_mask.mean())
         self.new_attention_mask = attention_mask
         

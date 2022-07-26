@@ -109,7 +109,7 @@ def main():
             'max_test_metrics': max_test_metrics,
             'lambdas': lambdas,
             'temperatures': temperatures
-        }, f)
+        }, f, indent=2)
 
 if __name__ == '__main__':
     main()
