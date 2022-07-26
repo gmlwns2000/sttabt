@@ -147,6 +147,7 @@ class LtpTrainer:
         dataset,
         batch_size=None, device=0, world_size=1, 
         checkpoint_name=None, init_checkpoint=None,
+        ltp_lambda=None, ltp_temperature=None,
         enable_plot=False,
     ):
         print('Trainer:', dataset)
@@ -156,6 +157,8 @@ class LtpTrainer:
         self.enable_plot = enable_plot
         self.init_checkpoint = init_checkpoint
         self.checkpoint_name = checkpoint_name
+        self.ltp_lambda = ltp_lambda
+        self.ltp_temperature = ltp_temperature
         self.lr = 2e-5
         self.weight_decay = 0
         self.dataset = dataset
@@ -206,6 +209,11 @@ class LtpTrainer:
         self.sparse_bert_inner.to(self.device).train()
         self.sparse_bert_inner.bert.set_ltp_prune_token(True)
         self.sparse_bert_inner.bert.set_ltp_prune_token_soft_pruning(True)
+        if self.ltp_temperature is not None:
+            self.sparse_bert_inner.bert.set_ltp_temperature(self.ltp_temperature)
+        if self.ltp_lambda is not None:
+            self.sparse_bert_inner.ltp_lambda = self.ltp_lambda
+        
         if self.world_size > 1:
             self.sparse_bert = DDP(self.sparse_bert_inner, device_ids=[self.device], find_unused_parameters=False)
         else:
@@ -475,8 +483,8 @@ class LtpTrainer:
 
             self.load_train_dataset()
 
-            # if self.device == 0 or self.world_size == 1:
-            #     self.train_validate()
+            if (self.device == 0 or self.world_size == 1) and self.enable_checkpointing:
+                self.train_validate()
             if self.world_size > 1:
                 dist.barrier()
 
@@ -492,6 +500,8 @@ def main_ddp(rank, world_size, args):
         checkpoint_name=args.checkpoint_name,
         init_checkpoint=args.init_checkpoint,
         enable_plot=args.enable_plot,
+        ltp_lambda=args.ltp_lambda,
+        ltp_temperature=args.ltp_temperature,
     )
     
     trainer.main()
@@ -537,6 +547,8 @@ if __name__ == '__main__':
     parser.add_argument('--eval', action='store_true', default=False)
     parser.add_argument('--checkpoint-name', type=str, default=None)
     parser.add_argument('--enable-plot', action='store_true', default=False)
+    parser.add_argument('--ltp-lambda', type=float, default=None)
+    parser.add_argument('--ltp-temperature', type=float, default=None)
 
     args = parser.parse_args()
     if args.port < 0:

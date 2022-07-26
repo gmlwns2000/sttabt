@@ -661,12 +661,13 @@ class LTPPruneToken(nn.Module):
         self.soft_pruning = True
         self.threshold = None # nn.Parameter(torch.randn((1,), dtype=torch.float32))
         self.last_mask = None
+        self.new_attention_mask = None
         self.temperature = 5e-4
     
     def init_threshold(self, l, L):
         self.threshold = nn.Parameter(torch.tensor([0.01 * l / L], dtype=torch.float32))
 
-    def forward(self, x, attention_score):
+    def forward(self, x, attention_score, attention_mask):
         # x: (N, T, H)
         # attention_score: (N, HEAD, T, T)
         N, T0, H = x.shape
@@ -683,8 +684,11 @@ class LTPPruneToken(nn.Module):
         else:
             score = torch.mean(torch.mean(attention_score, dim=1), dim=1)
             self.last_mask = (score > self.threshold) * 1.0
+            new_attention_mask = (1-self.last_mask) * (-10000) # have to update attention mask when hard pruning
+            attention_mask = new_attention_mask.view(*attention_mask.shape)
         self.last_mask = self.last_mask.unsqueeze(-1)
         if BENCHMARK_LTP_OCCUPY: benchmark_cum("ltp_occupy", self.last_mask.mean())
+        self.new_attention_mask = attention_mask
         
         return x * self.last_mask
 
@@ -707,7 +711,7 @@ class BertLayer(nn.Module):
         if arch == 'vit':
             self.layernorm_before = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
             self.layernorm_after = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
-
+        
         #ltp
         self.ltp_prune_token = False
         self.ltp_prune_token_module = LTPPruneToken()
@@ -766,7 +770,7 @@ class BertLayer(nn.Module):
                 self.feed_forward_chunk, self.chunk_size_feed_forward, self.seq_len_dim, attention_output
             )
             if self.ltp_prune_token:
-                layer_output = self.ltp_prune_token_module(layer_output, self_attention_outputs[-1])
+                layer_output = self.ltp_prune_token_module(layer_output, self_attention_outputs[-1], attention_mask)
             self.layer_output = layer_output
             outputs = (layer_output,) + outputs
 
@@ -859,6 +863,7 @@ class BertEncoder(nn.Module):
 
             next_decoder_cache = () if use_cache else None
             for i, layer_module in enumerate(self.layer):
+                layer_module = layer_module # type: BertLayer
                 if output_hidden_states:
                     all_hidden_states = all_hidden_states + (hidden_states,)
 
@@ -866,6 +871,7 @@ class BertEncoder(nn.Module):
                 past_key_value = past_key_values[i] if past_key_values is not None else None
 
                 if self.gradient_checkpointing and self.training:
+                    raise Exception()
 
                     if use_cache:
                         logger.warning(
@@ -897,6 +903,9 @@ class BertEncoder(nn.Module):
                         past_key_value,
                         output_attentions,
                     )
+
+                    if layer_module.ltp_prune_token:
+                        attention_mask = layer_module.ltp_prune_token_module.new_attention_mask
 
                 hidden_states = layer_outputs[0]
                 if use_cache:

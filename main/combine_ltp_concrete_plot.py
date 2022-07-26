@@ -4,12 +4,14 @@ plt.style.use('seaborn-bright')
 
 metric_to_name = {
     'acc': 'Accuracy (%)',
-    'matthews_correlation': 'Matthews Correlation'
+    'matthews_correlation': 'Matthews Correlation',
+    'pearson': 'Pearson Correlation',
 }
 
 metric_to_scaler = {
     'acc': 100,
     'matthews_correlation': 100,
+    'pearson': 1,
 }
 
 subset_to_name = {
