@@ -1,35 +1,28 @@
-# %%
-raise Exception('run main.approx_glue_plot')
-
 import trainer.glue_base as glue_base
 import models.sparse_token as sparse
 from utils.glue import get_score
 import pickle, importlib, itertools, gc, json
 import torch
 from matplotlib import pyplot as plt
-importlib.reload(glue_base)
-importlib.reload(sparse)
+plt.style.use("seaborn")
 sparse.set_update_input_mask_accumulate_indices(True)
 
 Glue = glue_base.GlueAttentionApproxTrainer
 
-PLOT_HEADER = '[F4-PREWIKI.v2]'
-RESULT_NAME = 'saves_plot/' + PLOT_HEADER + 'glue_benchmark_accum_absatt'
-RESULT_PKL = RESULT_NAME + '.pickle'
+plot_header = '[F4-PREWIKI.v2]'
+result_name = None
+result_pkl = None
+def update_result_names():
+    global plot_header, result_name, result_pkl
+    result_name = 'saves_plot/' + plot_header + 'glue_benchmark_accum_absatt'
+    result_pkl = result_name + '.pickle'
+update_result_names()
 
-# %%
 factor = 4
 subsets = ["cola","mnli","mrpc","qnli","qqp","rte","sst2","stsb","wnli",]
 kss = [0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.625, 0.75]
-#subsets = ['cola']
-#kss = [0.05, 0.1, 0.15, 0.2, 0.3, 0.5]
-#kss = [0.1, 0.5]
-RUN_APPROX = True
 
-# %%
-results = {}
-
-def run_exp():
+def run_exp(run_approx=True):
     global subsets, kss
 
     results = {}
@@ -42,7 +35,7 @@ def run_exp():
             gc.collect()
             torch.cuda.empty_cache()
             trainer = Glue(subset, factor=factor, batch_size=1, wiki_train=False)
-            if RUN_APPROX: trainer.load()
+            if run_approx: trainer.load()
             bert_score, _ = get_score(trainer.eval_base_model())
             results[(subset, 'bert')] = { 'score_bert':bert_score }
             print('bert', bert_score)
@@ -55,7 +48,7 @@ def run_exp():
         mask_occupy = sparse.benchmark_get_average('mask_occupy')
         print('sparse absatt', score_sparse, '@', mask_occupy)
 
-        if RUN_APPROX:
+        if run_approx:
             trainer.set_batch_size(1)
             ksx = [ks for _ in range(12)]
             sparse.benchmark_reset()
@@ -79,60 +72,74 @@ def run_exp():
             'occupy':mask_occupy, 'score_sparse':score_sparse, 
             'occupy_forward': mask_occupy_forward, 'score_forward':score_forward, 'metric':metric
         }
-        if RUN_APPROX:
+        if run_approx:
             result['score_sparse_approx'] = score_approx
             result['occupy_approx'] = mask_occupy_approx
         print(f"RESULT {subset}@{ks} ({i+1}/{len(cases)}) |", result)
         results[(subset, ks)] = result
 
-    with open(RESULT_PKL, 'wb') as f:
+    with open(result_pkl, 'wb') as f:
         pickle.dump(results, f)
     
     return results
-results = run_exp()
 
-# %%
-import pickle
-import pandas as pd
-from matplotlib import pyplot as plt
-plt.style.use("seaborn")
+def plot_from_last_pickle():
+    with open(result_pkl, 'rb') as f:
+        results = pickle.load(f)
 
-with open(RESULT_PKL, 'rb') as f:
-    results = pickle.load(f)
+    run_approx = 'occupy_approx' in results[results.keys()[0]]
 
-for subset in subsets:
-    acc_sparse = []
-    acc_approx = []
-    acc_forward = []
-    occupy = []
-    occupy_approx = []
-    occupy_forward = []
-    metric = None
-    for ks in kss:
-        item = results[(subset, ks)]
-        metric = item['metric']
-        acc_sparse.append(item['score_sparse'])
-        if RUN_APPROX: acc_approx.append(item['score_sparse_approx'])
-        acc_forward.append(item['score_forward'])
-        occupy.append(item['occupy'])
-        occupy_forward.append(item['occupy_forward'])
-        if RUN_APPROX: occupy_approx.append(item['occupy_approx'])
-    acc_bert = results[(subset, 'bert')]['score_bert']
-    occupy_bert = [min(occupy+occupy_approx), max(occupy+occupy_approx)]
-    acc_bert = [acc_bert, acc_bert]
-    plt.plot(occupy, acc_sparse, marker='o', label='sparse (abs.att.)')
-    if RUN_APPROX: plt.plot(occupy_approx, acc_approx, marker='o', label='sparse (approx.)')
-    plt.plot(occupy_forward, acc_forward, marker='o', label='forward only')
-    plt.plot(occupy_bert, acc_bert, linestyle='--', label='bert-base')
-    plt.xlabel('occupy')
-    plt.ylabel(metric)
-    plt.legend()
-    plt.title(f'{subset} ({metric})')
-    plt.savefig(f'{RESULT_NAME}_{subset}.png', dpi=320)
-    plt.show(block=False)
-    plt.clf()
+    for subset in subsets:
+        acc_sparse = []
+        acc_approx = []
+        acc_forward = []
+        occupy = []
+        occupy_approx = []
+        occupy_forward = []
+        metric = None
+        for ks in kss:
+            item = results[(subset, ks)]
+            metric = item['metric']
+            acc_sparse.append(item['score_sparse'])
+            if run_approx: acc_approx.append(item['score_sparse_approx'])
+            acc_forward.append(item['score_forward'])
+            occupy.append(item['occupy'])
+            occupy_forward.append(item['occupy_forward'])
+            if run_approx: occupy_approx.append(item['occupy_approx'])
+        acc_bert = results[(subset, 'bert')]['score_bert']
+        occupy_bert = [min(occupy+occupy_approx), max(occupy+occupy_approx)]
+        acc_bert = [acc_bert, acc_bert]
+        plt.plot(occupy, acc_sparse, marker='o', label='sparse (abs.att.)')
+        if run_approx: plt.plot(occupy_approx, acc_approx, marker='o', label='sparse (approx.)')
+        plt.plot(occupy_forward, acc_forward, marker='o', label='forward only')
+        plt.plot(occupy_bert, acc_bert, linestyle='--', label='bert-base')
+        plt.xlabel('occupy')
+        plt.ylabel(metric)
+        plt.legend()
+        plt.title(f'{subset} ({metric})')
+        plt.savefig(f'{result_name}_{subset}.png', dpi=320)
+        plt.show(block=False)
+        plt.clf()
 
-# %%
+def main():
+    global plot_header, factor
 
+    #arg
+    import argparse, random
 
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--header', type=str, default=None)
+    parser.add_argument('--factor', type=int, default=None)
 
+    args = parser.parse_args()
+    if args.header is not None:
+        plot_header = args.header
+        update_result_names()
+    if args.factor is not None:
+        factor = args.factor
+    
+    run_exp()
+    plot_from_last_pickle()
+
+if __name__ == '__main__':
+    main()
