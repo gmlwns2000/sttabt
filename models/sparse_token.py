@@ -1765,8 +1765,11 @@ def run_bert_with_concrete(
     last_mask_un = last_mask.view(-1, TLEN, 1)
     last_layer = sparse_bert.encoder.layer[-1] # type: BertLayer
     last_layer.attention.get_attention().query.concrete_mask = last_mask_un
+    last_layer.attention.get_attention().query.concrete_mask_hard = last_mask_un
     last_layer.attention.output.dense.concrete_mask = last_mask_un
+    last_layer.attention.output.dense.concrete_mask_hard = last_mask_un
     last_layer.intermediate.dense.concrete_mask = last_mask_un
+    last_layer.intermediate.dense.concrete_mask_hard = last_mask_un
     last_layer.output.dense.concrete_mask = last_mask_un
     last_layer.output.dense.concrete_mask_hard = last_mask_un
     if BENCHMARK_CONCRETE_OCCUPY: 
