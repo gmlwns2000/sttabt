@@ -147,10 +147,10 @@ def main():
         xs_bert = scale(xs_bert, x_scale)
 
         plt.clf()
-        plt.plot(xs_sparse, ys_sparse, marker='o', label='STTBTA (Approx. Att.)', linewidth=1.2)
-        plt.plot(xs_absatt, ys_absatt, marker='o', label='STTBTA (Actual Att.)', linewidth=1.2)
-        plt.plot(xs_concrete_train, ys_concrete_train, marker='^', label='STTBTA (Concrete, with train)', linewidth=1.2)
-        plt.plot(xs_concrete_no_train, ys_concrete_no_train, marker='^', label='STTBTA (Concrete, w/o train)', linewidth=1.2)
+        plt.plot(xs_sparse, ys_sparse, marker='o', label='STTBTA (Approx. Att.)', linewidth=1.2, color='blue', zorder=10)
+        plt.plot(xs_absatt, ys_absatt, marker='o', label='STTBTA (Actual Att.)', linewidth=1.2, color='lime')
+        plt.plot(xs_concrete_train, ys_concrete_train, marker='^', label='STTBTA (Concrete, with train)', linewidth=1.2, color='red', zorder=10)
+        plt.plot(xs_concrete_no_train, ys_concrete_no_train, marker='^', label='STTBTA (Concrete, w/o train)', linewidth=1.2, color='#ff9a3b')
         plt.plot(xs_ltp, ys_ltp, marker='x', label='LTP (Best valid.)', linewidth=1.2, color='gray', linestyle='--')
         plt.plot(xs_forward, ys_forward, marker='x', label='Manual Top-k', linewidth=1.2, color='black', linestyle='--')
         plt.plot(xs_bert, ys_bert, linestyle=':', label='BERT$_{BASE}$', color='skyblue', zorder=-99)
@@ -160,6 +160,34 @@ def main():
         plt.legend()
         plt.title(f'{subset_to_name[subset]}', fontsize=12)
         plt.savefig(plot_name+'.png', dpi=320)
+
+        def bert_xs(*xss):
+            xss = sum(xss, start=[])
+            return [min(xss), max(xss)]
+
+        plt.clf()
+        plt.plot(xs_sparse, ys_sparse, marker='o', label='STTBTA (Approx. Att.)', linewidth=1.2, color='blue', zorder=10)
+        plt.plot(xs_absatt, ys_absatt, marker='o', label='STTBTA (Actual Att.)', linewidth=1.2, color='lime')
+        plt.plot(xs_concrete_no_train, ys_concrete_no_train, marker='^', label='STTBTA (Concrete, w/o train)', linewidth=1.2, color='#ff9a3b')
+        plt.plot(xs_forward, ys_forward, marker='x', label='Manual Top-k', linewidth=1.2, color='black', linestyle='--')
+        plt.plot(bert_xs(xs_sparse, xs_absatt, xs_concrete_no_train, xs_forward), ys_bert, linestyle=':', label='BERT$_{BASE}$', color='skyblue', zorder=-99)
+        plt.grid(True)
+        plt.xlabel('Average Keep Token Ratio (%)')
+        plt.ylabel(metric_display_name)
+        plt.legend()
+        plt.title(f'{subset_to_name[subset]}', fontsize=12)
+        plt.savefig(plot_name+'-no-train.png', dpi=320)
+
+        plt.clf()
+        plt.plot(xs_concrete_train, ys_concrete_train, marker='^', label='STTBTA (Concrete, with train)', linewidth=1.2, color='red', zorder=10)
+        plt.plot(xs_ltp, ys_ltp, marker='x', label='LTP (Best valid.)', linewidth=1.2, color='gray', linestyle='--')
+        plt.plot(bert_xs(xs_concrete_train, xs_ltp), ys_bert, linestyle=':', label='BERT$_{BASE}$', color='skyblue', zorder=-99)
+        plt.grid(True)
+        plt.xlabel('Average Keep Token Ratio (%)')
+        plt.ylabel(metric_display_name)
+        plt.legend()
+        plt.title(f'{subset_to_name[subset]}', fontsize=12)
+        plt.savefig(plot_name+'-train.png', dpi=320)
 
         print(f'{subset} is processed')
 
