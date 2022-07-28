@@ -94,6 +94,8 @@ def benchmark_cum(name, value):
     if not name in __benchmark:
         __benchmark[name] = (0, 0)
     count, v = __benchmark[name]
+    if isinstance(value, torch.Tensor):
+        value = value.detach().cpu().numpy()
     __benchmark[name] = (count + 1, v + value)
 
 def benchmark_get_average(name):
