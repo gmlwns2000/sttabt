@@ -2218,12 +2218,24 @@ class ApproxSparseBertModel(nn.Module):
                     out_seq_len = layer.output.dense.channel_indices.shape[1]
                     layer_token_occupies.append(out_seq_len / flops_config.seq_len)
             elif mode == 'concrete':
-                #from concrete_mask_hard or concrete_mask
-                raise Exception()
+                #from channel indices
+                first_layer = self.sparse_bert.encoder.layer[0] #type: BertLayer
+                N, T, _ = first_layer.attention.get_attention().key.concrete_mask_hard.shape
+                assert _ == 1
+                layer_token_occupies.append(
+                    torch.mean(first_layer.attention.get_attention().key.concrete_mask_hard.squeeze(-1), dim=-1)
+                )
+                #print(first_layer.attention.get_attention().key.channel_indices.shape[1], flops_config.seq_len)
+                for il in range(len(self.sparse_bert.encoder.layer)):
+                    layer = self.sparse_bert.encoder.layer[il] #type: BertLayer
+                    layer_token_occupies.append(
+                        torch.mean(layer.output.dense.concrete_mask_hard.squeeze(-1), dim=-1)
+                    )
             else:
                 raise Exception()
             flops_config.token_occupies = layer_token_occupies
             flops = flops_sparse_approx_bert_model(flops_config)
+            print(flops)
             #print(mode, layer_token_occupies, flops)
             #print(layer_token_occupies, flops)
             benchmark_cum('sparse_approx_flops', flops * 1e-9)

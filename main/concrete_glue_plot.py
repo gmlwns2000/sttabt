@@ -100,19 +100,19 @@ def exp(subset, batch_size, factor, plot_name):
             metric, metric_name = get_score(result)
             return occupy, flops, metric, metric_name
         #TODO: calc before train
-        # concrete.sparse.benchmark_sparse_approx_flops(True) # this is not supported because flops calculation is not batched.
-        # concrete.sparse.benchmark_concrete_occupy(True)
+        concrete.sparse.benchmark_sparse_approx_flops(True) # this is not supported because flops calculation is not batched.
+        concrete.sparse.benchmark_concrete_occupy(True)
         occupy_no_train, flops_no_train, metric_no_train, metric_name = exam()
         occupies_no_train.append(occupy_no_train)
         flopses_no_train.append(flops_no_train)
         metrics_no_train.append(metric_no_train)
 
-        # concrete.sparse.benchmark_sparse_approx_flops(False)
-        # concrete.sparse.benchmark_concrete_occupy(False)
+        concrete.sparse.benchmark_sparse_approx_flops(False)
+        concrete.sparse.benchmark_concrete_occupy(False)
         trainer.main()
 
-        # concrete.sparse.benchmark_sparse_approx_flops(True)
-        # concrete.sparse.benchmark_concrete_occupy(True)
+        concrete.sparse.benchmark_sparse_approx_flops(True)
+        concrete.sparse.benchmark_concrete_occupy(True)
         occupy, flops, metric, metric_name = exam()
         print(f'[{i+1}/{len(p_logits)}]({subset}) occupy: {occupy} flops: {flops} metric: {metric} occupy_no: {occupy_no_train} flops_no: {flops_no_train} metric_no: {metric_no_train}')
         occupies.append(occupy)

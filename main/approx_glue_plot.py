@@ -289,6 +289,6 @@ def main():
     plot_from_last_pickle()
 
 if __name__ == '__main__':
-    tqdm.tqdm.set_lock(mp.RLock())
     mp.set_start_method('spawn')
+    tqdm.tqdm.set_lock(mp.RLock())
     main()
