@@ -1,3 +1,5 @@
+#This file is outdated. check utils.sparse_bert_flops for accurate implementation
+
 import math
 
 # random number, >=, multiply activations by dropout mask, multiply activations

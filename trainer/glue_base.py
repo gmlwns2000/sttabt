@@ -340,7 +340,7 @@ class GlueAttentionApproxTrainer:
         avg_length = 0
         step_count = 0
         
-        for i, batch in enumerate(tqdm.tqdm(self.test_dataloader, desc='eval')):
+        for i, batch in enumerate(tqdm.tqdm(self.test_dataloader, desc='eval', position=self.device)):
             if i > max_step: break
             step_count += 1
 
