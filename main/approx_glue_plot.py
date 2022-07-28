@@ -3,16 +3,24 @@ This script automatically assign all gpus and exam.
 기기의 메모리가 남는 모든 gpu를 자동으로 할당합니다.
 """
 
+import copy
+import gc
+import importlib
+import itertools
+import json
+import multiprocessing as mp
+import pickle
+import random
 import time
 import traceback
-import trainer.glue_base as glue_base
+
 import models.sparse_token as sparse
-from utils.glue import get_score
-import pickle, importlib, itertools, gc, json, random
 import torch
+import tqdm
+import trainer.glue_base as glue_base
 from matplotlib import pyplot as plt
-import multiprocessing as mp
-import copy
+from utils.glue import get_score
+
 plt.style.use("seaborn")
 sparse.set_update_input_mask_accumulate_indices(True)
 
@@ -103,8 +111,9 @@ def run_exp_subset(ret_queue, iset, subset, kss, cases_len, run_approx, device, 
     
     ret_queue.put(results)
 
-def runtime_wrapper(ret_queue, fn, *args):
+def runtime_wrapper(ret_queue, tqdm_lock, fn, *args):
     try:
+        tqdm.tqdm.set_lock(tqdm_lock)
         print('Runtime: Started', args)
         fn(ret_queue, *args)
         print('Runtime: Finished', args)
@@ -153,7 +162,12 @@ def run_exp(run_approx=True, devices=[0], subsets=subsets, retry=5):
 
         proc = mp.Process(
             target=runtime_wrapper, 
-            args=(ret_queue, run_exp_subset, iset, subset, kss, len(cases), run_approx, target_device, devices.index(target_device)),
+            args=(
+                ret_queue,
+                tqdm.tqdm.get_lock(),
+                run_exp_subset,
+                iset, subset, kss, len(cases), run_approx, target_device, devices.index(target_device)
+            ),
             daemon=True
         )
         proc.start()
@@ -249,21 +263,12 @@ def plot_from_last_pickle():
         plt.title(f'{subset}')
         plt.savefig(f'{result_name}_flops_{subset}.png', dpi=320)
 
-def query_available_devices(q):
-    import torch
-    num_gpus = torch.cuda.device_count()
-    available_devices = []
-    for i in range(num_gpus):
-        free_mem, total_mem = torch.cuda.mem_get_info(i)
-        if (free_mem / total_mem) > 0.97:
-            available_devices.append(i)
-    q.put(available_devices)
-
 def main():
     global plot_header, factor
 
     #arg
-    import argparse, random
+    import argparse
+    from utils import query_available_devices
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--header', type=str, default=None)
@@ -276,17 +281,13 @@ def main():
     if args.factor is not None:
         factor = args.factor
     
-    q = mp.Queue()
-    cuda_process = mp.Process(target=query_available_devices, args=(q,), daemon=True)
-    cuda_process.start()
-    cuda_process.join()
-    available_devices = q.get()
-    q.close()
+    available_devices = query_available_devices()
     print('Available Devices', available_devices)
 
     run_exp(devices=available_devices)
     plot_from_last_pickle()
 
 if __name__ == '__main__':
+    tqdm.tqdm.set_lock(mp.RLock())
     mp.set_start_method('spawn')
     main()
