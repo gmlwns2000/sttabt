@@ -37,6 +37,9 @@ from transformers.models.bert.modeling_bert import \
 from transformers.utils import logging
 from transformers.models.vit.modeling_vit import ViTEmbeddings
 
+from utils.sparse_flops_calculation import flops_sparse_approx_bert_model
+from utils.sparse_flops_calculation import ModelConfig as FlopsConfig
+
 logger = logging.get_logger(__name__)
 
 EPS = 1e-7
@@ -1786,6 +1789,7 @@ def run_bert_with_concrete(
 
         # score calculation from STTBT
         prop_p = 0.5
+        #this concrete mask is not used
         concrete_mask_mode = 'prob'
         if concrete_mask_mode == 'prob':
             att = layer.attention.get_attention().last_attention_probs
@@ -2150,27 +2154,70 @@ class ApproxSparseBertModel(nn.Module):
         if 'attention_mask' not in kwargs:
             kwargs['attention_mask'] = None
 
-        if not self.use_forward_sparse:
-            if not self.use_concrete_masking:
-                output = run_bert_with_approx(
-                    sparse_bert = self.sparse_bert,
-                    approx_bert = self.approx_bert,
-                    input_dict  = kwargs,
-                    ks          = self.ks,
-                    run_original_attention = self.run_original_attention,
-                )
+        mode = kwargs.get('mode', None)
+        if mode is None:
+            if not self.use_forward_sparse:
+                if not self.use_concrete_masking:
+                    mode = 'approx'
+                else:
+                    mode = 'concrete'
             else:
-                output = run_bert_with_concrete(
-                    sparse_bert = self.sparse_bert,
-                    approx_bert = self.approx_bert,
-                    input_dict  = kwargs
-                )
-        else:
+                mode = 'forward'
+                
+        if mode == 'approx':
+            output = run_bert_with_approx(
+                sparse_bert = self.sparse_bert,
+                approx_bert = self.approx_bert,
+                input_dict  = kwargs,
+                ks          = self.ks,
+                run_original_attention = self.run_original_attention,
+            )
+        elif mode == 'concrete':
+            output = run_bert_with_concrete(
+                sparse_bert = self.sparse_bert,
+                approx_bert = self.approx_bert,
+                input_dict  = kwargs
+            )
+        elif mode == 'forward':
             output = run_bert_forward_sparsity(
                 sparse_bert = self.sparse_bert,
                 input_dict  = kwargs,
                 ks          = self.ks,
             )
+        else:
+            raise Exception()
+
+        #flops calculation
+        flops_config = FlopsConfig(
+            num_layer=len(self.sparse_bert.encoder.layer),
+            hidden_size=self.sparse_bert.config.hidden_size,
+            intermediate_size=self.sparse_bert.config.intermediate_size,
+            num_heads=self.sparse_bert.config.num_attention_heads,
+            seq_len=kwargs['input_ids'].shape[-1] if 'input_ids' in kwargs else 192,
+            arch=self.arch,
+            approx_hidden_size=self.approx_bert.config.hidden_size,
+            approx_intermediate_size=self.approx_bert.config.intermediate_size,
+            sparse_mode=mode,
+        )
+        layer_token_occupies = []
+        if mode in ['approx', 'forward']:
+            #from channel indices
+            first_layer = self.sparse_bert.encoder.layer[0] #type: BertLayer
+            layer_token_occupies.append(
+                first_layer.attention.get_attention().key.channel_indices.shape[-1]
+            )
+            for il in range(len(self.sparse_bert.encoder.layer)):
+                layer = self.sparse_bert.encoder.layer[il] #type: BertLayer
+                out_seq_len = layer.output.dense.channel_indices.shape[-1]
+                layer_token_occupies.append(out_seq_len)
+        elif mode == 'concrete':
+            #from concrete_mask_hard or concrete_mask
+            raise Exception()
+        else:
+            raise Exception()
+        flops_config.token_occupies = layer_token_occupies
+        benchmark_cum('sparse_approx_flops', flops_sparse_approx_bert_model(flops_config))
+        
         return output
 
 class ApproxSparseBertForSequenceClassification(BertPreTrainedModel):

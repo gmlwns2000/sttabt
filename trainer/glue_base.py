@@ -340,7 +340,7 @@ class GlueAttentionApproxTrainer:
         avg_length = 0
         step_count = 0
         
-        for i, batch in enumerate(tqdm.tqdm(self.test_dataloader, desc='eval')):
+        for i, batch in enumerate(tqdm.tqdm(self.test_dataloader, desc='eval', position=self.device)):
             if i > max_step: break
             step_count += 1
 
@@ -371,10 +371,11 @@ class GlueAttentionApproxTrainer:
         ks=0.5, 
         use_forward=False,
         run_original_attention = False,
-        show_message=True
+        show_message=True,
+        max_step=987654321
     ):
         self.seed()
-        wrapped_bert = sparse.ApproxSparseBertModel(self.model_bert, approx_bert=self.approx_bert, ks=ks)
+        wrapped_bert = sparse.ApproxSparseBertModel(self.model_bert, approx_bert=self.approx_bert.module, ks=ks)
         wrapped_bert.use_forward_sparse = use_forward
         wrapped_bert.run_original_attention = run_original_attention
         sparse_cls_bert = berts.BertForSequenceClassification(self.model_bert.config)
@@ -382,7 +383,7 @@ class GlueAttentionApproxTrainer:
         sparse_cls_bert.bert = wrapped_bert
         sparse_cls_bert.to(self.device).eval()
         
-        sparse_result = self.eval_base_model(model = sparse_cls_bert, show_messages = show_message)
+        sparse_result = self.eval_base_model(model = sparse_cls_bert, show_messages = show_message, max_step=max_step)
         return sparse_result
 
     def eval_main(self, ks='dynamic'):

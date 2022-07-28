@@ -1,4 +1,6 @@
 # %%
+raise Exception('run main.approx_glue_plot')
+
 import trainer.glue_base as glue_base
 import models.sparse_token as sparse
 from utils.glue import get_score
