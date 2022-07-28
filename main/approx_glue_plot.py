@@ -42,15 +42,17 @@ def merge_dict(a, b):
     a.update(b)
     return a
 
-def run_exp_subset(ret_queue, iset, subset, kss, cases_len, run_approx, device):
+def run_exp_subset(ret_queue, iset, subset, kss, cases_len, run_approx, device, tqdm_position):
     gc.collect()
     torch.cuda.empty_cache()
     
     results = {}
 
     trainer = Glue(subset, factor=factor, batch_size=1, wiki_train=False, device=device)
-    if run_approx: trainer.load()
-    bert_score, _ = get_score(trainer.eval_base_model(max_step=MAX_STEP))
+    trainer.tqdm_position = tqdm_position
+    if run_approx:
+        trainer.load()
+    bert_score, _ = get_score(trainer.eval_base_model(max_step=MAX_STEP, show_messages=False))
     results[(subset, 'bert')] = { 'score_bert':bert_score }
     print('bert', bert_score)
     
@@ -103,10 +105,13 @@ def run_exp_subset(ret_queue, iset, subset, kss, cases_len, run_approx, device):
 
 def runtime_wrapper(ret_queue, fn, *args):
     try:
+        print('Runtime: Started', args)
         fn(ret_queue, *args)
+        print('Runtime: Finished', args)
     except Exception as ex:
+        print('Rumtime: Exception', ex)
         traceback.print_exc()
-        print('exception occure with', args)
+        print('Runtime: Exception occure with', args)
         ret_queue.put({
             'status': 'failed',
             'ex': ex,
@@ -148,7 +153,7 @@ def run_exp(run_approx=True, devices=[0], subsets=subsets, retry=5):
 
         proc = mp.Process(
             target=runtime_wrapper, 
-            args=(ret_queue, run_exp_subset, iset, subset, kss, len(cases), run_approx, target_device),
+            args=(ret_queue, run_exp_subset, iset, subset, kss, len(cases), run_approx, target_device, devices.index(target_device)),
             daemon=True
         )
         proc.start()
