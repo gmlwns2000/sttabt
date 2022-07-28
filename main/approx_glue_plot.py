@@ -45,11 +45,16 @@ kss = [0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.625, 0.75]
 #kss = [0.1, 0.5]
 
 MAX_STEP = 5000000000
+VERBOSE = False
 
 def merge_dict(a, b):
     a = copy.deepcopy(a)
     a.update(b)
     return a
+
+def print(*args):
+    args = [a if isinstance(a, str) else str(a) for a in args]
+    tqdm.tqdm.write(" ".join(args))
 
 def run_exp_subset(ret_queue, iset, subset, kss, cases_len, run_approx, device, tqdm_position):
     gc.collect()
@@ -64,7 +69,7 @@ def run_exp_subset(ret_queue, iset, subset, kss, cases_len, run_approx, device, 
     trainer.tqdm_postfix = '-bert'
     bert_score, _ = get_score(trainer.eval_base_model(max_step=MAX_STEP, show_messages=False))
     results[(subset, 'bert')] = { 'score_bert':bert_score }
-    print('bert', bert_score)
+    if VERBOSE: print('bert', bert_score)
     
     for ik, ks in enumerate(kss):
         i = iset * len(kss) + ik
@@ -76,7 +81,7 @@ def run_exp_subset(ret_queue, iset, subset, kss, cases_len, run_approx, device, 
         score_sparse, metric = get_score(trainer.eval_sparse_model(ks=ksx, run_original_attention=True, show_message=False, max_step=MAX_STEP))
         mask_occupy = sparse.benchmark_get_average('mask_occupy')
         flops_sparse = sparse.benchmark_get_average('sparse_approx_flops')
-        print('sparse absatt', score_sparse, '@', mask_occupy)
+        if VERBOSE: print('sparse absatt', score_sparse, '@', mask_occupy)
 
         if run_approx:
             trainer.set_batch_size(1)
@@ -86,7 +91,7 @@ def run_exp_subset(ret_queue, iset, subset, kss, cases_len, run_approx, device, 
             score_approx, metric = get_score(trainer.eval_sparse_model(ks=ksx, run_original_attention=False, show_message=False, max_step=MAX_STEP))
             mask_occupy_approx = sparse.benchmark_get_average('mask_occupy')
             flops_approx = sparse.benchmark_get_average('sparse_approx_flops')
-            print('sparse approx', score_approx, '@', mask_occupy_approx)
+            if VERBOSE: print('sparse approx', score_approx, '@', mask_occupy_approx)
 
         trainer.set_batch_size(8)
         target_ks = mask_occupy
@@ -100,7 +105,7 @@ def run_exp_subset(ret_queue, iset, subset, kss, cases_len, run_approx, device, 
         score_forward, _ = get_score(trainer.eval_sparse_model(ks=ksx, use_forward=True, show_message=False, max_step=MAX_STEP))
         mask_occupy_forward = sparse.benchmark_get_average('forward_occupy')
         flops_forward = sparse.benchmark_get_average('sparse_approx_flops')
-        print('forward', score_forward, '@', mask_occupy_forward)
+        if VERBOSE: print('forward', score_forward, '@', mask_occupy_forward)
 
         result = {
             'occupy':mask_occupy, 'score_sparse':score_sparse, 'flops_sparse': flops_sparse,
@@ -111,7 +116,7 @@ def run_exp_subset(ret_queue, iset, subset, kss, cases_len, run_approx, device, 
             result['score_sparse_approx'] = score_approx
             result['occupy_approx'] = mask_occupy_approx
             result['flops_approx'] = flops_approx
-        print(f"\nRESULT {subset}@{ks} ({i+1}/{cases_len}) |", result)
+        print(f"\nRESULT {subset}@{ks} ({i+1}/{cases_len}) | {result}")
         results[(subset, ks)] = result
     
     ret_queue.put(results)
@@ -119,9 +124,9 @@ def run_exp_subset(ret_queue, iset, subset, kss, cases_len, run_approx, device, 
 def runtime_wrapper(ret_queue, tqdm_lock, fn, *args):
     try:
         tqdm.tqdm.set_lock(tqdm_lock)
-        print('Runtime: Started', args)
+        print(f'Runtime: Started {args}')
         fn(ret_queue, *args)
-        print('Runtime: Finished', args)
+        print(f'Runtime: Finished {args}')
     except Exception as ex:
         print('Rumtime: Exception', ex)
         traceback.print_exc()
@@ -188,7 +193,7 @@ def run_exp(run_approx=True, devices=[0], subsets=subsets, retry=5):
         if isinstance(result, dict) and 'status' in result and result['status'] == 'failed':
             print(f'Process failed with following argument, {result["args"]}')
             print(f"Process exception: {result['ex']}")
-            subset = result['args'][3]
+            subset = result['args'][1]
             print(f'Retry subset {subset}')
             retry_subsets.append(subset)
         else:
@@ -196,7 +201,7 @@ def run_exp(run_approx=True, devices=[0], subsets=subsets, retry=5):
                 results[k] = v
     
     if len(retry_subsets) > 0:
-        print('Pending retries...', retry_subsets)
+        print(f'Pending retries {retry_subsets} ... left chance {retry}', )
         time.sleep(5)
         retry_results = run_exp(run_approx=run_approx, devices=devices, subsets=retry_subsets, retry=retry-1)
         results.update(retry_results)

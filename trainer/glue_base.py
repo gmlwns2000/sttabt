@@ -30,6 +30,10 @@ def setup(rank, world_size, port=32277):
 def cleanup():
     dist.destroy_process_group()
 
+def print(*args):
+    args = [a if isinstance(a, str) else str(a) for a in args]
+    tqdm.tqdm.write(" ".join(args))
+
 datasets_logging.set_verbosity_error()
 
 torch.cuda.empty_cache()
@@ -151,7 +155,7 @@ class GlueAttentionApproxTrainer:
         checkpoint_name=None, init_checkpoint=None,
         enable_plot=False,
     ):
-        print('Trainer:', dataset)
+        print(f'Trainer: {dataset}')
         self.seed()
         
         self.enable_plot = enable_plot
@@ -220,7 +224,7 @@ class GlueAttentionApproxTrainer:
         self.last_metric_score = None
         self.last_loss = None
 
-        print('Trainer: Checkpoint path', self.checkpoint_path())
+        print(f'Trainer: Checkpoint path {self.checkpoint_path()}')
 
         if self.enable_plot:
             self.vis = visdom.Visdom()
@@ -262,7 +266,7 @@ class GlueAttentionApproxTrainer:
 
     def set_batch_size(self, new_value):
         if new_value != self.batch_size:
-            print("GlueAttentionApproxTrainer: update batch size", new_value)
+            print(f"GlueAttentionApproxTrainer: update batch size {new_value}")
             self.batch_size = new_value
 
             self.train_dataloader = get_dataloader(
@@ -314,7 +318,7 @@ class GlueAttentionApproxTrainer:
         if load_loss:
             if 'last_metric_score' in state: self.last_metric_score = state['last_metric_score']
             if 'last_loss' in state: self.last_loss = state['last_loss']
-        print('loaded', state['epochs'], state['last_loss'])
+        print(f"loaded {state['epochs']} {state['last_loss']}")
         del state
 
     def save(self):
