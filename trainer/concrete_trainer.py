@@ -456,6 +456,7 @@ class ConcreteTrainer:
         pass
 
     def train_epoch(self):
+        sparse.benchmark_concrete_occupy(False)
         pbar = self.train_dataloader
         
         print_log = self.device == 0 or self.world_size == 1
@@ -502,6 +503,7 @@ class ConcreteTrainer:
 
     def train_validate(self):
         # check average loss
+        sparse.benchmark_concrete_occupy(True)
         loss_sum = 0
         loss_count = 0
         self.sparse_bert.eval()
