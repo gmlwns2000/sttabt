@@ -86,7 +86,8 @@ def flops_bert_self_attention(c: ModelConfig):
 
 def flops_bert_self_output(c: ModelConfig):
     flops = 2*c.hidden_size*c.hidden_size + c.hidden_size
-    if c.arch == 'bert': flops += LAYER_NORM_FLOPS * c.hidden_size + c.hidden_size
+    if c.arch == 'bert':
+        flops += LAYER_NORM_FLOPS * c.hidden_size + c.hidden_size
     flops *= c.out_seq_len
     return flops
 

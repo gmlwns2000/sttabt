@@ -31,10 +31,11 @@ factor = 8
 subsets = ["cola","mnli","mrpc","qnli","qqp","rte","sst2","stsb","wnli",]
 kss = [0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.625, 0.75]
 
+#subsets = ['cola']
 #subsets = ['cola', 'mrpc', 'mrpc', 'mrpc', 'mrpc', 'mrpc', 'mrpc', 'mrpc']
 #kss = [0.1, 0.5]
 
-MAX_STEP = 50
+MAX_STEP = 5000000000
 
 def merge_dict(a, b):
     a = copy.deepcopy(a)
@@ -160,13 +161,12 @@ def run_exp(run_approx=True, devices=[0], subsets=subsets, retry=5):
     retry_subsets = []
     while not ret_queue.empty():
         result = ret_queue.get()
-        if isinstance(result, dict):
-            if result['status'] == 'failed':
-                print(f'Process failed with following argument, {result["args"]}')
-                print(f"Process exception: {result['ex']}")
-                subset = result['args'][3]
-                print(f'Retry subset {subset}')
-                retry_subsets.append(subset)
+        if isinstance(result, dict) and 'status' in result and result['status'] == 'failed':
+            print(f'Process failed with following argument, {result["args"]}')
+            print(f"Process exception: {result['ex']}")
+            subset = result['args'][3]
+            print(f'Retry subset {subset}')
+            retry_subsets.append(subset)
         else:
             for k, v in result.items():
                 results[k] = v

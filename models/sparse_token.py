@@ -2031,7 +2031,7 @@ def run_bert_forward_sparsity(
     dtype = hidden_states.dtype
 
     indices = torch.arange(token_len, device=device, dtype=torch.int64)
-    indices = indices.repeat(batch_size, token_len)
+    indices = indices.repeat(batch_size, 1)
     for idx, layer in enumerate(sparse_bert.encoder.layer):
         input_mask = torch.zeros(batch_size, token_len, device=device, dtype=dtype)\
             .scatter_(1, indices, 1.0)
@@ -2204,19 +2204,23 @@ class ApproxSparseBertModel(nn.Module):
             #from channel indices
             first_layer = self.sparse_bert.encoder.layer[0] #type: BertLayer
             layer_token_occupies.append(
-                first_layer.attention.get_attention().key.channel_indices.shape[-1]
+                first_layer.attention.get_attention().key.channel_indices.shape[1] / flops_config.seq_len
             )
+            #print(first_layer.attention.get_attention().key.channel_indices.shape[1], flops_config.seq_len)
             for il in range(len(self.sparse_bert.encoder.layer)):
                 layer = self.sparse_bert.encoder.layer[il] #type: BertLayer
-                out_seq_len = layer.output.dense.channel_indices.shape[-1]
-                layer_token_occupies.append(out_seq_len)
+                out_seq_len = layer.output.dense.channel_indices.shape[1]
+                layer_token_occupies.append(out_seq_len / flops_config.seq_len)
         elif mode == 'concrete':
             #from concrete_mask_hard or concrete_mask
             raise Exception()
         else:
             raise Exception()
         flops_config.token_occupies = layer_token_occupies
-        benchmark_cum('sparse_approx_flops', flops_sparse_approx_bert_model(flops_config))
+        flops = flops_sparse_approx_bert_model(flops_config)
+        #print(mode, layer_token_occupies, flops)
+        #print(layer_token_occupies, flops)
+        benchmark_cum('sparse_approx_flops', flops * 1e-9)
         
         return output
 
