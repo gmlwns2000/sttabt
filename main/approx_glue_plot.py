@@ -14,6 +14,7 @@ from matplotlib import pyplot as plt
 import multiprocessing as mp
 import copy
 plt.style.use("seaborn")
+sparse.benchmark_sparse_approx_flops(True)
 sparse.set_update_input_mask_accumulate_indices(True)
 
 Glue = glue_base.GlueAttentionApproxTrainer

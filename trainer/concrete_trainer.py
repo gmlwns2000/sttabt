@@ -72,8 +72,19 @@ task_to_batch_size = {
     "rte":  8,
     "sst2": 16,
     "stsb": 16,
-    "wnli": 32,
-    "bert": 8,
+    "wnli": 16,
+}
+
+task_to_gradient_accumulate_step = {
+    "cola": 1,
+    "mnli": 16,
+    "mrpc": 2,
+    "qnli": 16,
+    "qqp":  4,
+    "rte":  8,
+    "sst2": 4,
+    "stsb": 4,
+    "wnli": 4,
 }
 
 def get_dataloader(subset, tokenizer, batch_size, split='train'):
@@ -150,7 +161,7 @@ class MimicDDP(nn.Module):
 class ConcreteTrainer:
     def __init__(self, 
         dataset, factor=4,
-        batch_size=None, device=0, world_size=1, 
+        batch_size=None, device=0, world_size=1, gradient_accumulate_steps=None,
         checkpoint_name=None, init_checkpoint=None, epochs=None,
         enable_plot=False, lr=None,
     ):
@@ -169,6 +180,9 @@ class ConcreteTrainer:
         if batch_size is None or batch_size <= 0:
             batch_size = task_to_batch_size[self.dataset]
         self.batch_size = batch_size
+        if gradient_accumulate_steps is None or gradient_accumulate_steps <= 0:
+            gradient_accumulate_steps = task_to_gradient_accumulate_step[self.dataset]
+        self.gradient_accumulate_steps = gradient_accumulate_steps
         self.device = device
         self.world_size = world_size
         self.epoch = 0
@@ -449,6 +463,7 @@ class ConcreteTrainer:
             pbar = tqdm.tqdm(pbar)
         
         self.sparse_bert.train()
+        self.optimizer.zero_grad() #clean up previous trashes
 
         for step, batch in enumerate(pbar):
             batch = {k: v.to(self.device, non_blocking=True) for k, v in batch.items()}
@@ -468,14 +483,17 @@ class ConcreteTrainer:
                     exit()
                 loss = output.loss
             #print(loss.item())
-            self.scaler.scale(loss).backward()
+            self.scaler.scale(loss / self.gradient_accumulate_steps).backward()
             
-            self.scaler.unscale_(self.optimizer)
-            torch.nn.utils.clip_grad_norm_(self.sparse_bert.parameters(), 0.5)
+            if ((step+1) % self.gradient_accumulate_steps) == 0:
+                self.scaler.unscale_(self.optimizer)
+                torch.nn.utils.clip_grad_norm_(self.sparse_bert.parameters(), 0.5)
 
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
-            self.optimizer.zero_grad()
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+                self.optimizer.zero_grad()
+
+                #print('step')
 
             self.last_loss = loss.item()
             if print_log:

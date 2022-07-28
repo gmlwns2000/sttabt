@@ -128,6 +128,11 @@ def benchmark_concrete_occupy(v):
     global BENCHMARK_CONCRETE_OCCUPY
     BENCHMARK_CONCRETE_OCCUPY = v
 
+BENCHMARK_SPARSE_APPROX_FLOPS = False
+def benchmark_sparse_approx_flops(v):
+    global BENCHMARK_SPARSE_APPROX_FLOPS
+    BENCHMARK_SPARSE_APPROX_FLOPS = v
+
 #endregion
 
 #region Model Definition
@@ -2188,39 +2193,40 @@ class ApproxSparseBertModel(nn.Module):
             raise Exception()
 
         #flops calculation
-        flops_config = FlopsConfig(
-            num_layer=len(self.sparse_bert.encoder.layer),
-            hidden_size=self.sparse_bert.config.hidden_size,
-            intermediate_size=self.sparse_bert.config.intermediate_size,
-            num_heads=self.sparse_bert.config.num_attention_heads,
-            seq_len=kwargs['input_ids'].shape[-1] if 'input_ids' in kwargs else 192,
-            arch=self.arch,
-            approx_hidden_size=self.approx_bert.config.hidden_size,
-            approx_intermediate_size=self.approx_bert.config.intermediate_size,
-            sparse_mode=mode,
-        )
-        layer_token_occupies = []
-        if mode in ['approx', 'forward']:
-            #from channel indices
-            first_layer = self.sparse_bert.encoder.layer[0] #type: BertLayer
-            layer_token_occupies.append(
-                first_layer.attention.get_attention().key.channel_indices.shape[1] / flops_config.seq_len
+        if BENCHMARK_SPARSE_APPROX_FLOPS:
+            flops_config = FlopsConfig(
+                num_layer=len(self.sparse_bert.encoder.layer),
+                hidden_size=self.sparse_bert.config.hidden_size,
+                intermediate_size=self.sparse_bert.config.intermediate_size,
+                num_heads=self.sparse_bert.config.num_attention_heads,
+                seq_len=kwargs['input_ids'].shape[-1] if 'input_ids' in kwargs else 192,
+                arch=self.arch,
+                approx_hidden_size=self.approx_bert.config.hidden_size,
+                approx_intermediate_size=self.approx_bert.config.intermediate_size,
+                sparse_mode=mode,
             )
-            #print(first_layer.attention.get_attention().key.channel_indices.shape[1], flops_config.seq_len)
-            for il in range(len(self.sparse_bert.encoder.layer)):
-                layer = self.sparse_bert.encoder.layer[il] #type: BertLayer
-                out_seq_len = layer.output.dense.channel_indices.shape[1]
-                layer_token_occupies.append(out_seq_len / flops_config.seq_len)
-        elif mode == 'concrete':
-            #from concrete_mask_hard or concrete_mask
-            raise Exception()
-        else:
-            raise Exception()
-        flops_config.token_occupies = layer_token_occupies
-        flops = flops_sparse_approx_bert_model(flops_config)
-        #print(mode, layer_token_occupies, flops)
-        #print(layer_token_occupies, flops)
-        benchmark_cum('sparse_approx_flops', flops * 1e-9)
+            layer_token_occupies = []
+            if mode in ['approx', 'forward']:
+                #from channel indices
+                first_layer = self.sparse_bert.encoder.layer[0] #type: BertLayer
+                layer_token_occupies.append(
+                    first_layer.attention.get_attention().key.channel_indices.shape[1] / flops_config.seq_len
+                )
+                #print(first_layer.attention.get_attention().key.channel_indices.shape[1], flops_config.seq_len)
+                for il in range(len(self.sparse_bert.encoder.layer)):
+                    layer = self.sparse_bert.encoder.layer[il] #type: BertLayer
+                    out_seq_len = layer.output.dense.channel_indices.shape[1]
+                    layer_token_occupies.append(out_seq_len / flops_config.seq_len)
+            elif mode == 'concrete':
+                #from concrete_mask_hard or concrete_mask
+                raise Exception()
+            else:
+                raise Exception()
+            flops_config.token_occupies = layer_token_occupies
+            flops = flops_sparse_approx_bert_model(flops_config)
+            #print(mode, layer_token_occupies, flops)
+            #print(layer_token_occupies, flops)
+            benchmark_cum('sparse_approx_flops', flops * 1e-9)
         
         return output
 
