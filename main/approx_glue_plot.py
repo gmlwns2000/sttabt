@@ -61,6 +61,7 @@ def run_exp_subset(ret_queue, iset, subset, kss, cases_len, run_approx, device, 
     trainer.tqdm_position = tqdm_position
     if run_approx:
         trainer.load()
+    trainer.tqdm_postfix = '-bert'
     bert_score, _ = get_score(trainer.eval_base_model(max_step=MAX_STEP, show_messages=False))
     results[(subset, 'bert')] = { 'score_bert':bert_score }
     print('bert', bert_score)
@@ -71,6 +72,7 @@ def run_exp_subset(ret_queue, iset, subset, kss, cases_len, run_approx, device, 
         trainer.set_batch_size(1)
         ksx = [ks for _ in range(12)]
         sparse.benchmark_reset()
+        trainer.tqdm_postfix = '-absatt'
         score_sparse, metric = get_score(trainer.eval_sparse_model(ks=ksx, run_original_attention=True, show_message=False, max_step=MAX_STEP))
         mask_occupy = sparse.benchmark_get_average('mask_occupy')
         flops_sparse = sparse.benchmark_get_average('sparse_approx_flops')
@@ -80,6 +82,7 @@ def run_exp_subset(ret_queue, iset, subset, kss, cases_len, run_approx, device, 
             trainer.set_batch_size(1)
             ksx = [ks for _ in range(12)]
             sparse.benchmark_reset()
+            trainer.tqdm_postfix = '-approx'
             score_approx, metric = get_score(trainer.eval_sparse_model(ks=ksx, run_original_attention=False, show_message=False, max_step=MAX_STEP))
             mask_occupy_approx = sparse.benchmark_get_average('mask_occupy')
             flops_approx = sparse.benchmark_get_average('sparse_approx_flops')
@@ -93,6 +96,7 @@ def run_exp_subset(ret_queue, iset, subset, kss, cases_len, run_approx, device, 
             ksx = [(1-x/10.0)*(2-2*target_ks)+(2*target_ks-1) for x in range(12)]
         #ksx[-1] = 0.99
         sparse.benchmark_reset()
+        trainer.tqdm_postfix = '-forward'
         score_forward, _ = get_score(trainer.eval_sparse_model(ks=ksx, use_forward=True, show_message=False, max_step=MAX_STEP))
         mask_occupy_forward = sparse.benchmark_get_average('forward_occupy')
         flops_forward = sparse.benchmark_get_average('sparse_approx_flops')

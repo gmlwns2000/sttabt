@@ -230,6 +230,7 @@ class GlueAttentionApproxTrainer:
             self.load(self.init_checkpoint)
         
         self.tqdm_position = 0
+        self.tqdm_postfix = ''
     
     def load_train_dataset(self):
         self.train_dataloader = get_dataloader(
@@ -342,7 +343,7 @@ class GlueAttentionApproxTrainer:
         avg_length = 0
         step_count = 0
         
-        for i, batch in enumerate(tqdm.tqdm(self.test_dataloader, desc='eval', position=self.tqdm_position)):
+        for i, batch in enumerate(tqdm.tqdm(self.test_dataloader, desc=f'({self.dataset}) eval{self.tqdm_postfix}', position=self.tqdm_position)):
             if i > max_step: break
             step_count += 1
 

@@ -1782,7 +1782,7 @@ def run_bert_with_concrete(
     last_layer.output.dense.concrete_mask_hard = last_mask_un
     if BENCHMARK_CONCRETE_OCCUPY: 
         with torch.no_grad():
-            benchmark_cum('concrete_occupy', last_mask_un.mean())
+            benchmark_cum('concrete_occupy', last_mask_un.detach().mean())
     last_masks = [last_mask]
     for j in range(len(sparse_bert.encoder.layer)):
         #layer indexing
@@ -1920,10 +1920,10 @@ def run_bert_with_concrete(
         if layer.output.dense.concrete_hard_threshold is not None:
             current_mask_hard = (current_mask_un >= concrete_hard_threshold) * 1.0
             if BENCHMARK_CONCRETE_OCCUPY:
-                with torch.no_grad(): benchmark_cum('concrete_occupy', current_mask_hard.mean())
+                with torch.no_grad(): benchmark_cum('concrete_occupy', current_mask_hard.detach().mean())
         else:
             if BENCHMARK_CONCRETE_OCCUPY:
-                with torch.no_grad(): benchmark_cum('concrete_occupy', current_mask_un.mean())
+                with torch.no_grad(): benchmark_cum('concrete_occupy', current_mask_un.detach().mean())
 
         # update mask for optimization
         if prev_layer is not None:
@@ -2223,19 +2223,20 @@ class ApproxSparseBertModel(nn.Module):
                 N, T, _ = first_layer.attention.get_attention().key.concrete_mask_hard.shape
                 assert _ == 1
                 layer_token_occupies.append(
-                    torch.mean(first_layer.attention.get_attention().key.concrete_mask_hard.squeeze(-1), dim=-1)
+                    torch.mean(first_layer.attention.get_attention().key.concrete_mask_hard.detach().squeeze(-1), dim=-1)
                 )
                 #print(first_layer.attention.get_attention().key.channel_indices.shape[1], flops_config.seq_len)
                 for il in range(len(self.sparse_bert.encoder.layer)):
                     layer = self.sparse_bert.encoder.layer[il] #type: BertLayer
                     layer_token_occupies.append(
-                        torch.mean(layer.output.dense.concrete_mask_hard.squeeze(-1), dim=-1)
+                        torch.mean(layer.output.dense.concrete_mask_hard.detach().squeeze(-1), dim=-1)
                     )
             else:
                 raise Exception()
             flops_config.token_occupies = layer_token_occupies
             flops = flops_sparse_approx_bert_model(flops_config)
-            print(flops)
+            if isinstance(flops, torch.Tensor):
+                flops = torch.mean(flops)
             #print(mode, layer_token_occupies, flops)
             #print(layer_token_occupies, flops)
             benchmark_cum('sparse_approx_flops', flops * 1e-9)
