@@ -7,6 +7,7 @@ from datasets import load_dataset, load_metric
 from datasets.utils import logging as datasets_logging
 from torch import optim, nn
 from utils import ThreadBuffer
+from utils.gpu_pool import print
 import torch.nn.functional as F
 
 import os
