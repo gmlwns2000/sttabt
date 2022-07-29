@@ -211,7 +211,7 @@ def human_readable(flops):
 
 if __name__ == '__main__':
     import random
-    SEQ = 256
+    SEQ = 144
 
     def exam(base_config):
         base_flops = flops_sparse_bert_model(base_config)
