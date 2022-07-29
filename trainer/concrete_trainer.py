@@ -497,8 +497,8 @@ class ConcreteTrainer:
             self.scaler.scale(loss / self.gradient_accumulate_steps).backward()
             
             if ((step+1) % self.gradient_accumulate_steps) == 0:
-                self.scaler.unscale_(self.optimizer)
-                torch.nn.utils.clip_grad_norm_(self.sparse_bert.parameters(), 0.5)
+                # self.scaler.unscale_(self.optimizer)
+                # torch.nn.utils.clip_grad_norm_(self.sparse_bert.parameters(), 0.5)
 
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
