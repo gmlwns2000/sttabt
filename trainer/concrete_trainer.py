@@ -67,7 +67,7 @@ task_to_epochs = {
 task_to_batch_size = {
     "cola": 32,
     "mnli": 4,
-    "mrpc": 32,
+    "mrpc": 16,
     "qnli": 2,
     "qqp":  8,
     "rte":  8,
@@ -175,7 +175,7 @@ class ConcreteTrainer:
         self.enable_plot = enable_plot
         self.init_checkpoint = init_checkpoint
         self.checkpoint_name = checkpoint_name
-        self.lr = 2e-5 if lr is None else lr
+        self.lr = 1e-5 if lr is None else lr
         self.weight_decay = 5e-2
         self.dataset = dataset
         if batch_size is None or batch_size <= 0:
@@ -497,8 +497,8 @@ class ConcreteTrainer:
             self.scaler.scale(loss / self.gradient_accumulate_steps).backward()
             
             if ((step+1) % self.gradient_accumulate_steps) == 0:
-                #self.scaler.unscale_(self.optimizer)
-                #torch.nn.utils.clip_grad_norm_(self.sparse_bert.parameters(), 2.5)
+                self.scaler.unscale_(self.optimizer)
+                torch.nn.utils.clip_grad_norm_(self.sparse_bert.parameters(), 0.5)
 
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
