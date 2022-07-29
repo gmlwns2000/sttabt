@@ -68,7 +68,7 @@ task_to_batch_size = {
     "cola": 64,
     "mnli": 4,
     "mrpc": 32,
-    "qnli": 4,
+    "qnli": 2,
     "qqp":  8,
     "rte":  8,
     "sst2": 16,
@@ -80,7 +80,7 @@ task_to_gradient_accumulate_step = {
     "cola": 1,
     "mnli": 16,
     "mrpc": 2,
-    "qnli": 16,
+    "qnli": 32,
     "qqp":  8,
     "rte":  8,
     "sst2": 4,
@@ -404,7 +404,7 @@ class ConcreteTrainer:
         else:
             raise Exception()
         
-        for i, batch in enumerate(tqdm.tqdm(dataloader, position=self.tqdm_position, desc=f'(cola{self.tqdm_postfix}) eval')):
+        for i, batch in enumerate(tqdm.tqdm(dataloader, position=self.tqdm_position, desc=f'({self.dataset}{self.tqdm_postfix}) eval')):
             if i > max_step: break
             step_count += 1
 
