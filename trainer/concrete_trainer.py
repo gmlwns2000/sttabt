@@ -60,7 +60,7 @@ task_to_epochs = {
     "rte":  5,
     "sst2": 2,
     "stsb": 5,
-    "wnli": 5,
+    "wnli": 2,
     "bert": 6,
 }
 
@@ -73,7 +73,7 @@ task_to_batch_size = {
     "rte":  8,
     "sst2": 16,
     "stsb": 16,
-    "wnli": 16,
+    "wnli": 4,
 }
 
 task_to_gradient_accumulate_step = {
@@ -85,7 +85,7 @@ task_to_gradient_accumulate_step = {
     "rte":  8,
     "sst2": 4,
     "stsb": 4,
-    "wnli": 4,
+    "wnli": 1,
 }
 
 def get_dataloader(subset, tokenizer, batch_size, split='train'):
