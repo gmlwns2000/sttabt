@@ -17,6 +17,10 @@ epoch_factors = [ 1.0,  1.0,  1.0,  1.0, 1.0, 1.0]
 #p_logits = [-1]
 #epoch_factors = [1.0 for _ in range(100)]
 
+special_epoch_factors = {
+    'cola': [1.0,  1.0,  1.0,  1.0, 0.6, 0.6]
+}
+
 factor_to_pickle = {
     4: 'saves_plot/[F4-PREWIKI.v2]glue_benchmark_accum_absatt.pickle',
     8: 'saves_plot/[F8-PREWIKI.v2]glue_benchmark_accum_absatt.pickle',
@@ -85,18 +89,19 @@ def exp_p_logit(
     gc.collect()
     torch.cuda.empty_cache()
     
+    current_epoch_factors = special_epoch_factors.get(subset, epoch_factors)
     trainer = concrete.ConcreteTrainer(
         device = device,
         dataset = subset,
         factor = factor,
         batch_size = batch_size,
-        lr = None if concrete.task_to_epochs[subset] * epoch_factors[i] >= 1.0 else (1e-5 * epoch_factors[i])
+        lr = None if concrete.task_to_epochs[subset] * current_epoch_factors[i] >= 1.0 else (1e-5 * current_epoch_factors[i])
     )
     trainer.tqdm_position = tqdm_position
     trainer.tqdm_postfix = f'_{p_logit}_{factor}'
     trainer.enable_checkpointing = False
     #trainer.reset_train()
-    trainer.epochs = int(math.ceil(concrete.task_to_epochs[subset] * epoch_factors[i]))
+    trainer.epochs = int(math.ceil(concrete.task_to_epochs[subset] * current_epoch_factors[i]))
     trainer.set_concrete_init_p_logit(p_logit)
     def exam():
         concrete.sparse.benchmark_reset()

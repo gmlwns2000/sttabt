@@ -52,7 +52,7 @@ task_to_keys = {
 }
 
 task_to_epochs = {
-    "cola": 5,
+    "cola": 3,
     "mnli": 2,
     "mrpc": 5,
     "qnli": 2,
@@ -65,7 +65,7 @@ task_to_epochs = {
 }
 
 task_to_batch_size = {
-    "cola": 32,
+    "cola": 16,
     "mnli": 4,
     "mrpc": 16,
     "qnli": 2,
@@ -77,7 +77,7 @@ task_to_batch_size = {
 }
 
 task_to_gradient_accumulate_step = {
-    "cola": 2,
+    "cola": 1,
     "mnli": 16,
     "mrpc": 2,
     "qnli": 32,
@@ -570,7 +570,7 @@ class ConcreteTrainer:
             torch.cuda.empty_cache()
             
             if epoch >= min(self.epochs - 1, (self.epochs - 1) * 0.8):
-                #print('train hard prune')
+                if self.enable_checkpointing: print('train hard prune')
                 self.sparse_bert.module.bert.set_concrete_hard_threshold(0.5)
 
             self.train_epoch()
