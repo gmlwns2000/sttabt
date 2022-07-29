@@ -228,10 +228,26 @@ if __name__ == '__main__':
         flops = 0
         for _ in range(1000):
             config = copy.deepcopy(base_config)
+            config.hidden_size /= 4
+            config.intermediate_size = config.hidden_size
+            flops += flops_sparse_bert_model(config)
+        print('factor 4 tiny approx net', human_readable(flops / 1000),  f'{flops / 1000 / base_flops * 100:.1f}%')
+
+        flops = 0
+        for _ in range(1000):
+            config = copy.deepcopy(base_config)
             config.hidden_size /= 8
             config.intermediate_size /= 8
             flops += flops_sparse_bert_model(config)
         print('factor 8 approx net', human_readable(flops / 1000),  f'{flops / 1000 / base_flops * 100:.1f}%')
+
+        flops = 0
+        for _ in range(1000):
+            config = copy.deepcopy(base_config)
+            config.hidden_size /= 8
+            config.intermediate_size /= config.hidden_size
+            flops += flops_sparse_bert_model(config)
+        print('factor 8 tiny approx net', human_readable(flops / 1000),  f'{flops / 1000 / base_flops * 100:.1f}%')
 
         flops = 0
         for _ in range(1000):
