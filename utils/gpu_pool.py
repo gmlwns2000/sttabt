@@ -33,9 +33,9 @@ def __print(string):
     """Print a message via tqdm (without overlap with bars)."""
     tqdm.tqdm.write(string)
 
-def print(*args):
+def print(*args, **kwargs):
     args = [a if isinstance(a, str) else str(a) for a in args]
-    __print(" ".join(args))
+    __print(kwargs.get('sep', ' ').join(args))
 
 def runtime_wrapper(ret_queue: "mp.Queue", tqdm_lock: "mp.RLock", fn, device, tqdm_position, *args):
     tqdm.tqdm.set_lock(tqdm_lock)
