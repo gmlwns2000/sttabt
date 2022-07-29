@@ -43,6 +43,8 @@ def runtime_wrapper(ret_queue: "mp.Queue", tqdm_lock: "mp.RLock", fn, device, tq
         print(f'Runtime[{device}]: Finished with args{args_text}')
     except Exception as ex:
         print(f'Runtime[{device}]: Failed with following exception. {ex}')
+        traceback_text = traceback.format_exc()
+        print(traceback_text)
         ret_queue.put({
             'status': 'failed',
             'ex': ex,
@@ -50,13 +52,14 @@ def runtime_wrapper(ret_queue: "mp.Queue", tqdm_lock: "mp.RLock", fn, device, tq
             'args_string': args_text,
             'device': device,
             'tqdm_position': tqdm_position,
-            'traceback': traceback.format_exc()
+            'traceback': traceback_text
         })
 
 class GPUPool:
     def __init__(self, devices=None):
         if devices is None:
             devices = query_available_devices()
+            print('GPUPool: Available devices,', devices)
         self.devices = devices
         self.retries = 3
         self.queue = None
@@ -139,7 +142,12 @@ class GPUPool:
             return results
         finally:
             for proc in procs:
-                proc.kill()
+                try:
+                    if proc['p'].is_alive():
+                        proc['p'].kill()
+                except:
+                    print('error while clean up process')
+                    traceback.print_exc()
 
 if __name__ == '__main__':
     pool = GPUPool(devices=list(range(4)))

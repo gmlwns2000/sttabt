@@ -6,7 +6,7 @@ def __query_available_devices(q):
     available_devices = []
     for i in range(num_gpus):
         free_mem, total_mem = torch.cuda.mem_get_info(i)
-        if (free_mem / total_mem) > 0.697:
+        if (free_mem / total_mem) > 0.95:
             available_devices.append(i)
     q.put(available_devices)
 

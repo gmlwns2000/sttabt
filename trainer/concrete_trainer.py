@@ -219,6 +219,7 @@ class ConcreteTrainer:
             self.load(self.init_checkpoint)
         
         self.tqdm_position = 0
+        self.tqdm_postfix = ''
     
     def approx_checkpoint_path(self):
         if self.wiki_train: 
@@ -402,7 +403,7 @@ class ConcreteTrainer:
         else:
             raise Exception()
         
-        for i, batch in enumerate(tqdm.tqdm(dataloader, desc='eval')):
+        for i, batch in enumerate(tqdm.tqdm(dataloader, position=self.tqdm_position, desc=f'(cola{self.tqdm_postfix}) eval')):
             if i > max_step: break
             step_count += 1
 
@@ -470,7 +471,13 @@ class ConcreteTrainer:
 
         for step, batch in enumerate(pbar):
             batch = {k: v.to(self.device, non_blocking=True) for k, v in batch.items()}
-            batch = {k: v[self.device*(self.batch_size//self.world_size):(self.device+1)*(self.batch_size//self.world_size)] for k, v in batch.items()}
+            if self.world_size > 1:
+                batch = {
+                    k: v[
+                        self.device*(self.batch_size//self.world_size):
+                        (self.device+1)*(self.batch_size//self.world_size)
+                    ] for k, v in batch.items()
+                }
             batch['output_attentions'] = True
             batch['output_hidden_states'] = True
             #if 'labels' in batch: del batch['labels']
@@ -500,7 +507,7 @@ class ConcreteTrainer:
 
             self.last_loss = loss.item()
             if print_log:
-                pbar.set_description(f"({self.dataset}) [{self.epoch+1}/{self.epochs}] L:{self.last_loss:.5f}")
+                pbar.set_description(f"({self.dataset}{self.tqdm_postfix}) [{self.epoch+1}/{self.epochs}] L:{self.last_loss:.5f}")
             self.steps += 1
 
     def train_validate(self):

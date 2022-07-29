@@ -93,6 +93,7 @@ def exp_p_logit(
         lr = None if concrete.task_to_epochs[subset] * epoch_factors[i] >= 1.0 else (1e-5 * epoch_factors[i])
     )
     trainer.tqdm_position = tqdm_position
+    trainer.tqdm_postfix = f'_{p_logit}_{factor}'
     trainer.enable_checkpointing = False
     #trainer.reset_train()
     trainer.epochs = int(math.ceil(concrete.task_to_epochs[subset] * epoch_factors[i]))
