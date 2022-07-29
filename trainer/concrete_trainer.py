@@ -84,7 +84,7 @@ task_to_gradient_accumulate_step = {
     "qqp":  8,
     "rte":  8,
     "sst2": 4,
-    "stsb": 4,
+    "stsb": 1,
     "wnli": 1,
 }
 
@@ -497,8 +497,9 @@ class ConcreteTrainer:
             self.scaler.scale(loss / self.gradient_accumulate_steps).backward()
             
             if ((step+1) % self.gradient_accumulate_steps) == 0:
-                # self.scaler.unscale_(self.optimizer)
-                # torch.nn.utils.clip_grad_norm_(self.sparse_bert.parameters(), 0.5)
+                if self.dataset in ['stsb', 'sst2', 'mnli', 'qnli', 'qqp']:
+                    self.scaler.unscale_(self.optimizer)
+                    torch.nn.utils.clip_grad_norm_(self.sparse_bert.parameters(), 0.5)
 
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
