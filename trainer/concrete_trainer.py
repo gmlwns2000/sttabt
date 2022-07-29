@@ -217,6 +217,8 @@ class ConcreteTrainer:
         if not (self.init_checkpoint is None):
             print('Trainer: From pretrained checkpoint', self.init_checkpoint)
             self.load(self.init_checkpoint)
+        
+        self.tqdm_position = 0
     
     def approx_checkpoint_path(self):
         if self.wiki_train: 
@@ -461,7 +463,7 @@ class ConcreteTrainer:
         
         print_log = self.device == 0 or self.world_size == 1
         if print_log:
-            pbar = tqdm.tqdm(pbar)
+            pbar = tqdm.tqdm(pbar, position=self.tqdm_position)
         
         self.sparse_bert.train()
         self.optimizer.zero_grad() #clean up previous trashes
@@ -498,7 +500,7 @@ class ConcreteTrainer:
 
             self.last_loss = loss.item()
             if print_log:
-                pbar.set_description(f"[{self.epoch+1}/{self.epochs}] L:{self.last_loss:.5f}")
+                pbar.set_description(f"({self.dataset}) [{self.epoch+1}/{self.epochs}] L:{self.last_loss:.5f}")
             self.steps += 1
 
     def train_validate(self):
