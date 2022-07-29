@@ -68,7 +68,7 @@ class GPUPool:
             devices = query_available_devices()
             print('GPUPool: Available devices,', devices)
         self.devices = devices
-        self.retries = 3
+        self.retries = 5
         self.queue = None
 
         if not 'RLock' in str(tqdm.tqdm.get_lock()):
