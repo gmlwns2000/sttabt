@@ -95,7 +95,7 @@ def benchmark_cum(name, value):
         __benchmark[name] = (0, 0)
     count, v = __benchmark[name]
     if isinstance(value, torch.Tensor):
-        value = value.detach().cpu().numpy()
+        value = value.detach().cpu()
     __benchmark[name] = (count + 1, v + value)
 
 def benchmark_get_average(name):
@@ -1784,7 +1784,7 @@ def run_bert_with_concrete(
     last_layer.output.dense.concrete_mask_hard = last_mask_un
     if BENCHMARK_CONCRETE_OCCUPY: 
         with torch.no_grad():
-            benchmark_cum('concrete_occupy', last_mask_un.detach().mean())
+            benchmark_cum('concrete_occupy', last_mask_un.mean())
     last_masks = [last_mask]
     for j in range(len(sparse_bert.encoder.layer)):
         #layer indexing
@@ -1922,10 +1922,10 @@ def run_bert_with_concrete(
         if layer.output.dense.concrete_hard_threshold is not None:
             current_mask_hard = (current_mask_un >= concrete_hard_threshold) * 1.0
             if BENCHMARK_CONCRETE_OCCUPY:
-                with torch.no_grad(): benchmark_cum('concrete_occupy', current_mask_hard.detach().mean())
+                with torch.no_grad(): benchmark_cum('concrete_occupy', current_mask_hard.mean())
         else:
             if BENCHMARK_CONCRETE_OCCUPY:
-                with torch.no_grad(): benchmark_cum('concrete_occupy', current_mask_un.detach().mean())
+                with torch.no_grad(): benchmark_cum('concrete_occupy', current_mask_un.mean())
 
         # update mask for optimization
         if prev_layer is not None:
