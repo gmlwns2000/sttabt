@@ -18,7 +18,8 @@ epoch_factors = [ 1.0,  1.0,  1.0,  1.0, 1.0, 1.0]
 #epoch_factors = [1.0 for _ in range(100)]
 
 special_epoch_factors = {
-    'cola': [1.0,  1.0,  1.0,  1.0, 0.6, 0.6]
+    'cola': [1.0,  1.0,  1.0,  1.0, 0.6, 0.6],
+    'wnli': [0.5,  0.4,  0.3,  0.2, 0.1, 0.1],
 }
 
 factor_to_pickle = {
@@ -95,13 +96,13 @@ def exp_p_logit(
         dataset = subset,
         factor = factor,
         batch_size = batch_size,
-        lr = None if concrete.task_to_epochs[subset] * current_epoch_factors[i] >= 1.0 else (1e-5 * current_epoch_factors[i])
+        lr = None if concrete.task_to_epochs[subset] * current_epoch_factors[i] >= 2.0 else (1e-5 * current_epoch_factors[i])
     )
     trainer.tqdm_position = tqdm_position
     trainer.tqdm_postfix = f'_{p_logit}_{factor}'
     trainer.enable_checkpointing = False
     #trainer.reset_train()
-    trainer.epochs = int(math.ceil(concrete.task_to_epochs[subset] * current_epoch_factors[i]))
+    trainer.epochs = int(max(math.ceil(concrete.task_to_epochs[subset] * current_epoch_factors[i]), 2))
     trainer.set_concrete_init_p_logit(p_logit)
     def exam():
         concrete.sparse.benchmark_reset()
