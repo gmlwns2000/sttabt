@@ -123,9 +123,9 @@ def exp_p_logit(
     return {
         'i': i,
         'metric_name': metric_name,
-        'occupies_no_train':occupy_no_train,
-        'flopses_no_train': flops_no_train,
-        'metrics_no_train': metric_no_train,
+        'occupy_no_train':occupy_no_train,
+        'flops_no_train': flops_no_train,
+        'metric_no_train': metric_no_train,
         'occupy': occupy,
         'flops': flops,
         'metric': metric,

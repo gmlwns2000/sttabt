@@ -5,7 +5,7 @@ from utils import query_available_devices
 from collections.abc import Iterable
 
 def dummy_fn(device, tqdm_position, *args):
-    """Pool Inner Function. 
+    """Example Pool Inner Function. 
     The experiment function should follows this format.
 
     Args:
@@ -17,18 +17,25 @@ def dummy_fn(device, tqdm_position, *args):
         Any: the return value of experiment. This should be pickleable.
     """
 
+    # doing some job while reporting tqdm
     for _ in tqdm.tqdm(range(1000), desc=f'dev:{device}, args:{args}', position=tqdm_position):
         time.sleep(1/500)
     time.sleep(random.random() * 3)
     
+    # may job raise random exception
     if random.random() < 0.1:
         raise Exception('random exception')
     
+    # job could return output with out of order
     return random.randint(0, 1000)
+
+def __print(string):
+    """Print a message via tqdm (without overlap with bars)."""
+    tqdm.tqdm.write(string)
 
 def print(*args):
     args = [a if isinstance(a, str) else str(a) for a in args]
-    tqdm.tqdm.write(" ".join(args))
+    __print(" ".join(args))
 
 def runtime_wrapper(ret_queue: "mp.Queue", tqdm_lock: "mp.RLock", fn, device, tqdm_position, *args):
     tqdm.tqdm.set_lock(tqdm_lock)
@@ -69,6 +76,11 @@ class GPUPool:
             tqdm.tqdm.set_lock(mp.RLock())
     
     def run(self, fn, args_list: list):
+        """
+        Run args list with parallel devices.
+        This function is out of order.
+        """
+
         if self.queue is not None:
             self.queue.close()
         args_list = list([args if isinstance(args, Iterable) else [args] for args in args_list])
@@ -151,9 +163,12 @@ class GPUPool:
 
 if __name__ == '__main__':
     pool = GPUPool(devices=list(range(4)))
+    
     ret = pool.run(dummy_fn, list(range(18)))
     assert len(ret) == 18
     print('Pool result:', ret)
+
+    # the pool object could be reusable, because always new process is created when run called.
     ret = pool.run(dummy_fn, list(range(18)))
     assert len(ret) == 18
     print('Pool result:', ret)
