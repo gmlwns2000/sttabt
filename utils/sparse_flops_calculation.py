@@ -211,9 +211,71 @@ def human_readable(flops):
 
 if __name__ == '__main__':
     import random
-    SEQ = 512
+    SEQ = 256
 
-    base_flops = flops_sparse_bert_model(ModelConfig(
+    def exam(base_config):
+        base_flops = flops_sparse_bert_model(base_config)
+        print('bert', human_readable(base_flops))
+
+        flops = 0
+        for _ in range(1000):
+            config = copy.deepcopy(base_config)
+            config.hidden_size /= 4
+            config.intermediate_size /= 4
+            flops += flops_sparse_bert_model(config)
+        print('factor 4 approx net', human_readable(flops / 1000),  f'{flops / 1000 / base_flops * 100:.1f}%')
+
+        flops = 0
+        for _ in range(1000):
+            config = copy.deepcopy(base_config)
+            config.hidden_size /= 8
+            config.intermediate_size /= 8
+            flops += flops_sparse_bert_model(config)
+        print('factor 8 approx net', human_readable(flops / 1000),  f'{flops / 1000 / base_flops * 100:.1f}%')
+
+        flops = 0
+        for _ in range(1000):
+            config = copy.deepcopy(base_config)
+            config.approx_hidden_size = config.hidden_size / 4
+            config.approx_intermediate_size = config.intermediate_size / 4
+            config.sparse_mode = 'approx'
+            config.token_occupies = [random.random() * 0.4 + 0.1 for _ in range(config.num_layer+1)]
+            flops += flops_sparse_update(config)
+        print('approx update', human_readable(flops / 1000),  f'{flops / 1000 / base_flops * 100:.1f}%')
+
+        flops = 0
+        for _ in range(1000):
+            config = copy.deepcopy(base_config)
+            config.approx_hidden_size = config.hidden_size / 4
+            config.approx_intermediate_size = config.intermediate_size / 4
+            config.sparse_mode = 'concrete'
+            config.token_occupies = [random.random() * 0.4 + 0.1 for _ in range(config.num_layer+1)]
+            flops += flops_sparse_update(config)
+        print('concrete update', human_readable(flops / 1000), f'{flops / 1000 / base_flops * 100:.1f}%')
+
+        flops = 0
+        for _ in range(1000):
+            config = copy.deepcopy(base_config)
+            config.approx_hidden_size = config.hidden_size / 4
+            config.approx_intermediate_size = config.intermediate_size / 4
+            config.sparse_mode = 'forward'
+            config.token_occupies = [random.random() * 0.4 + 0.1 for _ in range(config.num_layer+1)]
+            flops += flops_sparse_update(config)
+        print('forward update', human_readable(flops / 1000), f'{flops / 1000 / base_flops * 100:.1f}%')
+
+        for mode in ['approx', 'forward', 'concrete']:
+            flops = 0
+            for _ in range(1000):
+                factor = 8
+                config = copy.deepcopy(base_config)
+                config.approx_hidden_size = config.hidden_size / factor
+                config.approx_intermediate_size = config.intermediate_size / factor
+                config.sparse_mode = mode
+                config.token_occupies = [random.random() * 0.4 + 0.1 for _ in range(config.num_layer+1)]
+                flops += flops_sparse_approx_bert_model(config)
+            print(mode, factor, human_readable(flops / 1000),  f'{flops / 1000 / base_flops * 100:.1f}%')
+    
+    base_config = ModelConfig(
         num_layer=12,
         num_heads=12,
         hidden_size=768,
@@ -221,99 +283,22 @@ if __name__ == '__main__':
         seq_len=SEQ,
         arch='bert',
         token_occupies=None
-    ))
-    print('bert-base', human_readable(base_flops))
+    )
+    print('-'*80)
+    print('bert-base')
+    print('-'*80)
+    exam(base_config)
 
-    flops = 0
-    for _ in range(1000):
-        factor = 8
-        flops += flops_sparse_bert_model(ModelConfig(
-            num_layer=12,
-            num_heads=12,
-            hidden_size=768/4,
-            intermediate_size=768*4/4,
-            seq_len=SEQ,
-            arch='bert',
-            token_occupies=None
-        ))
-    print('factor 4 approx net', human_readable(flops / 1000),  f'{flops / 1000 / base_flops * 100:.1f}%')
-
-    flops = 0
-    for _ in range(1000):
-        factor = 8
-        flops += flops_sparse_bert_model(ModelConfig(
-            num_layer=12,
-            num_heads=12,
-            hidden_size=768/8,
-            intermediate_size=768*4/8,
-            seq_len=SEQ,
-            arch='bert',
-            token_occupies=None
-        ))
-    print('factor 8 approx net', human_readable(flops / 1000),  f'{flops / 1000 / base_flops * 100:.1f}%')
-
-    flops = 0
-    for _ in range(1000):
-        flops += flops_sparse_update(ModelConfig(
-            num_layer=12,
-            num_heads=12,
-            hidden_size=768,
-            intermediate_size=768*4,
-            approx_hidden_size=768/4,
-            approx_intermediate_size=768*4/4,
-            seq_len=SEQ,
-            arch='bert',
-            sparse_mode='approx',
-            token_occupies=[random.random() * 0.4 + 0.1 for _ in range(13)],
-        ))
-    print('approx update', human_readable(flops / 1000),  f'{flops / 1000 / base_flops * 100:.1f}%')
-
-    flops = 0
-    for _ in range(1000):
-        flops += flops_sparse_update(ModelConfig(
-            num_layer=12,
-            num_heads=12,
-            hidden_size=768,
-            intermediate_size=768*4,
-            approx_hidden_size=768/4,
-            approx_intermediate_size=768*4/4,
-            seq_len=SEQ,
-            arch='bert',
-            sparse_mode='concrete',
-            token_occupies=[random.random() * 0.4 + 0.1 for _ in range(13)],
-        ))
-    print('concrete update', human_readable(flops / 1000), f'{flops / 1000 / base_flops * 100:.1f}%')
-
-    flops = 0
-    for _ in range(1000):
-        flops += flops_sparse_update(ModelConfig(
-            num_layer=12,
-            num_heads=12,
-            hidden_size=768,
-            intermediate_size=768*4,
-            approx_hidden_size=768/4,
-            approx_intermediate_size=768*4/4,
-            seq_len=SEQ,
-            arch='bert',
-            sparse_mode='forward',
-            token_occupies=[random.random() * 0.4 + 0.1 for _ in range(13)],
-        ))
-    print('forward update', human_readable(flops / 1000), f'{flops / 1000 / base_flops * 100:.1f}%')
-
-    for mode in ['approx', 'forward', 'concrete']:
-        flops = 0
-        for _ in range(1000):
-            factor = 8
-            flops += flops_sparse_approx_bert_model(ModelConfig(
-                num_layer=12,
-                num_heads=12,
-                hidden_size=768,
-                intermediate_size=768*4,
-                seq_len=SEQ,
-                arch='bert',
-                sparse_mode=mode,
-                approx_hidden_size=768/factor,
-                approx_intermediate_size=768*factor/factor,
-                token_occupies=[random.random() * 0.4 + 0.1 for _ in range(13)]
-            ))
-        print(mode, human_readable(flops / 1000),  f'{flops / 1000 / base_flops * 100:.1f}%')
+    large_config = ModelConfig(
+        num_layer=24,
+        num_heads=16,
+        hidden_size=1024,
+        intermediate_size=1024*4,
+        seq_len=SEQ,
+        arch='bert',
+        token_occupies=None
+    )
+    print('-'*80)
+    print('bert-large')
+    print('-'*80)
+    exam(large_config)
