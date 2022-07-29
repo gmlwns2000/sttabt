@@ -116,10 +116,14 @@ def exp_p_logit(
     concrete.sparse.benchmark_sparse_approx_flops(True)
     concrete.sparse.benchmark_concrete_occupy(True)
     occupy_no_train, flops_no_train, metric_no_train, metric_name = exam()
+    gc.collect()
+    torch.cuda.empty_cache()
 
     concrete.sparse.benchmark_sparse_approx_flops(False)
     concrete.sparse.benchmark_concrete_occupy(False)
     trainer.main()
+    gc.collect()
+    torch.cuda.empty_cache()
 
     concrete.sparse.benchmark_sparse_approx_flops(True)
     concrete.sparse.benchmark_concrete_occupy(True)

@@ -65,7 +65,7 @@ task_to_epochs = {
 }
 
 task_to_batch_size = {
-    "cola": 16,
+    "cola": 8,
     "mnli": 4,
     "mrpc": 16,
     "qnli": 2,
