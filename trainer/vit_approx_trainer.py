@@ -14,30 +14,48 @@ from utils import ddp
 tasks_to_epoch = {
     'base': 100,
     'cifar100': 20,
+    'imagenet': 100,
 }
 
 tasks_to_batch_size = {
-    'base': 16,
-    'cifar100': 16,
+    'vit-base': 16,
+    'deit-base': 16,
+    'deit-small': 32,
 }
 
 tasks_to_dataset = {
-    'base': 'food101',
+    'base': './dataset/imagenet_hf.py',
     'cifar100': 'cifar100',
+    'imagenet': './dataset/imagenet_hf.py',
 }
 
 tasks_to_split = {
     'base': 'train',
     'cifar100': 'train',
+    'imagenet': 'train',
 }
 
 tasks_to_test_split = {
     'base': 'split',
     'cifar100': 'test',
+    'imagenet': 'val',
 }
 
+#pretrained model
 model_to_hf = {
-    'vit-base': 'google/vit-base-patch16-224-in21k'
+    'vit-base': 'google/vit-base-patch16-224-in21k',
+    'deit-base': 'facebook/deit-base-patch16-224',
+    'deit-small': 'facebook/deit-small-patch16-224',
+    'deit-small-distilled': 'facebook/deit-small-distilled-patch16-224',
+}
+
+finetuned_to_hf = {
+    'imagenet': {
+        'vit-base': 'google/vit-base-patch16-224',
+        'deit-base': 'facebook/deit-base-patch16-224',
+        'deit-small': 'facebook/deit-small-patch16-224',
+        'deit-small-distilled': 'facebook/deit-small-distilled-patch16-224',
+    }
 }
 
 def load_state_dict_interpolated(to_model, from_dict, ignores=['p_logit', 'ltp']):
@@ -63,10 +81,18 @@ def load_state_dict_interpolated(to_model, from_dict, ignores=['p_logit', 'ltp']
                     break
             if not ignored: print(name, 'not found')
 
+def get_vit(model):
+    if hasattr(model, 'vit'):
+        return model.vit
+    elif hasattr(model, 'deit'):
+        return model.deit
+    else: 
+        raise Exception('vit is not found')
+
 class VitApproxTrainer:
     def __init__(self,
         subset = 'base',
-        model = 'vit-base',
+        model = 'deit-base',
         factor = 4,
         batch_size = -1,
         device = 0,
@@ -86,7 +112,7 @@ class VitApproxTrainer:
         self.factor = factor
         self.epochs = tasks_to_epoch[self.subset]
         if batch_size <= 0:
-            batch_size = tasks_to_batch_size[self.subset]
+            batch_size = tasks_to_batch_size[self.model_id]
         self.batch_size = batch_size
         self.world_size = world_size
         self.init_checkpoint = init_checkpoint
@@ -110,7 +136,7 @@ class VitApproxTrainer:
         torch.backends.cudnn.deterministic = True
 
     def init_dataloader(self):
-        self.extractor = transformers.ViTFeatureExtractor.from_pretrained(self.model_id_hf)
+        self.extractor = transformers.AutoFeatureExtractor.from_pretrained(self.model_id_hf)
         self.dataset = ImagesHfDataset(
             ExamplesToBatchTransform(ViTInputTransform(self.extractor)),
             ExamplesToBatchTransform(ViTInputTransform(self.extractor, test=True)),
@@ -118,21 +144,36 @@ class VitApproxTrainer:
             name=tasks_to_dataset[self.subset],
             split=tasks_to_split[self.subset],
             test_split=tasks_to_test_split[self.subset],
+            num_workers_test=32,
+            num_workers_train=32,
         )
 
     def get_base_model(self) -> "transformers.ViTForImageClassification":
+        if self.model_id in ['vit-base', 'deit-base', 'deit-small']:
+            model_cls = transformers.ViTForImageClassification
+        elif self.model_id in ['deit-base-distilled', 'deit-small-distilled']:
+            model_cls = transformers.DeiTForImageClassification
+        else: raise Exception()
+
         if self.subset == 'base':
-            return transformers.ViTForImageClassification.from_pretrained(self.model_id_hf)
+            return model_cls.from_pretrained(self.model_id_hf)
         elif self.subset in ['cifar100']:
-            base_model = transformers.ViTForImageClassification.from_pretrained(
+            #trained from trainer.vit_trainer
+            base_model = model_cls.from_pretrained(
                 self.model_id_hf,
                 num_labels=self.dataset.num_labels,
                 id2label=self.dataset.id2label,
                 label2id=self.dataset.label2id
             )
-            state = torch.load(f'./saves/vit-base-{self.subset}.pth', map_location='cpu')
+            assert self.model_id in ['vit-base', 'deit-base', 'deit-small']
+            state = torch.load(f'./saves/{self.model_id}-{self.subset}.pth', map_location='cpu')
             base_model.load_state_dict(state['model'])
             del state
+            return base_model
+        elif self.subset in ['imagenet']:
+            #trained from huggingface models
+            base_model_hf = finetuned_to_hf[self.subset][self.model_id]
+            base_model = model_cls.from_pretrained(base_model_hf)
             return base_model
         else:
             raise Exception()
@@ -152,7 +193,7 @@ class VitApproxTrainer:
             ignore_pred=self.subset=='base'
         )
         self.approx_bert = self.approx_bert.to(self.device)
-        load_state_dict_interpolated(self.approx_bert.bert, self.model.vit.state_dict())
+        load_state_dict_interpolated(self.approx_bert.bert, get_vit(self.model).state_dict())
         self.approx_bert = ddp.wrap_model(self.approx_bert, find_unused_paramters=True)
 
         self.optimizer = self.get_optimizer(self.approx_bert)
@@ -250,7 +291,7 @@ class VitApproxTrainer:
     def eval_model_metric_sparse(self, ks=0.5, mode='sparse', show_message=False):
         sparse_bert = sparse.SparseBertModel(self.model.config, add_pooling_layer=False, arch='vit')
         try:
-            report = sparse_bert.load_state_dict(self.model.vit.state_dict(), strict=False)
+            report = sparse_bert.load_state_dict(get_vit(self.model).state_dict(), strict=False)
             ignored_term = ['p_logit', 'ltp']
             missing_keys = [k for k in report.missing_keys if not any(n in k for n in ignored_term)]
             unexpected_keys = [k for k in report.unexpected_keys if not any(n in k for n in ignored_term)]
@@ -304,7 +345,7 @@ class VitApproxTrainer:
 
             with torch.no_grad(), torch.cuda.amp.autocast(enabled=self.amp_enable):
                 original_output = self.model(**batch)
-                original_emb = self.model.vit.embeddings(batch['pixel_values'])
+                original_emb = get_vit(self.model).embeddings(batch['pixel_values'])
             
             with torch.no_grad(), torch.cuda.amp.autocast(enabled=self.amp_enable):
                 batch['return_loss'] = True
@@ -353,7 +394,7 @@ class VitApproxTrainer:
 
             with torch.no_grad(), torch.cuda.amp.autocast(enabled=self.amp_enable):
                 original_output = self.model(**batch)
-                original_emb = self.model.vit.embeddings(batch['pixel_values'])
+                original_emb = get_vit(self.model).embeddings(batch['pixel_values'])
             
             with torch.cuda.amp.autocast(enabled=self.amp_enable):
                 batch['return_loss'] = True
@@ -423,7 +464,7 @@ def main_ddp(rank, world_size, ddp_port, args):
     ddp.setup(rank, world_size, ddp_port)
 
     print('Worker:', rank, world_size, ddp_port, ddp.printable())
-    main_trainer(rank, world_size)
+    main_trainer(rank, world_size, args)
 
     ddp.cleanup()
 
@@ -434,7 +475,8 @@ def main_trainer(device, world_size, args):
         batch_size=args.batch_size,
         subset=args.subset,
         factor=args.factor,
-        init_checkpoint=args.init_checkpoint
+        init_checkpoint=args.init_checkpoint,
+        model=args.model,
     )
     if not args.eval:
         trainer.main()
@@ -446,6 +488,7 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--subset', type=str, default='base')
+    parser.add_argument('--model', type=str, default='deit-base')
     parser.add_argument('--factor', type=int, default=4)
     parser.add_argument('--init-checkpoint', type=str, default=None)
     parser.add_argument('--batch-size', type=int, default=-1)

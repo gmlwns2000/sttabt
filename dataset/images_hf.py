@@ -5,12 +5,13 @@ import torch
 import numpy as np
 import transformers
 from datasets import load_dataset
+import PIL.Image
 from utils.process_pool import ProcessPool, BatchIterator
 
 class ImagesHfDataset:
     def __init__(self, 
         train_transform, test_transform, 
-        batch_size=4, num_workers_train=2, num_workers_test=1, 
+        batch_size=4, num_workers_train=4, num_workers_test=1, 
         name='food101', split='train[:5000]', test_split='split'
     ):
         self.train_pool = ProcessPool(num_workers_train, train_transform)
@@ -98,17 +99,30 @@ class ExamplesToBatchTransform:
 class ViTInputTransform:
     def __init__(self, extractor: "transformers.ViTFeatureExtractor", test=False):
         self.extractor = extractor
+        if isinstance(extractor, transformers.DeiTFeatureExtractor):
+            resize_size = 256
+            image_size = 224
+        elif isinstance(extractor, transformers.ViTFeatureExtractor):
+            resize_size = -1
+            image_size = 224
+        else:
+            raise Exception('unsupproted')
+        
+        _image_size = extractor.crop_size if hasattr(extractor, 'crop_size') else extractor.size
+        assert _image_size == image_size
         
         from torchvision import transforms
+        from torchvision.transforms import InterpolationMode
         if test:
             self.transform = transforms.Compose([
-                transforms.Resize((extractor.size, extractor.size)),
+                transforms.Resize((resize_size if resize_size > 0 else image_size, )* 2, interpolation=InterpolationMode.BICUBIC),
+                transforms.CenterCrop(image_size),
                 transforms.ToTensor(),
                 transforms.Normalize(mean=extractor.image_mean, std=extractor.image_std)
             ])
         else:
             self.transform = transforms.Compose([
-                transforms.RandomResizedCrop(extractor.size), 
+                transforms.RandomResizedCrop(image_size, scale=(0.3, 1), interpolation=InterpolationMode.BICUBIC), 
                 transforms.RandomHorizontalFlip(), 
                 transforms.RandomApply(torch.nn.ModuleList([
                     transforms.ColorJitter(brightness=.5, hue=.3),
@@ -124,6 +138,8 @@ class ViTInputTransform:
             ])
     
     def __call__(self, example):
+        if isinstance(example['image'], str):
+            example['image'] = PIL.Image.open(example['image'])
         example['pixel_values'] = self.transform(example['image'].convert('RGB'))
         if 'label' in example:
             example['labels'] = example['label']

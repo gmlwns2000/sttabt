@@ -18,46 +18,42 @@ tasks_to_epoch = {
     'food101_5000': 10,
     'food101': 10,
     'cifar100': 10,
-    'imagenet': 10,
 }
 
 tasks_to_batch_size = {
     'food101_5000': 16,
     'food101': 16,
     'cifar100': 16,
-    'imagenet': 16,
 }
 
 tasks_to_dataset = {
     'food101_5000': 'food101',
     'food101': 'food101',
     'cifar100': 'cifar100',
-    'imagenet': 'imagenet-1k',
 }
 
 tasks_to_split = {
     'food101_5000': 'train[:5000]',
     'food101': 'train',
     'cifar100': 'train',
-    'imagenet': 'train',
 }
 
 tasks_to_test_split = {
     'food101_5000': 'split',
     'food101': 'split',
     'cifar100': 'test',
-    'imagenet': 'test',
 }
 
 tasks_to_base_model = {
-    'food101_5000': 'vit-base',
-    'food101': 'vit-base',
-    'cifar100': 'vit-base',
-    'imagenet': 'vit-base',
+    'food101_5000': 'deit-base',
+    'food101': 'deit-base',
+    'cifar100': 'deit-small',
 }
 
 base_model_to_hf = {
-    'vit-base': "google/vit-base-patch16-224-in21k",
+    'vit-base': 'google/vit-base-patch16-224-in21k',
+    'deit-base': 'facebook/deit-base-patch16-224',
+    'deit-small': 'facebook/deit-small-patch16-224',
 }
 
 class VitTrainer:
@@ -99,7 +95,7 @@ class VitTrainer:
         torch.backends.cudnn.deterministic = True
 
     def init_dataloader(self):
-        self.extractor = transformers.ViTFeatureExtractor.from_pretrained(self.base_model_id_hf)
+        self.extractor = transformers.AutoFeatureExtractor.from_pretrained(self.base_model_id_hf)
         self.dataset = ImagesHfDataset(
             ExamplesToBatchTransform(ViTInputTransform(self.extractor)),
             ExamplesToBatchTransform(ViTInputTransform(self.extractor, test=True)),
@@ -114,11 +110,19 @@ class VitTrainer:
 
         self.epoch = 0
 
-        self.model = transformers.ViTForImageClassification.from_pretrained(
+        if self.base_model_id in ['vit-base', 'deit-small', 'deit-base']:
+            model_cls = transformers.ViTForImageClassification
+        elif self.base_model_id in ['deit-base-distilled']:
+            model_cls = transformers.DeiTForImageClassificationWithTeacher # for naming issue
+        else:
+            raise Exception()
+        
+        self.model = model_cls.from_pretrained(
             self.base_model_id_hf,
             num_labels=self.dataset.num_labels,
             id2label=self.dataset.id2label,
-            label2id=self.dataset.label2id
+            label2id=self.dataset.label2id,
+            ignore_mismatched_sizes=True
         )
         self.model = self.model.to(self.device)
 
@@ -143,7 +147,7 @@ class VitTrainer:
 # IO
 
     def get_checkpoint_path(self):
-        return f'./saves/vit-base-{self.subset}.pth'
+        return f'./saves/{self.base_model_id}-{self.subset}.pth'
 
     def save(self):
         torch.save({

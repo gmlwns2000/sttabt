@@ -5,8 +5,13 @@ import torch.multiprocessing as mp
 import traceback
 import torch
 import numpy as np
+import tqdm
 
 mp.set_sharing_strategy('file_system')
+
+DEBUG=False
+def log(*args):
+    if DEBUG: print(time.time()*1000, *args)
 
 class ProcessPool:
     def __init__(self, num_worker, func) -> None:
@@ -46,7 +51,9 @@ class ProcessPool:
                 self.return_queue.put('READY')
                 #print('emit ready', id)
             else:
+                log('worker get')
                 ret = self.func(item)
+                log('worker put')
                 self.return_queue.put(ret)
 
     def start_fetch(self):
@@ -59,6 +66,7 @@ class ProcessPool:
         while not self.closed:
             try:
                 item = self.return_queue.get()
+                log('fetched')
             except RuntimeError as ex:
                 traceback.print_exc()
                 print('Pool.FetchThread: error while get return_queue', ex)
@@ -76,6 +84,7 @@ class ProcessPool:
             elif item == 'READY':
                 self.worker_ready += 1
             else:
+                log('fetched.put')
                 self.fetch_queue.put(item)
     
     def ready_all_workers(self):
@@ -150,7 +159,11 @@ class BatchIterator:
     def __next__(self):
         #push items
         try:
-            while (not self.pool.job_queue.full()) and (self.idx < self.count):
+            current_pushed = 0
+            while   (not self.pool.fetch_queue.full()) and\
+                    (not self.pool.job_queue.full()) and\
+                    (self.idx < self.count) and\
+                    (current_pushed < 128):
                 items = []
                 for i in range(self.batch_size):
                     if self.idx < self.count:
@@ -161,7 +174,15 @@ class BatchIterator:
                         break
                 
                 if len(items) > 0: 
+                    log('push', 
+                        current_pushed, 
+                        self.pool.job_queue.full(),
+                        self.pool.job_queue.qsize()
+                    )
+                    current_pushed += 1
                     self.pool.push(items)
+                else:
+                    break
                 
             if self.idx >= self.count and (not self.ended):
                 self.ended = True
@@ -169,7 +190,9 @@ class BatchIterator:
                 #print('pushed EOF')
             
             #print('POOL STAT', self.pool.job_queue.qsize(), self.idx)
+            log('try pull')
             batch = self.pool.get()
+            log('pulled')
             if batch is None:
                 raise StopIteration
             return batch
