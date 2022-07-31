@@ -66,7 +66,7 @@ task_to_epochs = {
 
 task_to_batch_size = {
     "cola": 8,
-    "mnli": 4,
+    "mnli": 2,
     "mrpc": 16,
     "qnli": 2,
     "qqp":  8,
@@ -78,9 +78,9 @@ task_to_batch_size = {
 
 task_to_gradient_accumulate_step = {
     "cola": 1,
-    "mnli": 16,
+    "mnli": 48,
     "mrpc": 2,
-    "qnli": 16,
+    "qnli": 48,
     "qqp":  8,
     "rte":  4,
     "sst2": 4,
