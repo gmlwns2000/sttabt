@@ -80,7 +80,7 @@ task_to_gradient_accumulate_step = {
     "cola": 1,
     "mnli": 16,
     "mrpc": 2,
-    "qnli": 32,
+    "qnli": 16,
     "qqp":  8,
     "rte":  4,
     "sst2": 4,
