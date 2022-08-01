@@ -8,3 +8,4 @@ cache/
 *.zip
 dataset/squad2/*.json
 saves/
+cache
