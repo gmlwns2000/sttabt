@@ -144,8 +144,8 @@ class VitApproxTrainer:
             name=tasks_to_dataset[self.subset],
             split=tasks_to_split[self.subset],
             test_split=tasks_to_test_split[self.subset],
-            num_workers_test=32,
-            num_workers_train=32,
+            num_workers_test=8,
+            num_workers_train=8,
         )
 
     def get_base_model(self) -> "transformers.ViTForImageClassification":

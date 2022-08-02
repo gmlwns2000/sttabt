@@ -9,7 +9,7 @@ import multiprocessing as mp
 
 VERSION="1"
 
-p_logits =      [-2.0, -1.5, -1.0, -0.5, 0.0, 3.0]
+p_logits =      [-2.0, -1.5, -1.0, -0.5, 0.0, 1.0]
 epoch_factors = [ 1.0,  1.0,  1.0,  1.0, 1.0, 1.0]
 #p_logits = [0, 3]
 # epoch_factors = [0.5, 0.2]
@@ -18,8 +18,10 @@ epoch_factors = [ 1.0,  1.0,  1.0,  1.0, 1.0, 1.0]
 #epoch_factors = [1.0 for _ in range(100)]
 
 special_epoch_factors = {
-    'cola': [1.0,  1.0,  1.0,  1.0, 0.6, 0.6],
-    'wnli': [0.5,  0.4,  0.3,  0.2, 0.1, 0.1],
+    'cola': [1.0,   1.0,    1.0,    1.0,    0.6,    0.6],
+    'wnli': [0.5,   0.4,    0.3,    0.2,    0.1,    0.1],
+    'mnli': [0.25,  0.25,   0.25,   0.25,   0.25,   0.25],
+    'qnli': [0.25,  0.25,   0.25,   0.25,   0.25,   0.25],
 }
 
 factor_to_pickle = {

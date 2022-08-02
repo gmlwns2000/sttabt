@@ -837,7 +837,7 @@ class BertLayer(nn.Module):
                 # dropout_regularizer *= self.concrete_dropout_regularizer * self.input_dimensionality
                 
                 # loss = weights_regularizer + dropout_regularizer
-                loss = ((self.p_logit - self.concrete_init_min) ** 2) * 1e-4
+                loss = ((self.p_logit - self.concrete_init_min) ** 2) * 1e-3
                 #loss = (torch.sigmoid(self.p_logit) ** 2) * 1e-6
                 #raise_if_nan(loss)
                 #loss = 0
@@ -997,7 +997,8 @@ class BertEncoder(nn.Module):
         else:
             raise Exception()
     
-    def loss_concrete(self):
+    def loss_concrete(self, input_mask):
+        #assert torch.min(input_mask).item() >= 0
         layer = self.layer[0] #type: BertLayer
         target = torch.sigmoid(torch.tensor(layer.concrete_init_min, device = layer.concrete_prop_p_logit.device, dtype=torch.float32))
         occupy = 0
@@ -1005,10 +1006,15 @@ class BertEncoder(nn.Module):
         for layer in self.layer:
             layer = layer #type: BertLayer
             if layer.output.dense.concrete_mask is not None:
-                occupy += torch.mean(layer.output.dense.concrete_mask)
+                if input_mask is None:
+                    occupy += torch.mean(layer.output.dense.concrete_mask)
+                else:
+                    occupy += \
+                        torch.sum(layer.output.dense.concrete_mask.view(*input_mask.shape), dim=-1) /\
+                        torch.sum(input_mask, dim=-1)
                 count += 1
         occupy /= count
-        return ((target - occupy) ** 2) * 1e-4
+        return F.mse_loss(target, occupy) * 1e-3
 
 class BertPooler(nn.Module):
     def __init__(self, config):
@@ -1873,7 +1879,7 @@ def run_bert_with_concrete(
                 
                 uni_att_score = uni_att_score / (torch.max(uni_att_score, dim=-1, keepdim=True)[0] + EPS)
                 #uni_att_score = (0.05 + 0.95 * uni_att_score * (score > EPS)) * input_dict['attention_mask']
-                empty_base = 0.05
+                empty_base = 0.01
                 uni_att_score = (empty_base + (1-empty_base) * uni_att_score) * input_dict['attention_mask']
                 concrete_score = uni_att_score
                 last_concrete_score = concrete_score
@@ -2339,7 +2345,7 @@ class ApproxSparseBertForSequenceClassification(BertPreTrainedModel):
             for layer in self.bert.encoder.layer:
                 loss_reg = layer.loss_concrete({'attention_mask': attention_mask})
                 loss = loss + loss_reg
-            loss = loss + self.bert.encoder.loss_concrete()
+            loss = loss + self.bert.encoder.loss_concrete(input_mask=attention_mask)
 
         return SequenceClassifierOutput(
             loss=loss,
