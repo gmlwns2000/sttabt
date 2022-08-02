@@ -175,6 +175,35 @@ def exp(subset, batch_size, factor, plot_name):
         metric_name, subset, plot_name
     )
 
+def main_all(args):
+    import subprocess
+    
+    subsets = "cola mrpc wnli stsb mnli qnli qqp rte sst2".split()
+    
+    def process_all(args, subsets):
+        failed_subset = []
+        for subset in subsets:
+            retcode = subprocess.call(
+                f"python --batch-size {args.batch_size} "+\
+                 "--subset {subset} --factor {args.factor} "+\
+                 "--header \"{args.header}\"".split()
+            )
+            if retcode != 0:
+                print(f'Main: Process exited with error code {retcode}, retry {subset}')
+                failed_subset.append(subset)
+        return failed_subset
+    
+    for retry in range(5):
+        failed_subsets = process_all(args, subsets)
+        if len(failed_subsets) == 0:
+            break
+        else:
+            print(f"Main: Retry following subsets {failed_subsets}")
+        subsets = failed_subsets
+    
+    if len(subsets) > 0:
+        print(f"Main: Following subsets are failed to eval after retries. {subsets}")
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--subset', type=str, default='cola')
@@ -184,12 +213,15 @@ def main():
     args = parser.parse_args()
     plot_name = f'saves_plot/concrete-glue-{args.header}{args.subset}{"" if args.factor == 4 else f"-{args.factor}"}'
 
-    exp(
-        subset=args.subset,
-        batch_size=args.batch_size,
-        factor=args.factor,
-        plot_name=plot_name
-    )
+    if args.subset == 'all':
+        main_all(args)
+    else:
+        exp(
+            subset=args.subset,
+            batch_size=args.batch_size,
+            factor=args.factor,
+            plot_name=plot_name
+        )
 
 if __name__ == '__main__':
     mp.set_start_method('spawn')
