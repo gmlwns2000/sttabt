@@ -183,11 +183,12 @@ def main_all(args):
     def process_all(args, subsets):
         failed_subset = []
         for subset in subsets:
-            retcode = subprocess.call(
-                f"python --batch-size {args.batch_size} "+\
-                 "--subset {subset} --factor {args.factor} "+\
-                 "--header \"{args.header}\"".split()
-            )
+            retcode = subprocess.call((
+                f"python -m main.concrete_glue_plot "+\
+                f"--batch-size {args.batch_size} "+\
+                f"--subset {subset} --factor {args.factor} "+\
+                f"--header \"{args.header}\""
+            ).split())
             if retcode != 0:
                 print(f'Main: Process exited with error code {retcode}, retry {subset}')
                 failed_subset.append(subset)
