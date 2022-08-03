@@ -8,6 +8,7 @@ from utils.gpu_pool import GPUPool
 import multiprocessing as mp
 
 VERSION="1"
+GLUE_SUBSETS = "cola mrpc wnli stsb mnli qnli qqp rte sst2".split()
 
 p_logits =      [-2.0, -1.5, -1.0, -0.5, 0.0, 1.0]
 epoch_factors = [ 1.0,  1.0,  1.0,  1.0, 1.0, 1.0]
@@ -20,7 +21,7 @@ epoch_factors = [ 1.0,  1.0,  1.0,  1.0, 1.0, 1.0]
 special_epoch_factors = {
     'cola': [1.0,   1.0,    1.0,    1.0,    0.6,    0.6],
     'wnli': [0.5,   0.4,    0.3,    0.2,    0.1,    0.1],
-    'mnli': [0.25,  0.25,   0.25,   0.25,   0.25,   0.25],
+    'mnli': [0.5,   0.5,    0.5,    0.5,    0.5,    0.5],
     'qnli': [0.25,  0.25,   0.25,   0.25,   0.25,   0.25],
 }
 
@@ -178,7 +179,13 @@ def exp(subset, batch_size, factor, plot_name):
 def main_all(args):
     import subprocess
     
-    subsets = "cola mrpc wnli stsb mnli qnli qqp rte sst2".split()
+    if args.subset == 'all':
+        subsets = GLUE_SUBSETS
+    else:
+        subsets = args.subset.strip().split()
+        if any([(not s in GLUE_SUBSETS) for s in subsets]):
+            print(f'Main: Following given subsets are not GLUE subset {[s for s in subsets if not s in GLUE_SUBSETS]}')
+            return
     
     def process_all(args, subsets):
         failed_subset = []
@@ -194,16 +201,22 @@ def main_all(args):
                 failed_subset.append(subset)
         return failed_subset
     
-    for retry in range(5):
+    retries = 5
+    exp_subsets = subsets
+    for retry in range(retries):
         failed_subsets = process_all(args, subsets)
         if len(failed_subsets) == 0:
             break
         else:
-            print(f"Main: Retry following subsets {failed_subsets}")
+            if retry == (retries-1):
+                print(f'Main: Retry failed. Following subsets could not be processed {failed_subsets}')
+            else:
+                print(f"Main: Retry following subsets {failed_subsets} (Retry: {retry+1})")
         subsets = failed_subsets
     
-    if len(subsets) > 0:
-        print(f"Main: Following subsets are failed to eval after retries. {subsets}")
+    if len(subsets) == 0:
+        processed_subsets = set(exp_subsets) - set(subsets)
+        print(f"Main: Following subsets are successfully processed! {processed_subsets}")
 
 def main():
     parser = argparse.ArgumentParser()
@@ -216,6 +229,11 @@ def main():
 
     if args.subset == 'all':
         main_all(args)
+    elif not args.subset in GLUE_SUBSETS:
+        if len(args.subset.split()) > 1:
+            main_all(args)
+        else:
+            raise Exception('Given subset is not GLUE', args.subset)
     else:
         exp(
             subset=args.subset,

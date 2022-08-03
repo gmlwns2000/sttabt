@@ -69,7 +69,7 @@ task_to_batch_size = {
     "mnli": 2,
     "mrpc": 16,
     "qnli": 2,
-    "qqp":  8,
+    "qqp":  4,
     "rte":  4,
     "sst2": 16,
     "stsb": 16,
@@ -78,12 +78,12 @@ task_to_batch_size = {
 
 task_to_gradient_accumulate_step = {
     "cola": 1,
-    "mnli": 16,
+    "mnli": 24,
     "mrpc": 2,
     "qnli": 16,
-    "qqp":  8,
+    "qqp":  16,
     "rte":  4,
-    "sst2": 4,
+    "sst2": 2,
     "stsb": 1,
     "wnli": 1,
 }
