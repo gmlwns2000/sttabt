@@ -1,3 +1,4 @@
+import os
 import tqdm, time, math, random, sys, threading
 import multiprocessing as mp
 import traceback
@@ -5,13 +6,20 @@ from utils import query_available_devices
 from collections.abc import Iterable
 from contextlib import contextmanager
 
+def __osprint(string):
+    #return
+    sys.stdout.write(string)
+    sys.stdout.flush()
+
 __write_lock = None #type: mp.RLock
 __clear_event = None #type: mp.Event
 __refresh_event = None #type: mp.Event
+__master_ok_event = None
+__is_master = False
 __clear_thread = None #type: threading.Thread
 __refresh_thread = None #type: threading.Thread
-def initialize(write_lock=None, clear_event=None, refresh_event=None):
-    global __write_lock, __clear_event, __refresh_event, __clear_thread, __refresh_thread
+def initialize(is_master=True, write_lock=None, clear_event=None, refresh_event=None, master_ok_event=None):
+    global __write_lock, __clear_event, __refresh_event, __clear_thread, __refresh_thread, __is_master, __master_ok_event
     if write_lock is None:
         write_lock = mp.RLock()
     if clear_event is None:
@@ -27,29 +35,47 @@ def initialize(write_lock=None, clear_event=None, refresh_event=None):
     __refresh_thread = threading.Thread(target=__thread_refresh_event, daemon=True)
     __refresh_thread.start()
 
+    time.sleep(0.5)
+
+    if is_master:
+        assert master_ok_event is None
+        __master_ok_event = mp.Event()
+        __is_master = is_master
+    else:
+        assert master_ok_event is not None
+        __master_ok_event = master_ok_event
+        __is_master = is_master
+
 def is_initialized():
     global __write_lock
     return __write_lock is not None
 
 __cleared_tqdm_insts = []
 def __thread_clear_event():
-    global __clear_event, __cleared_tqdm_insts, __write_lock
+    global __clear_event, __cleared_tqdm_insts, __write_lock, __is_master, __master_ok_event
     while True:
         __clear_event.wait()
-        with __write_lock:
+        __clear_event.clear()
+        if __is_master:
+            __osprint('aaaa!!')
             __cleared_tqdm_insts = __tqdm_clear_all_instance()
+            __master_ok_event.set()
 
 def __thread_refresh_event():
-    global __refresh_event, __cleared_tqdm_insts, __write_lock
+    global __refresh_event, __cleared_tqdm_insts, __write_lock, __is_master, __master_ok_event
     while True:
         __refresh_event.wait()
-        with __write_lock:
+        __refresh_event.clear()
+        if __is_master:
+            __osprint('bbbbb!!')
+            # __print(os.getpid())
             __tqdm_refresh_all(__cleared_tqdm_insts)
-        __cleared_tqdm_insts = []
+            __cleared_tqdm_insts = []
+            __master_ok_event.set()
 
 def lock_packing():
-    global __write_lock, __clear_event, __refresh_event
-    return (__write_lock, __clear_event, __refresh_event)
+    global __write_lock, __clear_event, __refresh_event, __master_ok_event
+    return (__write_lock, __clear_event, __refresh_event, __master_ok_event)
 
 def print(*args, **kwargs):
     args = [a if isinstance(a, str) else str(a) for a in args]
@@ -64,6 +90,7 @@ def __print(string, file=None, end="\n", nolock=False):
         fp.write(end)
         #fp.flush()
         #time.sleep(1)
+    fp.flush()
 
 def __tqdm_clear_all_instance():
     fp = sys.stdout
@@ -80,7 +107,7 @@ def __tqdm_clear_all_instance():
             inst.clear(nolock=True)
             inst_cleared.append(inst)
     
-    #fp.flush()
+    fp.flush()
     #time.sleep(1)
     return inst_cleared
 
@@ -91,7 +118,7 @@ def __tqdm_refresh_all(insts):
     for inst in insts:
         inst.refresh(nolock=True)
     
-    #fp.flush()
+    fp.flush()
     #time.sleep(1)
 
 @contextmanager
@@ -100,17 +127,27 @@ def __tqdm_external_write_mode(file=None, nolock=False):
     Disable tqdm within context and refresh tqdm when exits.
     Useful when writing to standard output stream
     """
-    global __clear_event, __refresh_event
+    global __clear_event, __refresh_event, __master_ok_event, __is_master
     fp = file if file is not None else sys.stdout
 
     try:
         if not nolock:
             tqdm.tqdm.get_lock().acquire()
-        __clear_event.set()
-        inst_cleared = __tqdm_clear_all_instance()
+        if not __is_master and False:
+            __clear_event.set()
+            __osprint('cccccc!!!')
+            __master_ok_event.wait()
+            __master_ok_event.clear()
+        else:
+            inst_cleared = __tqdm_clear_all_instance()
         yield
-        __refresh_event.set()
-        __tqdm_refresh_all(inst_cleared)
+        if not __is_master and False:
+            __refresh_event.set()
+            __osprint('rrrr!!!')
+            __master_ok_event.wait()
+            __master_ok_event.clear()
+        else:
+            __tqdm_refresh_all(inst_cleared)
     finally:
         if not nolock:
             tqdm.tqdm._lock.release()
@@ -128,13 +165,14 @@ def dummy_fn(device, tqdm_position, *args):
         Any: the return value of experiment. This should be pickleable.
     """
     import random
-
+    random.seed(time.time())
     # doing some job while reporting tqdm
     for i in tqdm.tqdm(range(1000), desc=f'dev:{device}, args:{args}', position=tqdm_position):
-        time.sleep(1/500)
+        time.sleep(1/200 * random.random())
         if (i % 100) == -1:
             print(f"Runner@{device}: {random.choice(['Hello World!', 'Dooby is free', 'Shana', 'Ivan Polka'])}")
-    time.sleep(random.random() * 3)
+            #time.sleep(1)
+    time.sleep(random.random() * 1)
     
     # may job raise random exception
     if random.random() < 0.1:
@@ -145,7 +183,7 @@ def dummy_fn(device, tqdm_position, *args):
 
 def runtime_wrapper(ret_queue: "mp.Queue", tqdm_lock: "mp.RLock", fn, device, tqdm_position, lock_package, *args):
     tqdm.tqdm.set_lock(tqdm_lock)
-    initialize(*lock_package)
+    initialize(False, *lock_package)
 
     args_text = ''
     try:
@@ -204,6 +242,8 @@ class GPUPool:
         if retry < 0:
             raise Exception('Retry failed')
         
+        pbar = tqdm.tqdm(position=len(self.devices), total=len(args_list), desc='GPUPool', unit='job')
+        pbar.update(0)
         procs = [] #type: list[mp.Process]
         try:
             results = []
@@ -217,12 +257,14 @@ class GPUPool:
                         running_devices.remove(dev)
                         available_devices.add(dev)
                         procs.remove(proc)
+                        pbar.update(1)
                         break
             
             for args in args_list:
-                while len(available_devices) < 1:
+                while len(available_devices) <= 0:
                     check_procs()
-                    time.sleep(1/1000)
+                    time.sleep(1/100)
+                    pbar.update(0)
                 
                 target_device = random.sample(available_devices, 1)[0]
                 available_devices.remove(target_device)
@@ -240,7 +282,8 @@ class GPUPool:
             
             while len(procs) > 0:
                 check_procs()
-                time.sleep(1/1000)
+                time.sleep(1/100)
+                pbar.update(0)
             
             retry_args_list = []
             while not self.queue.empty():
@@ -275,7 +318,7 @@ class GPUPool:
 
 if __name__ == '__main__':
     initialize()
-    pool = GPUPool(devices=list(range(4)))
+    pool = GPUPool(devices=list(range(3)))
     
     ret = pool.run(dummy_fn, list(range(18)))
     assert len(ret) == 18
