@@ -88,6 +88,18 @@ task_to_gradient_accumulate_step = {
     "wnli": 1,
 }
 
+task_to_train_ratio = {
+    "cola": 0.85,
+    "mnli": 0.95,
+    "mrpc": 0.85,
+    "qnli": 0.95,
+    "qqp":  0.95,
+    "rte":  0.9,
+    "sst2": 0.9,
+    "stsb": 0.9,
+    "wnli": 0.85,
+}
+
 def get_dataloader(subset, tokenizer, batch_size, split='train'):
     if subset == 'bert':
         subset = "cola" #return dummy set
@@ -283,7 +295,7 @@ class ConcreteTrainer:
 
     def load_train_dataset(self):
         self.train_dataloader = get_dataloader(
-            self.dataset, self.tokenizer, self.batch_size, split='train')
+            self.dataset, self.tokenizer, self.batch_size, split=f'train[:{int(task_to_train_ratio[self.dataset]*100)}%]')
 
     def seed(self, seed=42):
         torch.manual_seed(seed)
@@ -325,9 +337,8 @@ class ConcreteTrainer:
             
             self.load_train_dataset()
 
-            # self.valid_dataloader = get_dataloader(
-            #     self.dataset, self.tokenizer, self.batch_size, split='train[-10%:]')
-            self.valid_dataloader = None
+            self.valid_dataloader = get_dataloader(
+                self.dataset, self.tokenizer, self.batch_size, split=f'train[-{int((1-task_to_train_ratio[self.dataset])*100)}%:]')
 
             split = {
                 "cola": "validation",
@@ -383,7 +394,7 @@ class ConcreteTrainer:
 
 # eval functions
 
-    def eval_base_model(self, model = None, amp = True, show_messages=True, max_step=987654321, split='test'):
+    def eval_base_model(self, model = None, amp = True, show_messages=True, max_step=987654321, split='test', return_loss=False):
         self.seed()
         if model is None:
             model = self.model
@@ -399,11 +410,12 @@ class ConcreteTrainer:
         if split == 'test':
             dataloader = self.test_dataloader
         elif split == 'valid':
-            raise Exception()
             dataloader = self.valid_dataloader
         else:
             raise Exception()
         
+        loss = 0
+        loss_count = 0
         for i, batch in enumerate(tqdm.tqdm(dataloader, position=self.tqdm_position, desc=f'({self.dataset}{self.tqdm_postfix}) eval')):
             if i > max_step: break
             step_count += 1
@@ -412,11 +424,13 @@ class ConcreteTrainer:
             #print(batch['attention_mask'].shape, torch.mean(torch.sum(batch['attention_mask'], dim=-1).float()).item())
             avg_length += torch.mean(torch.sum(batch['attention_mask'], dim=-1).float()).item() / batch['attention_mask'].shape[-1]
             labels = batch['labels']
-            del batch['labels']
+            #del batch['labels']
             
             with torch.no_grad(), torch.cuda.amp.autocast(AMP_ENABLED):
                 outputs = model(**batch)
-            predictions = outputs[0]
+            predictions = outputs[1]
+            loss += outputs.loss.item()
+            loss_count += 1
 
             if self.dataset != 'stsb': 
                 predictions = torch.argmax(predictions, dim=-1)
@@ -429,15 +443,25 @@ class ConcreteTrainer:
             print('avg occupy', avg_length / step_count)
         gc.collect()
         torch.cuda.empty_cache()
-        return score
+        if not return_loss:
+            return score
+        else:
+            return score, loss/loss_count
 
     def eval_sparse_model(self,
         show_message=True,
         max_step=987654321,
-        split='test'
+        split='test',
+        return_loss=False,
     ):
         self.seed()
-        sparse_result = self.eval_base_model(model = self.sparse_bert, show_messages = show_message, max_step=max_step, split=split)
+        sparse_result = self.eval_base_model(
+            model=self.sparse_bert, 
+            show_messages=show_message, 
+            max_step=max_step, 
+            split=split, 
+            return_loss=return_loss
+        )
         return sparse_result
 
     def eval_main(self, ks='dynamic', split='test'):

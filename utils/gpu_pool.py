@@ -79,13 +79,15 @@ def lock_packing():
 
 def print(*args, **kwargs):
     args = [a if isinstance(a, str) else str(a) for a in args]
-    __print(kwargs.get('sep', ' ').join(args))
+    __print(kwargs.get('sep', ' ').join(args), end=kwargs.get('end', '\n'))
 
 def __print(string, file=None, end="\n", nolock=False):
     """Print a message via tqdm (without overlap with bars)."""
     fp = file if file is not None else sys.stdout
     with __tqdm_external_write_mode(file=file, nolock=nolock):
         # Write the message
+        if end == '\n':
+            fp.write('\r')
         fp.write(string)
         fp.write(end)
         #fp.flush()
