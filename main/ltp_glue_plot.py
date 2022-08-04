@@ -7,6 +7,9 @@ import trainer.ltp_trainer as ltp
 # options
 lambdas = [0.001, 0.01, 0.1, 1.0, 5.0, 25.0]
 temperatures = [1e-4, 2e-4, 5e-4, 1e-3, 2e-3]
+special_temperatures = {
+    'mnli': [2e-4, 1e-3],
+}
 # lambdas = [0.001, 0.01, ]
 # temperatures = [1e-4, 2e-4 ]
 
@@ -16,6 +19,8 @@ def main():
     parser.add_argument('--batch-size', type=int, default=-1)
     args = parser.parse_args()
     subset = args.subset
+    if subset in special_temperatures:
+        temperature = special_temperatures[subset]
     plot_name = f'saves_plot/ltp-glue-{subset}'
 
     occupies = []
