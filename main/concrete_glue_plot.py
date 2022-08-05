@@ -188,7 +188,7 @@ def query_best_hyperparameter(args):
             hparam = json.load(f)
             return (hparam['lr_mul'], hparam['epochs_mul'], hparam['grad_acc_mul'])
     else:
-        cases = list(itertools.product((0.5, 1.0, 2.0), (0.5, 1.0, 2.0), (0.5, 1.0, 2.0)))
+        cases = list(itertools.product((0.5, 1.0, 2.0), (0.75, 1.0, 1.7), (0.75, 1.0, 1.5)))
         #cases = list(itertools.product((1.0,), (1.0,), (0.5, 1.0)))
         args_list = []
         for case in cases:
