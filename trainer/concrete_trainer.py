@@ -119,10 +119,10 @@ def get_dataloader(subset, tokenizer, batch_size, split='train'):
         #     result["label"] = [(label_to_id[l] if l != -1 else -1) for l in examples["label"]]
         return result
 
-    dataset = dataset.map(lambda examples: {'labels': examples['label']}, batched=True, batch_size=1024)
-    if split.startswith('train[:'):
+    if split.startswith('train[:'): #shuffle when train set
         dataset = dataset.sort('label')
         dataset = dataset.shuffle(seed=random.randint(0, 10000))
+    dataset = dataset.map(lambda examples: {'labels': examples['label']}, batched=True, batch_size=1024)
     dataset = dataset.map(encode, batched=True, batch_size=1024)
     dataset.set_format(type='torch', columns=['input_ids', 'token_type_ids', 'attention_mask', 'labels'])
 
@@ -177,10 +177,12 @@ class ConcreteTrainer:
         batch_size=None, device=0, world_size=1, gradient_accumulate_steps=None,
         checkpoint_name=None, init_checkpoint=None, epochs=None,
         enable_plot=False, lr=None,
+        enable_valid=False,
     ):
         print('Trainer:', dataset)
         self.seed()
         
+        self.enable_valid = enable_valid
         self.wiki_train = False
         self.factor = factor
         self.enable_checkpointing = True
@@ -294,8 +296,11 @@ class ConcreteTrainer:
         self.scaler = torch.cuda.amp.GradScaler(enabled=AMP_ENABLED)
 
     def load_train_dataset(self):
-        self.train_dataloader = get_dataloader(
-            self.dataset, self.tokenizer, self.batch_size, split=f'train[:{int(task_to_train_ratio[self.dataset]*100)}%]')
+        if self.enable_valid:
+            split = f'train[:{int(task_to_train_ratio[self.dataset]*100)}%]'
+        else:
+            split = 'train'
+        self.train_dataloader = get_dataloader(self.dataset, self.tokenizer, self.batch_size, split=split)
 
     def seed(self, seed=42):
         torch.manual_seed(seed)
@@ -337,8 +342,11 @@ class ConcreteTrainer:
             
             self.load_train_dataset()
 
-            self.valid_dataloader = get_dataloader(
-                self.dataset, self.tokenizer, self.batch_size, split=f'train[-{int((1-task_to_train_ratio[self.dataset])*100)}%:]')
+            if self.enable_valid:
+                self.valid_dataloader = get_dataloader(
+                    self.dataset, self.tokenizer, self.batch_size, split=f'train[-{int((1-task_to_train_ratio[self.dataset])*100)}%:]')
+            else:
+                self.valid_dataloader = None
 
             split = {
                 "cola": "validation",
