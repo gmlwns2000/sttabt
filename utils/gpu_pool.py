@@ -215,6 +215,7 @@ class GPUPool:
         if devices is None:
             devices = query_available_devices()
             print('GPUPool: Available devices,', devices)
+        assert len(devices) > 0
         self.devices = devices
         self.retries = 5
         self.queue = None
@@ -265,8 +266,8 @@ class GPUPool:
             for args in args_list:
                 while len(available_devices) <= 0:
                     check_procs()
-                    time.sleep(1/100)
-                    pbar.update(0)
+                    time.sleep(1/10)
+                    pbar.refresh()
                 
                 target_device = random.sample(available_devices, 1)[0]
                 available_devices.remove(target_device)
@@ -284,8 +285,8 @@ class GPUPool:
             
             while len(procs) > 0:
                 check_procs()
-                time.sleep(1/100)
-                pbar.update(0)
+                time.sleep(1/10)
+                pbar.refresh()
             
             retry_args_list = []
             while not self.queue.empty():

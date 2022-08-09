@@ -1014,6 +1014,7 @@ class BertEncoder(nn.Module):
                         torch.sum(input_mask, dim=-1)
                 count += 1
         occupy /= count
+        occupy = occupy.mean()
         return F.mse_loss(target, occupy) * 1e-3
 
 class BertPooler(nn.Module):

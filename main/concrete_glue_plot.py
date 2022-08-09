@@ -98,7 +98,7 @@ def exp_p_logit(
     device, tqdm_position, 
     i, subset, factor, batch_size, p_logit,
     lr_multiplier=1.0, epochs_multiplier=1.0, grad_acc_multiplier=1.0, 
-    eval_valid=False,
+    eval_valid=False, eval_test=True
 ):
     gc.collect()
     torch.cuda.empty_cache()
@@ -143,7 +143,10 @@ def exp_p_logit(
     
     concrete.sparse.benchmark_sparse_approx_flops(True)
     concrete.sparse.benchmark_concrete_occupy(True)
-    occupy_no_train, flops_no_train, metric_no_train, metric_name = exam()
+    if eval_test:
+        occupy_no_train, flops_no_train, metric_no_train, metric_name = exam()
+    else:
+        occupy_no_train = flops_no_train = metric_no_train = metric_name = None
     gc.collect()
     torch.cuda.empty_cache()
 
@@ -155,10 +158,18 @@ def exp_p_logit(
 
     concrete.sparse.benchmark_sparse_approx_flops(True)
     concrete.sparse.benchmark_concrete_occupy(True)
-    occupy, flops, metric, metric_name = exam()
-    occupy_valid, metric_valid, loss_valid = None, None, None
-    if eval_valid: occupy_valid, metric_valid, loss_valid = exam_valid()
-    print(f'[{i+1}/{len(p_logits)}]({subset}) occupy: {occupy} flops: {flops} metric: {metric} occupy_no: {occupy_no_train} flops_no: {flops_no_train} metric_no: {metric_no_train}')
+    if eval_test:
+        occupy, flops, metric, metric_name = exam()
+    else:
+        occupy = flops = metric = metric_name = None
+    
+    if eval_valid: 
+        occupy_valid, metric_valid, loss_valid = exam_valid()
+    else:
+        occupy_valid, metric_valid, loss_valid = None, None, None
+    
+    if eval_test:
+        print(f'[{i+1}/{len(p_logits)}]({subset}) occupy: {occupy} flops: {flops} metric: {metric} occupy_no: {occupy_no_train} flops_no: {flops_no_train} metric_no: {metric_no_train}')
 
     return {
         'i': i,
@@ -191,11 +202,11 @@ def query_best_hyperparameter(args):
             hparam = json.load(f)
             return (hparam['lr_mul'], hparam['epochs_mul'], hparam['grad_acc_mul'])
     else:
-        cases = list(itertools.product((0.5, 1.0, 2.0), (0.75, 1.0, 1.5), (0.75, 1.0, 1.5)))
+        cases = list(itertools.product((0.5, 1.0, 2.0), (1.0,), (0.75, 1.0, 1.5)))
         #cases = list(itertools.product((1.0,), (1.0,), (0.5, 1.0)))
         args_list = []
         for case in cases:
-            args_list.append(args + case + (True,))
+            args_list.append(args + case + (True, False))
         
         pool = GPUPool()
         _results = pool.run(exp_p_logit, args_list)
