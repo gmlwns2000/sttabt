@@ -141,7 +141,6 @@ def render(data, header):
         f'./saves_plot/approx-glue-{header}-all-flops.svg',
         bbox_extra_artists=(legend, ), bbox_inches='tight', dpi=320
     )
-    plt.show(block=False)
 
 def main(path, header):
     if not os.path.exists(path):
