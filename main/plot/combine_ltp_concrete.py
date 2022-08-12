@@ -6,8 +6,12 @@ from main.plot.constants import *
 
 def main():
     baseline_data_path = 'saves_plot/[F4-PREWIKI.v2]glue_benchmark_accum_absatt.pickle'
-    subsets = "cola mnli mrpc qnli qqp rte sst2 stsb wnli".split()
+    subsets = GLUE_SUBSETS
     skipped = []
+
+    combined_fig = plt.figure(figsize=(21,7))
+    plt.figure()
+    ax = None
 
     for subset in subsets:
         plot_name = f'saves_plot/combined-glue-{subset}'
@@ -224,7 +228,83 @@ def main():
         plt.title(f'{SUBSET_TO_NAME[subset]}', fontsize=12)
         plt.savefig(plot_name+'-train.svg', dpi=320)
 
+        if GLUE_SUBSETS.index(subset) < 5:
+            ax = combined_fig.add_subplot(2, 10, 
+                (GLUE_SUBSETS.index(subset)*2 + 1, GLUE_SUBSETS.index(subset)*2 + 2)
+            )
+        else:
+            ax = combined_fig.add_subplot(2, 10, 
+                (GLUE_SUBSETS.index(subset)*2 + 2, GLUE_SUBSETS.index(subset)*2 + 3)
+            )
+        ax.plot(
+            xs_sparse, ys_sparse, 
+            label=STR_STTABT_APPROX, color=COLOR_STTABT_APPROX, 
+            marker='o', zorder=10
+        )
+        ax.plot(
+            xs_absatt, ys_absatt, 
+            label=STR_STTABT_ABSATT, color=COLOR_STTABT_ABSATT,
+            marker='o', 
+        )
+        ax.plot(
+            xs_concrete_train, ys_concrete_train, 
+            label=STR_STTABT_CONCRETE_WITH_TRAIN, color=COLOR_STTABT_CONCRETE_WITH_TRAIN, 
+            marker='^', zorder=10
+        )
+        ax.plot(
+            xs_concrete_no_train, ys_concrete_no_train, 
+            label=STR_STTABT_CONCRETE_WO_TRAIN, color=COLOR_STTABT_CONCRETE_WO_TRAIN,
+            marker='^', 
+        )
+        ax.plot(
+            xs_ltp, ys_ltp, 
+            label=STR_LTP_BEST_VALID, color=COLOR_LTP_BEST_VALID, 
+            marker='x', linestyle='--'
+        )
+        ax.plot(
+            xs_forward, ys_forward, 
+            label=STR_MANUAL_TOPK, color=COLOR_MANUAL_TOPK, 
+            marker='x', linestyle='--'
+        )
+        ax.plot(
+            xs_bert, ys_bert, 
+            label=STR_BERT_BASE, color=COLOR_BERT_BASE, 
+            linestyle=':', zorder=-99
+        )
+        ymin, ymax = ax.get_ylim()
+        subset_to_ylim = {
+            'qnli': 0.6,
+            'mrpc': 0.35,
+            'cola': 0.85,
+            'qqp': 0.4,
+            'wnli': 0.2,
+            'stsb': 0.7,
+            'sst2': 0.5,
+            'rte': 0.72,
+        }
+        ax.set_ylim(ymax - (ymax-ymin)*subset_to_ylim.get(subset, 0.7), ymax)
+        ax.grid(True)
+        ax.set_xlabel(STR_AVERAGE_KEEP_TOKEN_RATIO)
+        ax.set_ylabel(metric_display_name)
+        ax.set_title(f'{SUBSET_TO_NAME[subset]}', fontsize=12)
+
         print(f'{subset} is processed')
+    
+    if ax is None:
+        print('None of subset are processed. skip render all plot')
+    else:
+        handles, labels = ax.get_legend_handles_labels()
+        legend = combined_fig.legend(handles, labels, loc='lower center', fontsize=16, ncol = 4)
+        combined_fig.tight_layout()
+        combined_fig.subplots_adjust(bottom=0.2)
+        combined_fig.savefig(
+            f'saves_plot/combined-glue-all.png',
+            bbox_extra_artists=(legend, ), bbox_inches='tight', dpi=320
+        )
+        combined_fig.savefig(
+            f'saves_plot/combined-glue-all.svg',
+            bbox_extra_artists=(legend, ), bbox_inches='tight', dpi=320
+        )
 
     if len(skipped) > 0:
         print('-- skipped subsets --')
