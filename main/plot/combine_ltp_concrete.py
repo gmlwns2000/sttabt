@@ -2,32 +2,7 @@ import json, math, random, pickle, os
 from matplotlib import pyplot as plt
 plt.style.use('seaborn-bright')
 
-metric_to_name = {
-    'acc': 'Accuracy (%)',
-    'matthews_correlation': 'Matthews Correlation',
-    'pearson': 'Pearson Correlation',
-}
-
-metric_to_scaler = {
-    'acc': 100,
-    'matthews_correlation': 100,
-    'pearson': 1,
-}
-
-subset_to_name = {
-    "cola": "CoLA",
-    "mnli": "MNLI",
-    "mrpc": "MRPC",
-    "qnli": "QNLI",
-    "qqp":  "QQP",
-    "rte":  "RTE",
-    "sst2": "SST-2",
-    "stsb": "STSB",
-    "wnli": "WNLI",
-}
-
-def scale(lst, s):
-    return list([it * s for it in lst])
+from main.plot.constants import *
 
 def main():
     baseline_data_path = 'saves_plot/[F4-PREWIKI.v2]glue_benchmark_accum_absatt.pickle'
@@ -127,8 +102,8 @@ def main():
             json.dump(data, f, indent=2)
         
         # render plot
-        metric_display_name = metric_to_name[metric_name]
-        y_scale = metric_to_scaler[metric_name]
+        metric_display_name = METRIC_TO_NAME[metric_name]
+        y_scale = METRIC_TO_SCALER[metric_name]
         ys_absatt = scale(ys_absatt, y_scale)
         ys_sparse = scale(ys_sparse, y_scale)
         ys_concrete_train = scale(ys_concrete_train, y_scale)
@@ -147,47 +122,107 @@ def main():
         xs_bert = scale(xs_bert, x_scale)
 
         plt.clf()
-        plt.plot(xs_sparse, ys_sparse, marker='o', label='STTBTA (Approx. Att.)', linewidth=1.2, color='blue', zorder=10)
-        plt.plot(xs_absatt, ys_absatt, marker='o', label='STTBTA (Actual Att.)', linewidth=1.2, color='lime')
-        plt.plot(xs_concrete_train, ys_concrete_train, marker='^', label='STTBTA (Concrete, with train)', linewidth=1.2, color='red', zorder=10)
-        plt.plot(xs_concrete_no_train, ys_concrete_no_train, marker='^', label='STTBTA (Concrete, w/o train)', linewidth=1.2, color='#ff9a3b')
-        plt.plot(xs_ltp, ys_ltp, marker='x', label='LTP (Best valid.)', linewidth=1.2, color='gray', linestyle='--')
-        plt.plot(xs_forward, ys_forward, marker='x', label='Manual Top-k', linewidth=1.2, color='black', linestyle='--')
-        plt.plot(xs_bert, ys_bert, linestyle=':', label='BERT$_{BASE}$', color='skyblue', zorder=-99)
+        plt.plot(
+            xs_sparse, ys_sparse, 
+            label=STR_STTABT_APPROX, color=COLOR_STTABT_APPROX, 
+            marker='o', linewidth=1.2, zorder=10
+        )
+        plt.plot(
+            xs_absatt, ys_absatt, 
+            label=STR_STTABT_ABSATT, color=COLOR_STTABT_ABSATT,
+            marker='o', linewidth=1.2, 
+        )
+        plt.plot(
+            xs_concrete_train, ys_concrete_train, 
+            label=STR_STTABT_CONCRETE_WITH_TRAIN, color=COLOR_STTABT_CONCRETE_WITH_TRAIN, 
+            marker='^', linewidth=1.2, zorder=10
+        )
+        plt.plot(
+            xs_concrete_no_train, ys_concrete_no_train, 
+            label=STR_STTABT_CONCRETE_WO_TRAIN, color=COLOR_STTABT_CONCRETE_WO_TRAIN,
+            marker='^', linewidth=1.2, 
+        )
+        plt.plot(
+            xs_ltp, ys_ltp, 
+            label=STR_LTP_BEST_VALID, color=COLOR_LTP_BEST_VALID, 
+            marker='x', linewidth=1.2, linestyle='--'
+        )
+        plt.plot(
+            xs_forward, ys_forward, 
+            label=STR_MANUAL_TOPK, color=COLOR_MANUAL_TOPK, 
+            marker='x', linewidth=1.2, linestyle='--'
+        )
+        plt.plot(
+            xs_bert, ys_bert, 
+            label=STR_BERT_BASE, color=COLOR_BERT_BASE, 
+            linestyle=':', zorder=-99
+        )
         plt.grid(True)
-        plt.xlabel('Average Keep Token Ratio (%)')
+        plt.xlabel(STR_AVERAGE_KEEP_TOKEN_RATIO)
         plt.ylabel(metric_display_name)
         plt.legend()
-        plt.title(f'{subset_to_name[subset]}', fontsize=12)
-        plt.savefig(plot_name+'.png', dpi=320)
+        plt.title(f'{SUBSET_TO_NAME[subset]}', fontsize=12)
+        plt.savefig(plot_name+'.svg', dpi=320)
 
         def bert_xs(*xss):
             xss = sum(xss, start=[])
             return [min(xss), max(xss)]
 
         plt.clf()
-        plt.plot(xs_sparse, ys_sparse, marker='o', label='STTBTA (Approx. Att.)', linewidth=1.2, color='blue', zorder=10)
-        plt.plot(xs_absatt, ys_absatt, marker='o', label='STTBTA (Actual Att.)', linewidth=1.2, color='lime')
-        plt.plot(xs_concrete_no_train, ys_concrete_no_train, marker='^', label='STTBTA (Concrete, w/o train)', linewidth=1.2, color='#ff9a3b')
-        plt.plot(xs_forward, ys_forward, marker='x', label='Manual Top-k', linewidth=1.2, color='black', linestyle='--')
-        plt.plot(bert_xs(xs_sparse, xs_absatt, xs_concrete_no_train, xs_forward), ys_bert, linestyle=':', label='BERT$_{BASE}$', color='skyblue', zorder=-99)
+        plt.plot(
+            xs_sparse, ys_sparse, 
+            label=STR_STTABT_APPROX, color=COLOR_STTABT_APPROX, 
+            marker='o', linewidth=1.2, zorder=10
+        )
+        plt.plot(
+            xs_absatt, ys_absatt, 
+            label=STR_STTABT_ABSATT, color=COLOR_STTABT_ABSATT,
+            marker='o', linewidth=1.2, 
+        )
+        plt.plot(
+            xs_concrete_no_train, ys_concrete_no_train, 
+            label=STR_STTABT_CONCRETE_WO_TRAIN, color=COLOR_STTABT_CONCRETE_WO_TRAIN, 
+            marker='^', linewidth=1.2, 
+        )
+        plt.plot(
+            xs_forward, ys_forward, 
+            label=STR_MANUAL_TOPK, color=COLOR_MANUAL_TOPK, 
+            marker='x', linewidth=1.2, linestyle='--'
+        )
+        plt.plot(
+            bert_xs(xs_sparse, xs_absatt, xs_concrete_no_train, xs_forward), ys_bert, 
+            label=STR_BERT_BASE, color=COLOR_BERT_BASE, 
+            linestyle=':', zorder=-99
+        )
         plt.grid(True)
-        plt.xlabel('Average Keep Token Ratio (%)')
+        plt.xlabel(STR_AVERAGE_KEEP_TOKEN_RATIO)
         plt.ylabel(metric_display_name)
         plt.legend()
-        plt.title(f'{subset_to_name[subset]}', fontsize=12)
-        plt.savefig(plot_name+'-no-train.png', dpi=320)
+        plt.title(f'{SUBSET_TO_NAME[subset]}', fontsize=12)
+        plt.savefig(plot_name+'-no-train.svg', dpi=320)
 
         plt.clf()
-        plt.plot(xs_concrete_train, ys_concrete_train, marker='^', label='STTBTA (Concrete, with train)', linewidth=1.2, color='red', zorder=10)
-        plt.plot(xs_ltp, ys_ltp, marker='x', label='LTP (Best valid.)', linewidth=1.2, color='gray', linestyle='--')
-        plt.plot(bert_xs(xs_concrete_train, xs_ltp), ys_bert, linestyle=':', label='BERT$_{BASE}$', color='skyblue', zorder=-99)
+        plt.plot(
+            xs_concrete_train, ys_concrete_train, 
+            label=STR_STTABT_CONCRETE_WITH_TRAIN, color=COLOR_STTABT_CONCRETE_WITH_TRAIN, 
+            marker='^', linewidth=1.2, zorder=10
+        )
+        plt.plot(
+            xs_ltp, ys_ltp, 
+            label=STR_LTP_BEST_VALID, color=COLOR_LTP_BEST_VALID, 
+            linewidth=1.2, marker='x', linestyle='--'
+        )
+        plt.plot(
+            bert_xs(xs_concrete_train, xs_ltp), ys_bert, 
+            label=STR_BERT_BASE, color=COLOR_BERT_BASE, 
+            linestyle=':', zorder=-99
+        )
         plt.grid(True)
-        plt.xlabel('Average Keep Token Ratio (%)')
+        plt.xlabel(STR_AVERAGE_KEEP_TOKEN_RATIO)
         plt.ylabel(metric_display_name)
         plt.legend()
-        plt.title(f'{subset_to_name[subset]}', fontsize=12)
-        plt.savefig(plot_name+'-train.png', dpi=320)
+        plt.title(f'{SUBSET_TO_NAME[subset]}', fontsize=12)
+        plt.savefig(plot_name+'-train.svg', dpi=320)
 
         print(f'{subset} is processed')
 
