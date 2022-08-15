@@ -6,6 +6,7 @@ from datasets import load_dataset, load_metric
 from datasets.utils import logging as datasets_logging
 from torch import optim, nn
 from utils import ThreadBuffer
+from utils.gpu_pool import print
 import torch.nn.functional as F
 
 import os
@@ -46,7 +47,7 @@ task_to_keys = {
 }
 
 task_to_epochs = {
-    "cola": 10,
+    "cola": 2,
     "mnli": 2,
     "mrpc": 10,
     "qnli": 2,
@@ -59,7 +60,7 @@ task_to_epochs = {
 }
 
 task_to_batch_size = {
-    "cola": 64,
+    "cola": 32,
     "mnli": 4,
     "mrpc": 32,
     "qnli": 4,
@@ -202,6 +203,8 @@ class LtpTrainer:
         if not (self.init_checkpoint is None):
             print('Trainer: From pretrained checkpoint', self.init_checkpoint)
             self.load(self.init_checkpoint)
+
+        self.tqdm_position = 0
     
     def init_sparse_bert(self):
         self.sparse_bert_inner = sparse.SparseBertForSequenceClassification(self.model.config)
@@ -343,7 +346,7 @@ class LtpTrainer:
         else:
             raise Exception()
         
-        for i, batch in enumerate(tqdm.tqdm(dataloader, desc='eval')):
+        for i, batch in enumerate(tqdm.tqdm(dataloader, desc='eval', position=self.tqdm_position)):
             if i > max_step: break
             step_count += 1
 
@@ -403,7 +406,7 @@ class LtpTrainer:
         
         print_log = self.device == 0 or self.world_size == 1
         if print_log:
-            pbar = tqdm.tqdm(pbar)
+            pbar = tqdm.tqdm(pbar, position = self.tqdm_position)
         
         if self.epoch > self.epochs * 0.5 - 0.1:
             self.sparse_bert.module.bert.set_ltp_prune_token_soft_pruning(False)
@@ -411,7 +414,8 @@ class LtpTrainer:
 
         for step, batch in enumerate(pbar):
             batch = {k: v.to(self.device, non_blocking=True) for k, v in batch.items()}
-            batch = {k: v[self.device*(self.batch_size//self.world_size):(self.device+1)*(self.batch_size//self.world_size)] for k, v in batch.items()}
+            if self.world_size > 1:
+                batch = {k: v[self.device*(self.batch_size//self.world_size):(self.device+1)*(self.batch_size//self.world_size)] for k, v in batch.items()}
             batch['output_attentions'] = True
             batch['output_hidden_states'] = True
             #if 'labels' in batch: del batch['labels']

@@ -1,3 +1,7 @@
+"""
+This pool script suggested for long single iteration...
+"""
+
 import os
 import tqdm, time, math, random, sys, threading
 import multiprocessing as mp
@@ -211,11 +215,12 @@ def runtime_wrapper(ret_queue: "mp.Queue", tqdm_lock: "mp.RLock", fn, device, tq
         })
 
 class GPUPool:
-    def __init__(self, devices=None):
+    def __init__(self, devices=None, name='GPUPool'):
         if devices is None:
             devices = query_available_devices()
             print('GPUPool: Available devices,', devices)
         assert len(devices) > 0
+        self.name = name
         self.devices = devices
         self.retries = 5
         self.queue = None
@@ -245,7 +250,7 @@ class GPUPool:
         if retry < 0:
             raise Exception('Retry failed')
         
-        pbar = tqdm.tqdm(position=len(self.devices), total=len(args_list), desc='GPUPool', unit='job')
+        pbar = tqdm.tqdm(position=len(self.devices), total=len(args_list), desc=self.name, unit='job')
         pbar.update(0)
         procs = [] #type: list[mp.Process]
         try:
@@ -318,6 +323,11 @@ class GPUPool:
                 except:
                     print('error while clean up process')
                     traceback.print_exc()
+
+    def close(self):
+        if self.queue is not None:
+            self.queue.close()
+            self.queue = None
 
 if __name__ == '__main__':
     initialize()
