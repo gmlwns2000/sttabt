@@ -119,7 +119,7 @@ def render(data_f4, data_f8, header):
             'mrpc': 0.99,
             'cola': 0.33,
             'qqp': 0.4,
-            'wnli': 0.99,
+            'wnli': 2.0,
             'stsb': 0.1,
             'sst2': 0.5,
             'rte': 0.72,
@@ -127,7 +127,8 @@ def render(data_f4, data_f8, header):
         ax.set_ylim(ymax - (ymax-ymin)*subset_to_ylim.get(subset, 0.7), ymax)
         ymin, ymax = ax.get_ylim()
         subset_to_ylim_upper = {
-            'stsb': 0.66
+            'stsb': 0.66,
+            'wnli': 1.7
         }
         ax.set_ylim(ymin, ymin + (ymax-ymin)*subset_to_ylim_upper.get(subset, 1.0))
         xmin, xmax = ax.get_xlim()
