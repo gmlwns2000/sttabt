@@ -1,6 +1,7 @@
 import math
 import random
 import torch
+torch.set_num_threads(1)
 from torch import optim, nn
 import numpy as np
 import tqdm

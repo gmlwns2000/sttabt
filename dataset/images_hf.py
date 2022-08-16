@@ -2,6 +2,7 @@ import math
 import queue, time
 import threading
 import torch
+torch.set_num_threads(1)
 import numpy as np
 import transformers
 from datasets import load_dataset
