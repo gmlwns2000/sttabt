@@ -12,9 +12,9 @@ import models.sparse_token as sparse
 from utils import ddp
 
 tasks_to_epoch = {
-    'base': 100,
+    'base': 30,
     'cifar100': 20,
-    'imagenet': 100,
+    'imagenet': 30,
 }
 
 tasks_to_batch_size = {

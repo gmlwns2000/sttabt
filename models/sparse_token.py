@@ -1580,6 +1580,7 @@ class ApproxBertModel(nn.Module):
                     kl_loss = torch.mean(kl_loss, dim=-1)
                 else: # need to sum() / token_len
                     assert attention_mask.shape == (N, T) or attention_mask.shape == (1, T)
+                    kl_loss = kl_loss * attention_mask.view(-1, 1, T)
                     kl_loss = torch.sum(kl_loss, dim=-1)
                     kl_loss = kl_loss / torch.sum(attention_mask, dim=-1).view(N, 1)
                     kl_loss = kl_loss
