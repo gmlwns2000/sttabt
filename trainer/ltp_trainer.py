@@ -161,6 +161,9 @@ class LtpTrainer:
         self.ltp_lambda = ltp_lambda
         self.ltp_temperature = ltp_temperature
         self.lr = 2e-5
+        if dataset == 'mnli':
+            print('LtpTrainer: MNLI LR 1e-6')
+            self.lr = 1e-6
         self.weight_decay = 0
         self.dataset = dataset
         if batch_size is None or batch_size <= 0:

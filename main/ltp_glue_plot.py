@@ -8,6 +8,9 @@ from utils.gpu_pool import GPUPool, print
 # experiment options
 lambdas = [0.001, 0.01, 0.1, 1.0, 5.0, 25.0]
 temperatures = [1e-4, 2e-4, 5e-4, 1e-3, 2e-3]
+special_lambdas = {
+    'mnli': [1e-5, 1e-4, 1e-3, 1e-2]
+}
 special_temperatures = {
     'mnli': [2e-4, 1e-3], #mnli took way too long time to train... (about 2 weeks)
 }
@@ -69,6 +72,7 @@ def search_hparam(subset, batch_size):
 def run_exp_inner(device, tqdm_position, subset, batch_size, ltp_lambda, ltp_temperature):
     trainer = ltp.LtpTrainer(subset, batch_size=batch_size, device=device)
     trainer.tqdm_position = tqdm_position
+    trainer.reset_train()
     trainer.sparse_bert.module.ltp_lambda = ltp_lambda
     trainer.sparse_bert.module.bert.set_ltp_temperature(ltp_temperature)
     trainer.main()
@@ -100,7 +104,7 @@ def run_exp(subset, batch_size, lambdas, hparam):
     return occupies, metrics
 
 def main():
-    global temperatures
+    global temperatures, lambdas
     parser = argparse.ArgumentParser()
     parser.add_argument('--subset', type=str, default='mrpc')
     parser.add_argument('--batch-size', type=int, default=-1)
@@ -108,9 +112,13 @@ def main():
     subset = args.subset
     if subset in special_temperatures:
         temperatures = special_temperatures[subset]
+    if subset in special_lambdas:
+        lambdas = special_lambdas[subset]
     plot_name = f'saves_plot/ltp-glue-{subset}'
 
     hparam, hparam_results = search_hparam(subset, args.batch_size)
+    print('Main: hparam results', hparam_results)
+    print('Main: hparam', hparam)
     max_test_occupies, max_test_metrics = run_exp(subset, args.batch_size, lambdas=lambdas, hparam=hparam)
 
     plt.style.use("seaborn")
