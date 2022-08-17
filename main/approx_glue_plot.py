@@ -20,6 +20,7 @@ import tqdm
 import trainer.glue_base as glue_base
 from matplotlib import pyplot as plt
 from utils.glue import get_score
+import argparse
 
 plt.style.use("seaborn")
 sparse.benchmark_sparse_approx_flops(True)
@@ -276,10 +277,6 @@ def plot_from_last_pickle():
 def main():
     global plot_header, factor
 
-    #arg
-    import argparse
-    from utils import query_available_devices
-
     parser = argparse.ArgumentParser()
     parser.add_argument('--header', type=str, default=None)
     parser.add_argument('--factor', type=int, default=None)
@@ -290,7 +287,8 @@ def main():
         update_result_names()
     if args.factor is not None:
         factor = args.factor
-    
+        
+    from utils.query_available_devices import query_available_devices
     available_devices = query_available_devices()
     print('Available Devices', available_devices)
 

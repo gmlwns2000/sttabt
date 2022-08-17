@@ -1,4 +1,4 @@
-import multiprocess as mp
+import multiprocessing as mp
 
 def __query_available_devices(q):
     import torch

@@ -2070,7 +2070,8 @@ def run_bert_forward_sparsity(
 
         last_att = layer.attention.get_attention().last_attention_probs #(N, H, T, T)
         impact_factor = torch.mean(last_att, dim=1) #reduce head
-        impact_factor = torch.mean(impact_factor, dim=1) #reduce tokens, (N, T)
+        #impact_factor = torch.mean(impact_factor, dim=1) #reduce tokens, (N, T)
+        impact_factor = torch.sum(impact_factor * input_mask.view(batch_size, token_len, 1), dim=1) / torch.sum(input_mask, dim=1, keepdim=True)
         _, indices = torch.topk(impact_factor, k=max(1, min(impact_factor.shape[1], int(ks[idx]*token_len))), dim=1)
         if idx == (len(sparse_bert.encoder.layer) - 1):
             indices = torch.zeros_like(indices)
