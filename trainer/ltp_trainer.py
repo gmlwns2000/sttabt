@@ -47,7 +47,7 @@ task_to_keys = {
 }
 
 task_to_epochs = {
-    "cola": 2,
+    "cola": 10,
     "mnli": 2,
     "mrpc": 10,
     "qnli": 2,
@@ -59,6 +59,9 @@ task_to_epochs = {
     "bert": 6,
 }
 
+#My gpu is so tiny and cute <3, so I had to reduce batch size.
+#After my few month of shoveling, I found out I have to use batch size 64 (from LTP github).
+#So I add gradient accum.
 task_to_batch_size = {
     "cola": 32,
     "mnli": 4,
@@ -70,6 +73,18 @@ task_to_batch_size = {
     "stsb": 16,
     "wnli": 32,
     "bert": 8,
+}
+
+task_to_grad_accum_step = {
+    "cola": 2,
+    "mnli": 16,
+    "mrpc": 2,
+    "qnli": 16,
+    "qqp":  4,
+    "rte":  8,
+    "sst2": 4,
+    "stsb": 4,
+    "wnli": 2,
 }
 
 def get_dataloader(subset, tokenizer, batch_size, split='train'):
@@ -160,10 +175,10 @@ class LtpTrainer:
         self.checkpoint_name = checkpoint_name
         self.ltp_lambda = ltp_lambda
         self.ltp_temperature = ltp_temperature
-        self.lr = 2e-5
-        if dataset == 'mnli':
-            print('LtpTrainer: MNLI LR 1e-6')
-            self.lr = 1e-6
+        self.lr = 2e-5 #from LTP github
+        # if dataset == 'mnli':
+        #     print('LtpTrainer: MNLI LR 1e-6')
+        #     self.lr = 1e-6
         self.weight_decay = 0
         self.dataset = dataset
         if batch_size is None or batch_size <= 0:
@@ -172,6 +187,7 @@ class LtpTrainer:
         self.device = device
         self.world_size = world_size
         self.epoch = 0
+        self.gradient_accumulate_steps = task_to_grad_accum_step[self.dataset]
 
         _, self.tokenizer = get_base_model(self.dataset, only_tokenizer=True)
 
@@ -349,6 +365,8 @@ class LtpTrainer:
         else:
             raise Exception()
         
+        loss_sum = 0
+        loss_count = 0
         for i, batch in enumerate(tqdm.tqdm(dataloader, desc='eval', position=self.tqdm_position)):
             if i > max_step: break
             step_count += 1
@@ -357,11 +375,14 @@ class LtpTrainer:
             #print(batch['attention_mask'].shape, torch.mean(torch.sum(batch['attention_mask'], dim=-1).float()).item())
             avg_length += torch.mean(torch.sum(batch['attention_mask'], dim=-1).float()).item() / batch['attention_mask'].shape[-1]
             labels = batch['labels']
-            del batch['labels']
+            #del batch['labels']
             
             with torch.no_grad(), torch.cuda.amp.autocast(enabled=amp):
                 outputs = model(**batch)
-            predictions = outputs[0]
+            loss = outputs[0]
+            loss_sum += loss.item()
+            loss_count += 1
+            predictions = outputs[1]
 
             if self.dataset != 'stsb': 
                 predictions = torch.argmax(predictions, dim=-1)
@@ -374,6 +395,7 @@ class LtpTrainer:
             print('avg occupy', avg_length / step_count)
         gc.collect()
         torch.cuda.empty_cache()
+        score['loss'] = loss_sum / loss_count
         return score
 
     def eval_sparse_model(self,
@@ -426,15 +448,16 @@ class LtpTrainer:
             with torch.cuda.amp.autocast():
                 output = self.sparse_bert(**batch)
                 loss = output.loss
-
-            self.scaler.scale(loss).backward()
             
-            self.scaler.unscale_(self.optimizer)
-            torch.nn.utils.clip_grad_norm_(self.sparse_bert.parameters(), 0.5)
+            self.scaler.scale(loss/self.gradient_accumulate_steps).backward()
 
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
-            self.optimizer.zero_grad()
+            if ((step+1) % self.gradient_accumulate_steps) == 0:
+                self.scaler.unscale_(self.optimizer)
+                torch.nn.utils.clip_grad_norm_(self.sparse_bert.parameters(), 0.5)
+
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+                self.optimizer.zero_grad()
 
             self.last_loss = loss.item()
             if print_log:

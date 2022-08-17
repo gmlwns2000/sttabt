@@ -1,5 +1,6 @@
 import argparse, json, itertools
 from matplotlib import pyplot as plt
+from main.concrete_glue_plot import GLUE_SUBSETS
 from utils.glue import get_score
 
 import trainer.ltp_trainer as ltp
@@ -28,9 +29,12 @@ def search_hparam_inner(device, tqdm_position, subset, batch_size, ltp_lambda, l
     trainer.main()
 
     ltp.sparse.benchmark_reset()
+    trainer.sparse_bert.module.bert.set_ltp_prune_token_soft_pruning(False)
     result = trainer.eval_sparse_model(show_message=False, split='valid')
     occupy = ltp.sparse.benchmark_get_average('ltp_occupy')
-    metric, metric_name = get_score(result)
+    #metric, metric_name = get_score(result)
+    metric = -result['loss']
+    metric_name = 'minus_loss' # therefore, larger is better :)
 
     return {
         'subset': subset,
@@ -103,23 +107,19 @@ def run_exp(subset, batch_size, lambdas, hparam):
         occupies.append(result['test_occupy'])
     return occupies, metrics
 
-def main():
+def main_subset(subset, batch_size):
     global temperatures, lambdas
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--subset', type=str, default='mrpc')
-    parser.add_argument('--batch-size', type=int, default=-1)
-    args = parser.parse_args()
-    subset = args.subset
+
     if subset in special_temperatures:
         temperatures = special_temperatures[subset]
     if subset in special_lambdas:
         lambdas = special_lambdas[subset]
     plot_name = f'saves_plot/ltp-glue-{subset}'
 
-    hparam, hparam_results = search_hparam(subset, args.batch_size)
+    hparam, hparam_results = search_hparam(subset, batch_size)
     print('Main: hparam results', hparam_results)
     print('Main: hparam', hparam)
-    max_test_occupies, max_test_metrics = run_exp(subset, args.batch_size, lambdas=lambdas, hparam=hparam)
+    max_test_occupies, max_test_metrics = run_exp(subset, batch_size, lambdas=lambdas, hparam=hparam)
 
     plt.style.use("seaborn")
     plt.clf()
@@ -137,6 +137,29 @@ def main():
             'hparam': hparam,
             'hparam_results': hparam_results,
         }, f, indent=2)
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--subset', type=str, default='mrpc')
+    parser.add_argument('--batch-size', type=int, default=-1)
+    args = parser.parse_args()
+    subset = args.subset
+
+    if subset in GLUE_SUBSETS:
+        main_subset(subset, args.batch_size)
+    else:
+        if subset.strip() == 'all':
+            subsets = GLUE_SUBSETS
+        else:
+            subsets = [s.strip() for s in subset.strip().split()]
+            if any([not s in GLUE_SUBSETS for s in subsets]):
+                print('Main: some subset is not GLUE', subsets)
+                return
+        
+        print('Main: Multiple subsets will be processed', subsets)
+
+        for subset in subsets:
+            main_subset(subset, args.batch_size)
 
 if __name__ == '__main__':
     import multiprocessing as mp
