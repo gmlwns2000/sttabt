@@ -22,8 +22,8 @@ LOG_FLOPS = 5
 
 CDF_FLOPS = 10
 
-TOPK_FLOPS = 25
-TOPK_FLOPS_LOG = 25
+TOPK_FLOPS = 35
+TOPK_FLOPS_LOG = 35
 
 class ModelConfig:
     def __init__(self,
@@ -198,6 +198,8 @@ def flops_sparse_approx_bert_model(config:ModelConfig):
     return approx_flops + sparse_flops + update_flops
 
 def human_readable(flops):
+    if flops < 0:
+        return f'-{human_readable(-flops)}'
     if flops >= 1e+15:
         return f'{flops / 1e+15:.1f} PFLOPs'
     elif flops >= 1e+12:
@@ -208,6 +210,8 @@ def human_readable(flops):
         return f'{flops / 1e+6:.1f} MFLOPs'
     elif flops >= 1e+3:
         return f'{flops / 1e+3:.1f} KFLOPs'
+    else:
+        return f'{flops:.1f} FLOPs'
 
 if __name__ == '__main__':
     import random
