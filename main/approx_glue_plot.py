@@ -28,7 +28,7 @@ sparse.set_update_input_mask_accumulate_indices(True)
 
 Glue = glue_base.GlueAttentionApproxTrainer
 
-plot_header = '[F4-PREWIKI.v2]'
+plot_header = '[F8-PREWIKI.v2]'
 result_name = None
 result_pkl = None
 def update_result_names():
@@ -37,7 +37,7 @@ def update_result_names():
     result_pkl = result_name + '.pickle'
 update_result_names()
 
-factor = 4
+factor = 8
 subsets = ["cola","mnli","mrpc","qnli","qqp","rte","sst2","stsb","wnli",]
 kss = [0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.625, 0.75]
 
