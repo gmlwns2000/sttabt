@@ -141,12 +141,23 @@ def plot():
         inds.append((SUBSET_TO_NAME[subset], 'MSE'))
         inds.append((SUBSET_TO_NAME[subset], 'KL Div.'))
     df.index = pd.MultiIndex.from_tuples(inds)
-    df = df.transpose()
-    df.to_latex('./saves_plot/table_approx_att_eval.tex', float_format='%.4f')
+    #df = df.transpose()
+    styler = df.style
+    styler.applymap_index(lambda v: "font-weight: bold;", axis="index")
+    styler.applymap_index(lambda v: "font-weight: bold;", axis="columns")
+    styler.format(na_rep='MISS', precision=4)
+    def highlight_min(s, props=''):
+        return np.where(s == np.nanmin(s.values), props, '')
+    styler.apply(highlight_min, props='font-weight: bold;', axis=1)
+    styler.to_latex('./saves_plot/table_approx_att_eval.tex', convert_css=True)
+    #df.to_latex('./saves_plot/table_approx_att_eval.tex', float_format='%.4f')
+    df.plot()
+    from matplotlib import pyplot as plt
+    plt.show()
     print(df)
 
 def main():
-    exam()
+    #exam()
     plot()
 
 if __name__ == '__main__':

@@ -1,13 +1,22 @@
-\begin{tabular}{llrrrrrrrrrrrrrrrrrr}
-\toprule
-          &   & \multicolumn{2}{l}{MNLI} & \multicolumn{2}{l}{QNLI} & \multicolumn{2}{l}{MRPC} & \multicolumn{2}{l}{CoLA} & \multicolumn{2}{l}{SST-2} & \multicolumn{2}{l}{QQP} & \multicolumn{2}{l}{WNLI} & \multicolumn{2}{l}{STSB} & \multicolumn{2}{l}{RTE} \\
-          &   &    MSE & KL Div. &    MSE & KL Div. &    MSE & KL Div. &    MSE & KL Div. &    MSE & KL Div. &    MSE & KL Div. &    MSE & KL Div. &    MSE & KL Div. &    MSE & KL Div. \\
-\midrule
-Random & 2 & 0.0087 &  1.7503 & 0.0052 &  1.8026 & 0.0052 &  1.9680 & 0.0339 &  1.0845 & 0.0167 &  1.4762 & 0.0099 &  1.5960 & 0.0070 &  1.5982 & 0.0097 &  1.5230 & 0.0048 &  1.9883 \\
-          & 4 & 0.0087 &  1.7520 & 0.0052 &  1.8078 & 0.0052 &  1.9751 & 0.0338 &  1.0810 & 0.0167 &  1.4744 & 0.0099 &  1.6020 & 0.0070 &  1.5977 & 0.0097 &  1.5266 & 0.0048 &  1.9881 \\
-Interpolate & 2 & 0.0086 &  1.7174 & 0.0052 &  1.7826 & 0.0052 &  1.9484 & 0.0337 &  1.0709 & 0.0166 &  1.4622 & 0.0099 &  1.5756 & 0.0070 &  1.5752 & 0.0096 &  1.4991 & 0.0048 &  1.9678 \\
-          & 4 & 0.0086 &  1.7097 & 0.0052 &  1.7750 & 0.0052 &  1.9406 & 0.0334 &  1.0629 & 0.0165 &  1.4528 & 0.0098 &  1.5679 & 0.0069 &  1.5688 & 0.0096 &  1.4915 & 0.0048 &  1.9593 \\
-Distilled & 4 & 0.0013 &  0.2393 & 0.0009 &  0.2666 & 0.0007 &  0.2248 & 0.0032 &  0.1223 & 0.0019 &  0.1899 & 0.0014 &  0.2269 & 0.0005 &  0.1375 & 0.0009 &  0.1561 & 0.0007 &  0.2533 \\
-          & 8 & 0.0018 &  0.3423 & 0.0012 &  0.3866 & 0.0011 &  0.3740 & 0.0042 &  0.1644 & 0.0025 &  0.2606 & 0.0020 &  0.3149 & 0.0009 &  0.2211 & 0.0012 &  0.2258 & 0.0010 &  0.3930 \\
-\bottomrule
+\begin{tabular}{llrrrrrr}
+ &  & \multicolumn{2}{r}{\bfseries Random} & \multicolumn{2}{r}{\bfseries Interpolate} & \multicolumn{2}{r}{\bfseries Distilled} \\
+ &  & \bfseries 2 & \bfseries 4 & \bfseries 2 & \bfseries 4 & \bfseries 4 & \bfseries 8 \\
+\multirow[c]{2}{*}{\bfseries MNLI} & \bfseries MSE & 0.0087 & 0.0087 & 0.0086 & 0.0086 & \bfseries 0.0013 & 0.0018 \\
+\bfseries  & \bfseries KL Div. & 1.7503 & 1.7520 & 1.7174 & 1.7097 & \bfseries 0.2393 & 0.3423 \\
+\multirow[c]{2}{*}{\bfseries QNLI} & \bfseries MSE & 0.0052 & 0.0052 & 0.0052 & 0.0052 & \bfseries 0.0009 & 0.0012 \\
+\bfseries  & \bfseries KL Div. & 1.8026 & 1.8078 & 1.7826 & 1.7750 & \bfseries 0.2666 & 0.3866 \\
+\multirow[c]{2}{*}{\bfseries MRPC} & \bfseries MSE & 0.0052 & 0.0052 & 0.0052 & 0.0052 & \bfseries 0.0007 & 0.0011 \\
+\bfseries  & \bfseries KL Div. & 1.9680 & 1.9751 & 1.9484 & 1.9406 & \bfseries 0.2248 & 0.3740 \\
+\multirow[c]{2}{*}{\bfseries CoLA} & \bfseries MSE & 0.0339 & 0.0338 & 0.0337 & 0.0334 & \bfseries 0.0032 & 0.0042 \\
+\bfseries  & \bfseries KL Div. & 1.0845 & 1.0810 & 1.0709 & 1.0629 & \bfseries 0.1223 & 0.1644 \\
+\multirow[c]{2}{*}{\bfseries SST-2} & \bfseries MSE & 0.0167 & 0.0167 & 0.0166 & 0.0165 & \bfseries 0.0019 & 0.0025 \\
+\bfseries  & \bfseries KL Div. & 1.4762 & 1.4744 & 1.4622 & 1.4528 & \bfseries 0.1899 & 0.2606 \\
+\multirow[c]{2}{*}{\bfseries QQP} & \bfseries MSE & 0.0099 & 0.0099 & 0.0099 & 0.0098 & \bfseries 0.0014 & 0.0020 \\
+\bfseries  & \bfseries KL Div. & 1.5960 & 1.6020 & 1.5756 & 1.5679 & \bfseries 0.2269 & 0.3149 \\
+\multirow[c]{2}{*}{\bfseries WNLI} & \bfseries MSE & 0.0070 & 0.0070 & 0.0070 & 0.0069 & \bfseries 0.0005 & 0.0009 \\
+\bfseries  & \bfseries KL Div. & 1.5982 & 1.5977 & 1.5752 & 1.5688 & \bfseries 0.1375 & 0.2211 \\
+\multirow[c]{2}{*}{\bfseries STSB} & \bfseries MSE & 0.0097 & 0.0097 & 0.0096 & 0.0096 & \bfseries 0.0009 & 0.0012 \\
+\bfseries  & \bfseries KL Div. & 1.5230 & 1.5266 & 1.4991 & 1.4915 & \bfseries 0.1561 & 0.2258 \\
+\multirow[c]{2}{*}{\bfseries RTE} & \bfseries MSE & 0.0048 & 0.0048 & 0.0048 & 0.0048 & \bfseries 0.0007 & 0.0010 \\
+\bfseries  & \bfseries KL Div. & 1.9883 & 1.9881 & 1.9678 & 1.9593 & \bfseries 0.2533 & 0.3930 \\
 \end{tabular}
