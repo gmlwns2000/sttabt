@@ -368,6 +368,11 @@ class VitApproxTrainer:
         
         for batch in pbar:
             batch = {k: batch[k].to(self.device, non_blocking=True) for k in batch.keys()}
+            if self.world_size != 1:
+                batch = {
+                    k: v[self.device*(self.batch_size//self.world_size):(self.device+1)*(self.batch_size//self.world_size)] 
+                    for k, v in batch.items()
+                }
             batch['output_attentions'] = True
             batch['output_hidden_states'] = True
             if 'labels' in batch: del batch['labels']
