@@ -278,11 +278,16 @@ def main():
             'cola': 0.85,
             'qqp': 0.4,
             'wnli': 0.2,
-            'stsb': 0.7,
-            'sst2': 0.5,
+            'stsb': 0.2,
+            'sst2': 0.3,
             'rte': 0.72,
         }
         ax.set_ylim(ymax - (ymax-ymin)*subset_to_ylim.get(subset, 0.7), ymax)
+        ymin, ymax = ax.get_ylim()
+        subset_to_ylim = {
+            'stsb': 0.95,
+        }
+        ax.set_ylim(ymin, ymin + (ymax-ymin)*subset_to_ylim.get(subset, 1.0))
         ax.grid(True)
         ax.set_xlabel(STR_AVERAGE_KEEP_TOKEN_RATIO)
         ax.set_ylabel(metric_display_name)

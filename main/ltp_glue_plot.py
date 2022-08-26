@@ -10,7 +10,7 @@ from utils.gpu_pool import GPUPool, print
 lambdas = [0.001, 0.01, 0.1, 1.0, 5.0, 25.0]
 temperatures = [1e-4, 2e-4, 5e-4, 1e-3, 2e-3]
 special_lambdas = {
-    'mnli': [1e-5, 1e-4, 1e-3, 1e-2]
+    'mnli': [1e-5, 1e-2, 1.0, 15.0, ]
 }
 special_temperatures = {
     'mnli': [2e-4, 1e-3], #mnli took way too long time to train... (about 2 weeks)
