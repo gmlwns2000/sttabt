@@ -95,6 +95,9 @@ class ExamplesToBatchTransform:
             if is_label:
                 ret[name] = torch.tensor(items)
             else: ret[name] = torch.stack(items, dim=0)
+        for key in ret.keys():
+            if isinstance(ret[key], torch.Tensor):
+                ret[key] = ret[key].numpy()
         return ret
 
 class ViTInputTransform:

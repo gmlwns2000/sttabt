@@ -57,7 +57,7 @@ class ProcessPool:
                 self.return_queue.put(ret)
 
     def start_fetch(self):
-        self.fetch_queue = queue.Queue()
+        self.fetch_queue = queue.Queue(maxsize=self.num_worker*3)
         self.thread = threading.Thread(target=self.fetch_main, daemon=True)
         self.thread.start()
 

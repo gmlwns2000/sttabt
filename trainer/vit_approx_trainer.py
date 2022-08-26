@@ -302,7 +302,6 @@ class VitApproxTrainer:
         sparse_cls_vit.load_state_dict(self.model.state_dict())
         sparse_cls_vit.vit = wrapped_bert
         sparse_cls_vit.to(self.device).eval()
-
         sparse.benchmark_reset()
         metric = self.eval_model_metric(sparse_cls_vit, show_message=show_message)
         occupy = sparse.benchmark_get_average(occupy_metric)
@@ -367,7 +366,7 @@ class VitApproxTrainer:
             pbar = tqdm.tqdm(pbar)
         
         for batch in pbar:
-            batch = {k: batch[k].to(self.device, non_blocking=True) for k in batch.keys()}
+            batch = {k: torch.tensor(batch[k]).to(self.device, non_blocking=True) for k in batch.keys()}
             if self.world_size != 1:
                 batch = {
                     k: v[self.device*(self.batch_size//self.world_size):(self.device+1)*(self.batch_size//self.world_size)] 
