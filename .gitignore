@@ -9,3 +9,4 @@ cache/
 dataset/squad2/*.json
 saves/
 cache
+pretrained/

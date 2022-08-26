@@ -115,12 +115,34 @@ class ViTInputTransform:
         from torchvision import transforms
         from torchvision.transforms import InterpolationMode
         if test:
-            self.transform = transforms.Compose([
-                transforms.Resize((resize_size if resize_size > 0 else image_size, )* 2, interpolation=InterpolationMode.BICUBIC),
-                transforms.CenterCrop(image_size),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=extractor.image_mean, std=extractor.image_std)
-            ])
+            # self.transform = transforms.Compose([
+            #     transforms.Resize((resize_size if resize_size > 0 else image_size, )* 2, interpolation=InterpolationMode.BICUBIC),
+            #     transforms.CenterCrop(image_size),
+            #     transforms.ToTensor(),
+            #     transforms.Normalize(mean=extractor.image_mean, std=extractor.image_std)
+            # ])
+            # warping (no cropping) when evaluated at 384 or larger
+            t = []
+            if image_size >= 384:  
+                t.append(
+                    transforms.Resize((crop_pct, crop_pct), 
+                                    interpolation=3), 
+                )
+                print(f"Warping {crop_pct} size input images...")
+            else:
+                crop_pct = None
+                if crop_pct is None:
+                    crop_pct = 224 / 256
+                size = int(image_size / crop_pct)
+                t.append(
+                    # to maintain same ratio w.r.t. 224 images
+                    transforms.Resize(size, interpolation=3),  
+                )
+                t.append(transforms.CenterCrop(image_size))
+
+            t.append(transforms.ToTensor())
+            t.append(transforms.Normalize(extractor.image_mean, extractor.image_std))
+            self.transform = transforms.Compose(t)
         else:
             self.transform = transforms.Compose([
                 transforms.RandomResizedCrop(image_size, scale=(0.3, 1), interpolation=InterpolationMode.BICUBIC), 
