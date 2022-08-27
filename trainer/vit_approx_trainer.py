@@ -250,7 +250,7 @@ class VitApproxTrainer:
 
         pbar = tqdm.tqdm(self.dataset.get_test_iter(), desc='eval')
         for batch in pbar:
-            batch = {k: batch[k].to(self.device, non_blocking=True) for k in batch.keys()}
+            batch = {k: torch.tensor(batch[k]).to(self.device, non_blocking=True) for k in batch.keys()}
             labels = batch['labels']
             del batch['labels']
 
@@ -317,7 +317,7 @@ class VitApproxTrainer:
         loss_sum = {'loss':0, 'loss_att':0, 'loss_hid':0, 'loss_emb':0, 'loss_pred':0, 'att_mse':0}
         count = 0
         for batch in pbar:
-            batch = {k: batch[k][self.device*math.ceil(self.batch_size / self.world_size):(self.device + 1)*math.ceil(self.batch_size / self.world_size)].to(self.device, non_blocking=True) for k in batch.keys()}
+            batch = {k: torch.tensor(batch[k])[self.device*math.ceil(self.batch_size / self.world_size):(self.device + 1)*math.ceil(self.batch_size / self.world_size)].to(self.device, non_blocking=True) for k in batch.keys()}
             batch['output_attentions'] = True
             batch['output_hidden_states'] = True
             if 'labels' in batch: del batch['labels']
