@@ -20,10 +20,12 @@ class ImagesHfDataset:
 
         self.data = load_dataset(name, split=split, cache_dir='./cache/datasets')
         if test_split == 'split':
+            print('ImagesHfDataset: split=train[:-10%] test_split=train[-10%:]')
             self.data = self.data.shuffle(seed=42).train_test_split(test_size=0.1)
             self.train_set = self.data['train']
             self.test_set = self.data['test']
         else:
+            print(f'ImagesHfDataset: split={name} test_split={test_split}')
             self.test_data = load_dataset(name, split=test_split, cache_dir='./cache/datasets')
             self.train_set = self.data
             self.test_set = self.test_data

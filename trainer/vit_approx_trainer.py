@@ -37,7 +37,7 @@ tasks_to_split = {
 }
 
 tasks_to_test_split = {
-    'base': 'split',
+    'base': 'val',
     'cifar100': 'test',
     'imagenet': 'val',
 }
@@ -136,6 +136,7 @@ class VitApproxTrainer:
         else: raise Exception()
 
         if self.subset == 'base':
+            print('VitApproxTrainer: base model', self.model_id_hf)
             return model_cls.from_pretrained(self.model_id_hf)
         elif self.subset in ['cifar100']:
             #trained from trainer.vit_trainer
@@ -146,7 +147,9 @@ class VitApproxTrainer:
                 label2id=self.dataset.label2id
             )
             assert self.model_id in ['vit-base', 'deit-base', 'deit-small']
-            state = torch.load(f'./saves/{self.model_id}-{self.subset}.pth', map_location='cpu')
+            state_path = f'./saves/{self.model_id}-{self.subset}.pth'
+            print('VitApproxTrainer: base model', state_path)
+            state = torch.load(state_path, map_location='cpu')
             base_model.load_state_dict(state['model'])
             del state
             return base_model
@@ -154,6 +157,7 @@ class VitApproxTrainer:
             #trained from huggingface models
             base_model_hf = finetuned_to_hf[self.subset][self.model_id]
             base_model = model_cls.from_pretrained(base_model_hf)
+            print('VitApproxTrainer: base model', base_model_hf)
             return base_model
         else:
             raise Exception()
@@ -217,7 +221,7 @@ class VitApproxTrainer:
             'subset':self.subset,
             'factor':self.factor,
         }, self.get_checkpoint_path())
-        print('VitTrainer: Checkpoint saved', self.get_checkpoint_path())
+        print('VitApproxTrainer: Checkpoint saved', self.get_checkpoint_path())
     
     def load(self, path=None):
         if path is None:
@@ -232,7 +236,7 @@ class VitApproxTrainer:
         if 'subset' in state and state['subset'] == self.subset:
             self.optimizer.load_state_dict(state['optimizer'])
             self.scaler.load_state_dict(state['scaler'])
-        print('VitTrainer: Checkpoint loaded', path, {
+        print('VitApproxTrainer: Checkpoint loaded', path, {
             'epoch': state['epoch'], 
             'epochs': state['epochs'],
             'subset': state['subset'],
@@ -246,7 +250,9 @@ class VitApproxTrainer:
         model.eval()
         from datasets import load_metric
 
-        metric = load_metric("accuracy")
+        #metric = load_metric("accuracy")
+        acc_sum = 0
+        acc_count = 0
 
         pbar = tqdm.tqdm(self.dataset.get_test_iter(), desc='eval')
         for batch in pbar:
@@ -254,11 +260,15 @@ class VitApproxTrainer:
             labels = batch['labels']
             del batch['labels']
 
-            with torch.no_grad(), torch.cuda.amp.autocast(enabled=self.amp_enable):
+            with torch.no_grad(), torch.cuda.amp.autocast(enabled=False):
                 output = model(**batch)
 
-            metric.add_batch(predictions=torch.argmax(output[0], dim=-1), references=labels)
-        score = metric.compute()
+            #metric.add_batch(predictions=torch.argmax(output[0], dim=-1), references=labels)
+            acc_sum += ((torch.argmax(output[0], dim=-1) == labels) * 1.0).mean().item()
+            acc_count += 1
+        #score = metric.compute()
+        score = {'accuracy': acc_sum / acc_count}
+
         if show_message: print(score)
         return score
     
