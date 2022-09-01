@@ -20,8 +20,8 @@ class ImagesHfDataset:
 
         self.data = load_dataset(name, split=split, cache_dir='./cache/datasets')
         if test_split == 'split':
-            print('ImagesHfDataset: split=train[:-10%] test_split=train[-10%:]')
-            self.data = self.data.shuffle(seed=42).train_test_split(test_size=0.1)
+            print('ImagesHfDataset: split=train[:-5%] test_split=train[-5%:], which is valid set')
+            self.data = self.data.shuffle(seed=42).train_test_split(test_size=0.05)
             self.train_set = self.data['train']
             self.test_set = self.data['test']
         else:

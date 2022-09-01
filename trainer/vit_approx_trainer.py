@@ -61,6 +61,11 @@ finetuned_to_hf = {
 
 from utils.load_state_dict_interpolated import load_state_dict_interpolated
 
+def get_timm_deit():
+    import timm
+    model = timm.create_model('deit_small_patch16_224', pretrained=True)
+    return model
+
 def get_vit(model):
     if hasattr(model, 'vit'):
         return model.vit
@@ -77,7 +82,9 @@ class VitApproxTrainer:
         batch_size = -1,
         device = 0,
         world_size = 1,
-        init_checkpoint=None,
+        init_checkpoint = None,
+        dataloader_lib = 'timm',
+        enable_valid = False,
     ):
         self.seed()
 
@@ -97,7 +104,18 @@ class VitApproxTrainer:
         self.world_size = world_size
         self.init_checkpoint = init_checkpoint
 
-        self.init_dataloader()
+        self.enable_valid = enable_valid
+        self.dataset = None
+        self.dataloader_lib = dataloader_lib
+        
+        self.test_split = "split" if enable_valid else None
+        if self.dataloader_lib == 'hf':
+            self.init_dataloader(test_split=self.test_split)
+        elif self.dataloader_lib == 'timm':
+            assert self.subset in ['base', 'imagenet']
+            self.init_dataloader_timm(test_split=self.test_split)
+        else: 
+            raise Exception('unknown dataloader lib', dataloader_lib)
         
         self.reset_train()
 
@@ -115,7 +133,10 @@ class VitApproxTrainer:
         torch.backends.cudnn.benchmark = False
         torch.backends.cudnn.deterministic = True
 
-    def init_dataloader(self):
+    def init_dataloader(self, test_split=None):
+        if self.dataset is not None:
+            self.dataset.dispose()
+        
         self.extractor = transformers.AutoFeatureExtractor.from_pretrained(self.model_id_hf)
         self.dataset = ImagesHfDataset(
             ExamplesToBatchTransform(ViTInputTransform(self.extractor)),
@@ -123,10 +144,163 @@ class VitApproxTrainer:
             batch_size=self.batch_size,
             name=tasks_to_dataset[self.subset],
             split=tasks_to_split[self.subset],
-            test_split=tasks_to_test_split[self.subset],
-            num_workers_test=8,
-            num_workers_train=8,
+            test_split=tasks_to_test_split[self.subset] if test_split is None else test_split,
+            num_workers_test=1,
+            num_workers_train=1,
         )
+    
+    def init_dataloader_timm(self, test_split=None):
+        #dispose previous
+
+        from timm.data import create_dataset, create_loader, resolve_data_config, Mixup, FastCollateMixup, AugMixDataset
+        import timm
+        assert self.model_id == 'deit-small'
+        data_dir = '/d1/dataset/ILSVRC2012/'
+        dataset_name = 'imagenet'
+        arg_train_split = 'train'
+        arg_val_split = 'validation'
+        arg_prefetcher = True
+        arg_pin_mem = False
+        arg_nworker_train = 8
+        arg_nworker_test = 8
+        arg_distributed = self.world_size > 1
+
+        model_id = 'deit_small_patch16_224'
+        print(f"VitApproxTrainer: timm dataloader of ({model_id}) b{self.batch_size}")
+        model = timm.create_model(model_id, pretrained=True)
+
+        data_config = resolve_data_config({}, model=model, verbose=ddp.printable())
+
+        train_interpolation = 'random'
+        if False or not train_interpolation:
+            train_interpolation = data_config['interpolation']
+
+        # create the train and eval datasets
+        if test_split == 'split':
+            print("VitApproxTrainer: Using valid split from train set for test set.")
+            dataset_train = create_dataset(
+                dataset_name, root=data_dir, split=arg_train_split, is_training=True,
+                #class_map=args.class_map,
+                #download=args.dataset_download,
+                batch_size=self.batch_size,
+                repeats=self.epochs,
+            )
+            #data = dataset_train.shuffle(seed=42).train_test_split(test_size=0.05)
+            # dataset_train = data['train']
+            # dataset_eval = data['test']
+            
+            #eval_size = int(len(dataset_train) * 0.05)
+            # dataset_train, dataset_eval = torch.utils.data.random_split(
+            #     dataset_train, [len(dataset_train) - eval_size, eval_size]
+            # )
+            def train_val_dataset(dataset, val_split=0.05):
+                # https://discuss.pytorch.org/t/how-to-split-dataset-into-test-and-validation-sets/33987/5
+                #from torch.utils.data import Subset
+                from torch.utils.data import Dataset
+                class Subset(Dataset):
+                    r"""
+                    Subset of a dataset at specified indices.
+
+                    Args:
+                        dataset (Dataset): The whole Dataset
+                        indices (sequence): Indices in the whole set selected for subset
+                    """
+
+                    def __init__(self, dataset, indices) -> None:
+                        self.dataset = dataset
+                        self.indices = indices
+
+                    def __getitem__(self, idx):
+                        ret = None
+                        if isinstance(idx, list):
+                            ret = self.dataset[[self.indices[i] for i in idx]]
+                        else:
+                            ret = self.dataset[self.indices[idx]]
+                        img, target = ret
+                        if self.transform is not None:
+                            img = self.transform(img)
+                        return img, target
+
+                    def __len__(self):
+                        return len(self.indices)
+
+                from sklearn.model_selection import train_test_split
+                train_idx, val_idx = train_test_split(list(range(len(dataset))), test_size=val_split)
+
+                datasets = {}
+                
+                datasets['train'] = Subset(dataset, train_idx)
+                datasets['val'] = Subset(dataset, val_idx)
+                # datasets['train'].__getitem__ == MethodType(__getitem__, datasets['train'])
+                # datasets['val'].__getitem__ == MethodType(__getitem__, datasets['val'])
+                return datasets
+            ds = train_val_dataset(dataset_train)
+            dataset_train = ds['train']
+            dataset_eval = ds['val']
+        else:
+            dataset_train = create_dataset(
+                dataset_name, root=data_dir, split=arg_train_split, is_training=True,
+                #class_map=args.class_map,
+                #download=args.dataset_download,
+                batch_size=self.batch_size,
+                repeats=self.epochs,
+            )
+            dataset_eval = create_dataset(
+                dataset_name, root=data_dir, split=arg_val_split, is_training=False,
+                #class_map=args.class_map,
+                #download=args.dataset_download,
+                batch_size=self.batch_size
+            )
+
+        collate_fn = None
+
+        loader_train = create_loader(
+            dataset_train,
+            input_size=data_config['input_size'],
+            batch_size=self.batch_size,
+            is_training=True,
+            use_prefetcher=arg_prefetcher,
+            no_aug=False,
+            re_prob=0.,
+            re_mode='pixel',
+            re_count=1,
+            re_split=False,
+            scale=[0.08, 1.0],
+            ratio=[3./4., 4./3.],
+            hflip=0.5,
+            vflip=0.,
+            color_jitter=0.4,
+            auto_augment=None,
+            num_aug_repeats=0,
+            num_aug_splits=0,
+            interpolation=train_interpolation,
+            mean=data_config['mean'],
+            std=data_config['std'],
+            num_workers=arg_nworker_train,
+            distributed=arg_distributed,
+            collate_fn=collate_fn,
+            pin_memory=arg_pin_mem,
+            use_multi_epochs_loader=False,
+            worker_seeding='all',
+        )
+
+        loader_eval = create_loader(
+            dataset_eval,
+            input_size=data_config['input_size'],
+            batch_size=self.batch_size,
+            is_training=False,
+            use_prefetcher=arg_prefetcher,
+            interpolation=data_config['interpolation'],
+            mean=data_config['mean'],
+            std=data_config['std'],
+            num_workers=arg_nworker_test,
+            distributed=arg_distributed,
+            crop_pct=data_config['crop_pct'],
+            pin_memory=arg_pin_mem,
+        )
+
+        self.timm_data_train = loader_train
+        self.timm_data_test = loader_eval
 
     def get_base_model(self) -> "transformers.ViTForImageClassification":
         if self.model_id in ['vit-base', 'deit-base', 'deit-small']:
@@ -199,7 +373,11 @@ class VitApproxTrainer:
         return optim.AdamW(params, **kwargs)
     
     def set_batch_size(self, v):
-        self.dataset.batch_size = self.batch_size = v
+        if self.batch_size != v:
+            self.batch_size = v
+            if self.dataset is not None:
+                self.dataset.batch_size = v
+            self.init_dataloader_timm(test_split = self.test_split)
 
 # IO
 
@@ -246,7 +424,7 @@ class VitApproxTrainer:
 
 # Eval Impl
 
-    def eval_model_metric(self, model, show_message=False):
+    def eval_model_metric(self, model, show_message=False, is_timm=False):
         model.eval()
         from datasets import load_metric
 
@@ -254,14 +432,27 @@ class VitApproxTrainer:
         acc_sum = 0
         acc_count = 0
 
-        pbar = tqdm.tqdm(self.dataset.get_test_iter(), desc='eval')
+        if self.dataloader_lib == 'hf':
+            pbar = tqdm.tqdm(self.dataset.get_test_iter(), desc='eval')
+        elif self.dataloader_lib == 'timm':
+            pbar = tqdm.tqdm(self.timm_data_test, desc='eval')
+        else: raise Exception('unknown loader lib')
+
         for batch in pbar:
-            batch = {k: torch.tensor(batch[k]).to(self.device, non_blocking=True) for k in batch.keys()}
+            if self.dataloader_lib == 'hf':
+                batch = {k: torch.tensor(batch[k]).to(self.device, non_blocking=True) for k in batch.keys()}
+            elif self.dataloader_lib == 'timm':
+                batch = {'pixel_values': batch[0], 'labels': batch[1]} #timm compatibility
+            else: raise Exception('unknown loader lib')
+            
             labels = batch['labels']
             del batch['labels']
 
             with torch.no_grad(), torch.cuda.amp.autocast(enabled=False):
-                output = model(**batch)
+                if is_timm:
+                    output = (model(batch['pixel_values']),)
+                else:
+                    output = model(**batch)
 
             #metric.add_batch(predictions=torch.argmax(output[0], dim=-1), references=labels)
             acc_sum += ((torch.argmax(output[0], dim=-1) == labels) * 1.0).mean().item()
@@ -274,6 +465,10 @@ class VitApproxTrainer:
     
     def eval_model_metric_base(self, show_message=False):
         return self.eval_model_metric(self.model, show_message=show_message)
+        # print('deit-small') #timm test
+        # model = get_timm_deit()
+        # model.to(self.device).eval()
+        # return self.eval_model_metric(model, show_message=show_message, is_timm=True)
 
     def eval_model_metric_approx(self, show_message=False):
         return self.eval_model_metric(self.approx_bert, show_message=show_message)
@@ -323,11 +518,21 @@ class VitApproxTrainer:
         self.model.eval()
         self.approx_bert.eval()
 
-        pbar = tqdm.tqdm(self.dataset.get_test_iter())
+        if self.dataloader_lib == 'hf':
+            pbar = tqdm.tqdm(self.dataset.get_test_iter(), desc='eval')
+        elif self.dataloader_lib == 'timm':
+            pbar = tqdm.tqdm(self.timm_data_test, desc='eval')
+        else: raise Exception('unknown loader lib')
+
         loss_sum = {'loss':0, 'loss_att':0, 'loss_hid':0, 'loss_emb':0, 'loss_pred':0, 'att_mse':0}
         count = 0
         for batch in pbar:
-            batch = {k: torch.tensor(batch[k])[self.device*math.ceil(self.batch_size / self.world_size):(self.device + 1)*math.ceil(self.batch_size / self.world_size)].to(self.device, non_blocking=True) for k in batch.keys()}
+            if self.dataloader_lib == 'hf':
+                batch = {k: torch.tensor(batch[k])[self.device*math.ceil(self.batch_size / self.world_size):(self.device + 1)*math.ceil(self.batch_size / self.world_size)].to(self.device, non_blocking=True) for k in batch.keys()}
+            elif self.dataloader_lib == 'timm':
+                batch = {'pixel_values': batch[0], 'labels': batch[1]} #timm compatibility
+            else: raise Exception('unknown loader lib')
+            
             batch['output_attentions'] = True
             batch['output_hidden_states'] = True
             if 'labels' in batch: del batch['labels']
@@ -371,17 +576,26 @@ class VitApproxTrainer:
         self.model.eval()
         self.approx_bert.train()
 
-        pbar = self.dataset.get_train_iter()
+        if self.dataloader_lib == 'hf':
+            pbar = self.dataset.get_train_iter()
+        elif self.dataloader_lib == 'timm':
+            pbar = self.timm_data_test
+        else: raise Exception('unknown loader lib')
+        
         if ddp.printable():
             pbar = tqdm.tqdm(pbar)
         
         for batch in pbar:
-            batch = {k: torch.tensor(batch[k]).to(self.device, non_blocking=True) for k in batch.keys()}
-            if self.world_size != 1:
-                batch = {
-                    k: v[self.device*(self.batch_size//self.world_size):(self.device+1)*(self.batch_size//self.world_size)] 
-                    for k, v in batch.items()
-                }
+            if self.dataloader_lib == 'hf':
+                batch = {k: torch.tensor(batch[k]).to(self.device, non_blocking=True) for k in batch.keys()}
+                if self.world_size != 1:
+                    batch = {
+                        k: v[self.device*(self.batch_size//self.world_size):(self.device+1)*(self.batch_size//self.world_size)] 
+                        for k, v in batch.items()
+                    }
+            elif self.dataloader_lib == 'timm':
+                batch = {'pixel_values': batch[0], 'labels': batch[1]} #timm compatibility
+            else: raise Exception('unknown loader lib')
             batch['output_attentions'] = True
             batch['output_hidden_states'] = True
             if 'labels' in batch: del batch['labels']
@@ -429,7 +643,10 @@ class VitApproxTrainer:
         self.dispose()
     
     def main_eval(self):
-        self.load()
+        try:
+            self.load()
+        except:
+            print('VitApproxTrainer: Trained checkpoint load failed!!!')
         batch_size = self.batch_size
         metric_baseline = self.eval_model_metric_base()
         print('baseline', metric_baseline)
@@ -442,12 +659,12 @@ class VitApproxTrainer:
             ksx = [(1-x/10.0)*(2-2*target_ks)+(2*target_ks-1) for x in range(12)]
         metric_forward = self.eval_model_metric_sparse(ks=ksx, mode='forward')
         print('forward', metric_forward)
-        self.dataset.batch_size = self.batch_size = 1
+        self.set_batch_size(1)
         metric_sparse = self.eval_model_metric_sparse(ks=0.25, mode='sparse')
-        print('forward', metric_sparse)
+        print('sparse', metric_sparse)
         metric_absatt = self.eval_model_metric_sparse(ks=0.25, mode='absatt')
-        print('forward', metric_absatt)
-        self.dataset.batch_size = self.batch_size = batch_size
+        print('absatt', metric_absatt)
+        self.set_batch_size(batch_size)
 
         self.dispose()
     

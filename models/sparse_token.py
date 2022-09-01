@@ -2255,12 +2255,13 @@ class ApproxSparseBertModel(nn.Module):
         return output
 
 class ApproxSparseBertForSequenceClassification(BertPreTrainedModel):
-    def __init__(self, config, approx_bert):
+    def __init__(self, config, approx_bert, arch='bert'):
         super().__init__(config)
         self.num_labels = config.num_labels
         self.config = config
-
-        self.bert = SparseBertModel(config)
+        self.arch = arch
+        
+        self.bert = SparseBertModel(config, arch=arch)
         classifier_dropout = (
             config.classifier_dropout if config.classifier_dropout is not None else config.hidden_dropout_prob
         )
