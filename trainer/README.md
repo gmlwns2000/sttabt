@@ -22,6 +22,11 @@ This script contains `GlueAttentionApproxTrainer`, and various training hyperpar
 - Usage
 ```sh
 # from root of repository
+
+# for train bert, you should approx bert before train subsets.
+python -m trainer.glue_base --subset bert --factor 4
+
+# for train glue subset
 python -m trainer.glue_base --subset mrpc --factor 4
 ```
 
