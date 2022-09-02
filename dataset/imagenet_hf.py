@@ -2,8 +2,9 @@ import os
 import datasets
 from datasets import ImageClassification
 from dataset.imagenet_labels import IMAGENET2012_CLASSES
+from utils import env_vars
 
-PATH = '/d1/dataset/ILSVRC2012'
+PATH = env_vars.get_imagenet_root()
 TRAIN_TXT = 'ILSVRC2012_train.txt'
 TEST_TXT = 'ILSVRC2012_test.txt'
 

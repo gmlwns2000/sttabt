@@ -33,11 +33,11 @@ def spawn(entry, args=(), n_gpus=None, join=True):
     n_gpus = min(n_gpus, torch.cuda.device_count())
     port = random.randint(32000, 37000)
     if n_gpus == 1:
-        print(f'No need to DDP, using single process')
+        print(f'DDP: No need to DDP, using single process')
         ddp_disabled = True
         entry(0, 1, port, *args)
     elif n_gpus > 1:
-        print(f'Setup DDP', n_gpus)
+        print(f'DDP: Setup DDP', n_gpus)
         mp.spawn(entry,
             args=(n_gpus, port,)+tuple(args),
             nprocs=n_gpus,

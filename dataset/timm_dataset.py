@@ -1,7 +1,8 @@
 import tqdm, torch
 from thrid_party.DynamicViT.datasets import build_dataset
+from utils import env_vars
 
-IMNET_PATH = '/d1/dataset/ILSVRC2012/'
+IMNET_PATH = env_vars.get_imagenet_root()
 
 def build_dataloader(is_train=True):
     args = object()

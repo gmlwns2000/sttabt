@@ -3,12 +3,15 @@ from matplotlib import pyplot as plt
 plt.style.use("seaborn")
 from trainer.vit_approx_trainer import VitApproxTrainer
 
-subsets = ['cifar100']
+model = 'deit-small'
+subsets = ['base']
 kxs = [0.05, 0.1, 0.2, 0.4, 0.8]
 EXPORT_NAME = './saves_plot/vit-approx'
 
 def exam_subset(subset, factor, kxs):
-    trainer = VitApproxTrainer(subset=subset, factor=factor)
+    trainer = VitApproxTrainer(
+        subset=subset, factor=factor, model=model,
+    )
     trainer.load()
 
     batch_size = trainer.batch_size
@@ -55,6 +58,7 @@ def exam_subset(subset, factor, kxs):
         'factor': trainer.factor,
         'kxs': kxs,
         'metric_name': metric_name,
+        'model': trainer.model_id,
 
         'metric_baseline': metric_baseline[metric_name],
 

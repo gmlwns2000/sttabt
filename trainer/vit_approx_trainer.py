@@ -10,7 +10,7 @@ from dataset.images_hf import ImagesHfDataset, ExamplesToBatchTransform, ViTInpu
 
 import models.sparse_token as sparse
 
-from utils import ddp
+from utils import ddp, env_vars
 
 tasks_to_epoch = {
     'base': 30,
@@ -155,7 +155,7 @@ class VitApproxTrainer:
         from timm.data import create_dataset, create_loader, resolve_data_config, Mixup, FastCollateMixup, AugMixDataset
         import timm
         assert self.model_id == 'deit-small'
-        data_dir = '/d1/dataset/ILSVRC2012/'
+        data_dir = env_vars.get_imagenet_root()
         dataset_name = 'imagenet'
         arg_train_split = 'train'
         arg_val_split = 'validation'

@@ -1,4 +1,4 @@
-import gc
+import gc, json
 import math
 import random
 import torch
@@ -41,6 +41,7 @@ class VitConcreteTrainer:
         enable_valid = False,
         epochs = None,
         init_p_logit = 0.0,
+        json_postfix = None,
     ):
         self.device = device
         if batch_size < 0:
@@ -50,6 +51,7 @@ class VitConcreteTrainer:
         self.factor = factor
         self.world_size = world_size
         self.model_id = model
+        self.json_postfix = json_postfix
 
         self.enable_valid = enable_valid
         self.lr = 1e-5
@@ -159,7 +161,7 @@ class VitConcreteTrainer:
 
 # eval function
 
-    def eval_concrete(self, show_message=True):
+    def eval_concrete(self, show_message=True, tqdm_prefix=''):
         from datasets import load_metric
 
         # check average loss
@@ -172,7 +174,9 @@ class VitConcreteTrainer:
         loss_count = 0
         metric = load_metric("accuracy")
         sparse.benchmark_reset()
-        for i, batch in enumerate(tqdm.tqdm(self.approx_trainer.timm_data_test, desc=f'{self.tqdm_prefix}eval', position=self.tqdm_position)):
+        for i, batch in enumerate(tqdm.tqdm(self.approx_trainer.timm_data_test, desc=f'{self.tqdm_prefix}{tqdm_prefix}eval', position=self.tqdm_position)):
+            if i > 50: break
+            
             with torch.no_grad(), torch.cuda.amp.autocast(enabled = False):
                 #batch = {k: v.to(self.device, non_blocking=True) for k, v in batch.items()}
                 batch = {'pixel_values': batch[0], 'labels': batch[1]} #timm compatibility
@@ -197,15 +201,39 @@ class VitConcreteTrainer:
 # train function
 
     def train_eval(self):
-        print('- soft prune')
         self.set_concrete_hard_threshold(None)
-        self.eval_concrete()
+        soft_result = self.eval_concrete(tqdm_prefix = 'soft prune ')
         
-        print('- hard prune')
         self.set_concrete_hard_threshold(0.5)
-        self.eval_concrete()
+        hard_result = self.eval_concrete(tqdm_prefix = 'hard prune ')
 
         self.set_concrete_hard_threshold(None)
+
+        json_path = f'./saves_plot/vit-concrete-eval{("-"+self.json_postfix) if self.json_postfix is not None else ""}.json'
+        with open(json_path, 'w') as f:
+            log('Json dumped', json_path)
+            json.dump({
+                'epoch': self.epoch,
+                'epochs': self.epochs,
+                'batch_size': self.batch_size,
+                'world_size': self.world_size,
+                'dataset': self.approx_trainer.subset,
+                'init_p_logit': self.init_p_logit,
+                'lr': self.lr,
+                'weight_decay': self.weight_decay,
+                'enable_valid': self.enable_valid,
+
+                'soft_result': soft_result,
+                'hard_result': hard_result,
+
+                'previous_results': self.train_eval_previous_results,
+            }, f, indent=2)
+            self.train_eval_previous_results.append({
+                'epoch': self.epoch,
+                'train_mask_method': self.train_mask_method,
+                'soft_result': soft_result,
+                'hard_result': hard_result,
+            })
 
     def train_epoch(self):
         sparse.benchmark_concrete_occupy(False)
@@ -214,6 +242,8 @@ class VitConcreteTrainer:
             pbar = tqdm.tqdm(pbar, position = self.tqdm_position)
         
         for istep, batch in enumerate(pbar):
+            if istep > 200: break
+
             batch = {'pixel_values': batch[0], 'labels': batch[1]} #timm compatibility
             batch['output_attentions'] = True
             batch['output_hidden_states'] = True
@@ -230,26 +260,33 @@ class VitConcreteTrainer:
             self.last_loss = loss.item()
 
             if ddp.printable():
-                pbar.set_description(f"{self.tqdm_prefix}[{self.epoch+1}/{self.epochs}] L:{self.last_loss:.5f}")
+                pbar.set_description(f"{self.tqdm_prefix}[{self.epoch+1}/{self.epochs}, {self.train_mask_method}] L:{self.last_loss:.5f}")
             
             self.steps += 1
 
     def main(self):
+        self.train_mask_method = 'soft'
+        self.train_eval_previous_results = []
+
+        #before train
+        self.epoch = -1
         if ddp.printable() and self.enable_checkpointing:
             self.train_eval()
         if self.world_size > 1:
             ddp.dist.barrier()
         
+        #after train
         for epoch in range(self.epochs):
             self.epoch = epoch
             gc.collect()
             torch.cuda.empty_cache()
         
             if epoch >= min(self.epochs - 1, (self.epochs - 1) * 0.8):
-                if self.enable_checkpointing: log('train hard prune')
                 self.set_concrete_hard_threshold(0.5)
+                self.train_mask_method = 'hard'
             else:
                 self.set_concrete_hard_threshold(None)
+                self.train_mask_method = 'soft'
 
             self.train_epoch()
 
@@ -279,9 +316,10 @@ def main_ddp(rank, world_size, ddp_port, args):
         device=rank,
         world_size=world_size,
         init_checkpoint=None,
-        enable_valid=False,
+        enable_valid=args.enable_valid,
         epochs=args.epochs,
         init_p_logit=args.p_logit,
+        json_postfix=args.json_postfix,
     )
     trainer.main()
 
@@ -302,8 +340,10 @@ if  __name__ == '__main__':
     parser.add_argument('--epochs', type=int, default=None)
     parser.add_argument('--p-logit', type=float, default=-0.5)
     parser.add_argument('--n-gpus', type=int, default=1)
+    parser.add_argument('--enable-valid', action='store_true', default=False)
+    parser.add_argument('--json-postfix', type=str, default=None)
 
     args = parser.parse_args()
-    print(args)
+    log('given args', args)
 
     main(args)
