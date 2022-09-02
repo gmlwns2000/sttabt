@@ -161,7 +161,7 @@ class VitApproxTrainer:
         arg_val_split = 'validation'
         arg_prefetcher = True
         arg_pin_mem = False
-        arg_nworker_train = 8
+        arg_nworker_train = 12
         arg_nworker_test = 8
         arg_distributed = self.world_size > 1
 
@@ -294,7 +294,7 @@ class VitApproxTrainer:
             mean=data_config['mean'],
             std=data_config['std'],
             num_workers=arg_nworker_test,
-            distributed=arg_distributed,
+            distributed=False,
             crop_pct=data_config['crop_pct'],
             pin_memory=arg_pin_mem,
         )
@@ -669,7 +669,8 @@ class VitApproxTrainer:
         self.dispose()
     
     def dispose(self):
-        self.dataset.dispose()
+        if self.dataset is not None:
+            self.dataset.dispose()
 
 def main_ddp(rank, world_size, ddp_port, args):
     ddp.setup(rank, world_size, ddp_port)
@@ -699,7 +700,7 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--subset', type=str, default='base')
-    parser.add_argument('--model', type=str, default='deit-base')
+    parser.add_argument('--model', type=str, default='deit-small')
     parser.add_argument('--factor', type=int, default=4)
     parser.add_argument('--init-checkpoint', type=str, default=None)
     parser.add_argument('--batch-size', type=int, default=-1)

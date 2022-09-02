@@ -14,10 +14,22 @@ import models.sparse_token as sparse
 from trainer import vit_approx_trainer as vit_approx
 from utils import ddp
 
+tasks_to_epoch = {
+    'base': 30,
+    'cifar100': 20,
+    'imagenet': 30,
+}
+
+tasks_to_batch_size = {
+    'vit-base': 16,
+    'deit-base': 16,
+    'deit-small': 32,
+}
+
 def log(*args):
     print("VitConcreteTrainer:", *args)
 
-class VitApproxTrainer:
+class VitConcreteTrainer:
     def __init__(self,
         subset = 'base',
         model = 'deit-small',
@@ -27,6 +39,8 @@ class VitApproxTrainer:
         world_size = 1,
         init_checkpoint=None,
         enable_valid = False,
+        epochs = None,
+        init_p_logit = 0.0,
     ):
         self.device = device
         if batch_size < 0:
@@ -40,14 +54,15 @@ class VitApproxTrainer:
         self.enable_valid = enable_valid
         self.lr = 1e-5
         self.weight_decay = 5e-2
-        self.init_p_logit = -0.5
-        self.epochs = 30
+        self.init_p_logit = init_p_logit
+        self.epochs = tasks_to_epoch[subset] if epochs is None else epochs
+        self.batch_size = tasks_to_batch_size[model] if batch_size <= 0 else batch_size
 
         self.approx_trainer = vit_approx.VitApproxTrainer(
             subset = subset,
             model = model,
             factor = factor,
-            batch_size = batch_size,
+            batch_size = self.batch_size,
             device = device,
             world_size = world_size,
             init_checkpoint = init_checkpoint,
@@ -57,39 +72,45 @@ class VitApproxTrainer:
         assert self.approx_trainer.dataloader_lib == 'timm'
         try:
             self.approx_trainer.load()
-        except:
+        except Exception as ex:
+            log(ex)
             log("Failed to load attention approximation!")
         
         self.init_concrete()
         
         self.init_optim()
+
+        self.tqdm_position = 0
+        self.tqdm_prefix = ''
+        self.enable_checkpointing = True
     
     def init_concrete(self):
         self.concrete_model = sparse.ApproxSparseBertForSequenceClassification(
             self.approx_trainer.model.config,
             self.approx_trainer.approx_bert.module,
-            arch = 'vit'
+            arch = 'vit',
+            add_pooling_layer=False,
         )
         
         try:
             self.concrete_model.bert.load_state_dict(
-                vit_approx.get_vit(self.approx_trainer.model),
-                strict=False,
+                vit_approx.get_vit(self.approx_trainer.model).state_dict(),
+                strict=True,
             )
         except Exception as ex:
             log('load vit', ex)
         
         try:
             self.concrete_model.classifier.load_state_dict(
-                self.approx_trainer.model.classifier,
-                strict=False,
+                self.approx_trainer.model.classifier.state_dict(),
+                strict=True,
             )
-        except:
+        except Exception as ex:
             log('load classifier', ex)
         
         self.concrete_model.to(self.device).train()
         self.concrete_model.use_concrete_masking = True
-        self.concrete_model = ddp.wrap_model(self.concrete_model, find_unused_paramters=False)
+        self.concrete_model = ddp.wrap_model(self.concrete_model, find_unused_paramters=True)
 
         self.set_concrete_init_p_logit(self.init_p_logit)
         self.set_concrete_hard_threshold(None)
@@ -101,7 +122,13 @@ class VitApproxTrainer:
         self.concrete_model.module.bert.set_concrete_hard_threshold(v)
     
     def init_optim(self):
-        pass
+        self.steps = 0
+        self.epoch = 0
+        self.last_metric_score = None
+        self.last_loss = None
+
+        self.optimizer = self.get_optimizer(self.concrete_model)
+        self.scaler = torch.cuda.amp.GradScaler(enabled=False)
 
     def get_optimizer(self, model):
         param_optimizer = list(model.named_parameters())
@@ -109,7 +136,7 @@ class VitApproxTrainer:
         high_lr = ['p_logit']
         params = [
             {'params': [p for n, p in param_optimizer if (not any(nd in n for nd in no_decay)) and (not any(nd in n for nd in high_lr))], 'weight_decay': self.weight_decay},
-            {'params': [p for n, p in param_optimizer if (not any(nd in n for nd in no_decay)) and (any(nd in n for nd in high_lr))], 'lr':self.lr * 10, 'weight_decay': 0},
+            {'params': [p for n, p in param_optimizer if (not any(nd in n for nd in no_decay)) and (any(nd in n for nd in high_lr))], 'lr':self.lr * 1.0, 'weight_decay': 0},
             {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
         ]
         #print(params[1])
@@ -132,66 +159,151 @@ class VitApproxTrainer:
 
 # eval function
 
-    def eval_concrete(self):
+    def eval_concrete(self, show_message=True):
+        from datasets import load_metric
+
         # check average loss
         sparse.benchmark_concrete_occupy(True)
-        loss_sum = 0
-        loss_count = 0
         self.concrete_model.eval()
         ddp_model = self.concrete_model
         self.concrete_model = ddp_model.module
-        for i, batch in enumerate(self.test_dataloader):
-            if i > 100: break
-            
+
+        loss_sum = 0
+        loss_count = 0
+        metric = load_metric("accuracy")
+        sparse.benchmark_reset()
+        for i, batch in enumerate(tqdm.tqdm(self.approx_trainer.timm_data_test, desc=f'{self.tqdm_prefix}eval', position=self.tqdm_position)):
             with torch.no_grad(), torch.cuda.amp.autocast(enabled = False):
-                batch = {k: v.to(self.device, non_blocking=True) for k, v in batch.items()}
+                #batch = {k: v.to(self.device, non_blocking=True) for k, v in batch.items()}
+                batch = {'pixel_values': batch[0], 'labels': batch[1]} #timm compatibility
                 batch['output_attentions'] = True
-                loss = self.concrete_model(**batch).loss
+                output = self.concrete_model(**batch)
+                #output = self.approx_trainer.model(**batch)
+                loss = output.loss
+            metric.add_batch(predictions=torch.argmax(output[1], dim=-1), references=batch['labels'])
             
             loss_sum += loss.item()
             loss_count += 1
-        valid_loss = loss_sum / loss_count
-        print('valid loss:', valid_loss)
-
-        # check accuracy
-        sparse.benchmark_reset()
-        result = self.eval_sparse_model(show_message=False, max_step=100)
-        est_k = sparse.benchmark_get_average('concrete_occupy')
-        # print('concrete_occupy', est_k)
-        # print('evaluate sparse net. score:', result)
+        score = metric.compute()
+        score['valid_loss'] = loss_sum / loss_count
+        score['occupy'] = sparse.benchmark_get_average('concrete_occupy')
+        if show_message: log('eval score:', score)
 
         self.concrete_model = ddp_model
         self.concrete_model.train()
 
+        return score
+
 # train function
 
     def train_eval(self):
-        pass
+        print('- soft prune')
+        self.set_concrete_hard_threshold(None)
+        self.eval_concrete()
+        
+        print('- hard prune')
+        self.set_concrete_hard_threshold(0.5)
+        self.eval_concrete()
+
+        self.set_concrete_hard_threshold(None)
 
     def train_epoch(self):
-        pass
+        sparse.benchmark_concrete_occupy(False)
+        pbar = self.approx_trainer.timm_data_train
+        if ddp.printable():
+            pbar = tqdm.tqdm(pbar, position = self.tqdm_position)
+        
+        for istep, batch in enumerate(pbar):
+            batch = {'pixel_values': batch[0], 'labels': batch[1]} #timm compatibility
+            batch['output_attentions'] = True
+            batch['output_hidden_states'] = True
+
+            with torch.cuda.amp.autocast(enabled=False):
+                output = self.concrete_model(**batch)
+                loss = output.loss
+            
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.concrete_model.parameters(), 0.5)
+            self.optimizer.step()
+            self.optimizer.zero_grad()
+
+            self.last_loss = loss.item()
+
+            if ddp.printable():
+                pbar.set_description(f"{self.tqdm_prefix}[{self.epoch+1}/{self.epochs}] L:{self.last_loss:.5f}")
+            
+            self.steps += 1
 
     def main(self):
+        if ddp.printable() and self.enable_checkpointing:
+            self.train_eval()
+        if self.world_size > 1:
+            ddp.dist.barrier()
+        
         for epoch in range(self.epochs):
+            self.epoch = epoch
             gc.collect()
             torch.cuda.empty_cache()
         
             if epoch >= min(self.epochs - 1, (self.epochs - 1) * 0.8):
-                if self.enable_checkpointing: print('train hard prune')
+                if self.enable_checkpointing: log('train hard prune')
                 self.set_concrete_hard_threshold(0.5)
+            else:
+                self.set_concrete_hard_threshold(None)
 
             self.train_epoch()
 
             if ddp.printable() and self.enable_checkpointing:
-                self.eval_concrete(show_message=True)
-                for layer in self.concrete_model.module.bert.encoder.layer:
-                    layer = layer # type: sparse.BertLayer
-                    print(layer.p_logit.item(), layer.concrete_prop_p_logit.item())
+                self.train_eval()
+            if self.world_size > 1:
+                ddp.dist.barrier()
+        
+        if ddp.printable():
+            for layer in self.concrete_model.module.bert.encoder.layer:
+                layer = layer # type: sparse.BertLayer
+                log(layer.p_logit.item(), layer.concrete_prop_p_logit.item())
 
 # dispose
 
     def dispose(self):
         self.approx_trainer.dispose()
 
+def main_ddp(rank, world_size, ddp_port, args):
+    ddp.setup(rank, world_size, ddp_port)
+
+    trainer = VitConcreteTrainer(
+        subset=args.subset,
+        model=args.model,
+        factor=args.factor,
+        batch_size=args.batch_size,
+        device=rank,
+        world_size=world_size,
+        init_checkpoint=None,
+        enable_valid=False,
+        epochs=args.epochs,
+        init_p_logit=args.p_logit,
+    )
+    trainer.main()
+
+    ddp.cleanup()
+
+def main(args):
+    args.n_gpus = min(args.n_gpus, torch.cuda.device_count())
+    ddp.spawn(main_ddp, (args,), args.n_gpus)
+
 if  __name__ == '__main__':
-    pass
+    import argparse, random
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--subset', type=str, default='base')
+    parser.add_argument('--model', type=str, default='deit-small')
+    parser.add_argument('--factor', type=int, default=4)
+    parser.add_argument('--batch-size', type=int, default=-1)
+    parser.add_argument('--epochs', type=int, default=None)
+    parser.add_argument('--p-logit', type=float, default=-0.5)
+    parser.add_argument('--n-gpus', type=int, default=1)
+
+    args = parser.parse_args()
+    print(args)
+
+    main(args)

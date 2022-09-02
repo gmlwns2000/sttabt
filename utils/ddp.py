@@ -41,7 +41,8 @@ def spawn(entry, args=(), n_gpus=None, join=True):
         mp.spawn(entry,
             args=(n_gpus, port,)+tuple(args),
             nprocs=n_gpus,
-            join=join
+            daemon=True,
+            join=join,
         )
     else:
         raise Exception('no gpu')

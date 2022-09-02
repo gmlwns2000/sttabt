@@ -1755,11 +1755,20 @@ def run_bert_with_concrete(
     attention_input_dict = copy.deepcopy(input_dict)
     attention_input_dict['output_attentions'] = True
     set_backup_last_inputs(sparse_bert, True)
+    #print(attention_input_dict.keys(), 'aaaa')
+    #print(attention_input_dict['pixel_values'], 'pppp')
     ret_approx = approx_bert(**attention_input_dict)
     reset_input_mask(sparse_bert)
     attentions = ret_approx.attentions
     
     attention_mask = input_dict['attention_mask']
+    if attention_mask is None: #for vit compat
+        scores = approx_bert.bert.encoder.layer[0].attention.get_attention().last_attention_scores
+        N, H, T, _T = scores.shape
+        assert T == _T
+        attention_mask = torch.ones((N, T), dtype=scores.dtype, device=scores.device)
+        input_dict['attention_mask'] = attention_mask
+    
     attention_mask = ((1.0 - attention_mask) * (-10000)).view(attention_mask.shape[0], 1, 1, attention_mask.shape[-1])
     for i, layer in enumerate(sparse_bert.encoder.layer):
         approx_layer = approx_bert.bert.encoder.layer[i] # type: BertLayer
@@ -2161,7 +2170,9 @@ class ApproxSparseBertModel(nn.Module):
         self.use_concrete_masking = False
     
     def forward(self, *args, **kwargs):
-        if args is not None and len(args)==1:
+        #print(args)
+        #print(kwargs['pixel_values'], 'ggifi')
+        if args is not None and len(args)==1 and args[0] is not None:
             if self.arch == 'bert':
                 kwargs['input_ids'] = args[0]
             elif self.arch == 'vit':
@@ -2189,6 +2200,7 @@ class ApproxSparseBertModel(nn.Module):
                 run_original_attention = self.run_original_attention,
             )
         elif mode == 'concrete':
+            #print(kwargs['pixel_values'], 'vvvv')
             output = run_bert_with_concrete(
                 sparse_bert = self.sparse_bert,
                 approx_bert = self.approx_bert,
@@ -2255,17 +2267,21 @@ class ApproxSparseBertModel(nn.Module):
         return output
 
 class ApproxSparseBertForSequenceClassification(BertPreTrainedModel):
-    def __init__(self, config, approx_bert, arch='bert'):
+    def __init__(self, config, approx_bert, arch='bert', add_pooling_layer=True):
         super().__init__(config)
         self.num_labels = config.num_labels
         self.config = config
         self.arch = arch
         
-        self.bert = SparseBertModel(config, arch=arch)
-        classifier_dropout = (
-            config.classifier_dropout if config.classifier_dropout is not None else config.hidden_dropout_prob
-        )
+        self.bert = SparseBertModel(config, arch=arch, add_pooling_layer=add_pooling_layer)
+        if arch == 'bert':
+            classifier_dropout = (
+                config.classifier_dropout if config.classifier_dropout is not None else config.hidden_dropout_prob
+            )
+        elif arch == 'vit':
+            classifier_dropout = config.hidden_dropout_prob
         self.dropout = nn.Dropout(classifier_dropout)
+
         self.classifier = nn.Linear(config.hidden_size, config.num_labels)
 
         self.ltp_lambda = 0.01
@@ -2292,10 +2308,14 @@ class ApproxSparseBertForSequenceClassification(BertPreTrainedModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
+        pixel_values = None,
     ) -> Union[Tuple[torch.Tensor], SequenceClassifierOutput]:
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         
-        wrapper = ApproxSparseBertModel(approx_bert=self.approx_bert, sparse_bert=self.bert, ks=self.ks)
+        wrapper = ApproxSparseBertModel(
+            approx_bert=self.approx_bert, sparse_bert=self.bert, 
+            ks=self.ks, arch=self.arch
+        )
         wrapper.use_forward_sparse = self.use_forward_sparse
         wrapper.use_concrete_masking = self.use_concrete_masking
         wrapper.run_original_attention = self.run_original_attention
@@ -2309,9 +2329,15 @@ class ApproxSparseBertForSequenceClassification(BertPreTrainedModel):
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
+            pixel_values=pixel_values,
         )
 
-        pooled_output = outputs[1]
+        if self.arch == 'bert':
+            pooled_output = outputs[1]
+        elif self.arch == 'vit':
+            pooled_output = outputs[0][:,0,:]
+        else:
+            raise Exception()
 
         pooled_output = self.dropout(pooled_output)
         logits = self.classifier(pooled_output)
