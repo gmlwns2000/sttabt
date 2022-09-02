@@ -37,11 +37,11 @@ def spawn(entry, args=(), n_gpus=None, join=True):
         ddp_disabled = True
         entry(0, 1, port, *args)
     elif n_gpus > 1:
-        print(f'DDP: Setup DDP', n_gpus)
+        print(f'DDP: Setup DDP with {n_gpus} devices')
         mp.spawn(entry,
             args=(n_gpus, port,)+tuple(args),
             nprocs=n_gpus,
-            daemon=True,
+            daemon=False,
             join=join,
         )
     else:

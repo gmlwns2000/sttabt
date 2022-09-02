@@ -175,8 +175,7 @@ class VitConcreteTrainer:
         metric = load_metric("accuracy")
         sparse.benchmark_reset()
         for i, batch in enumerate(tqdm.tqdm(self.approx_trainer.timm_data_test, desc=f'{self.tqdm_prefix}{tqdm_prefix}eval', position=self.tqdm_position)):
-            if i > 50: break
-            
+            #if i > 5: break
             with torch.no_grad(), torch.cuda.amp.autocast(enabled = False):
                 #batch = {k: v.to(self.device, non_blocking=True) for k, v in batch.items()}
                 batch = {'pixel_values': batch[0], 'labels': batch[1]} #timm compatibility
@@ -222,6 +221,7 @@ class VitConcreteTrainer:
                 'lr': self.lr,
                 'weight_decay': self.weight_decay,
                 'enable_valid': self.enable_valid,
+                'train_mask_method': self.train_mask_method,
 
                 'soft_result': soft_result,
                 'hard_result': hard_result,
@@ -237,12 +237,14 @@ class VitConcreteTrainer:
 
     def train_epoch(self):
         sparse.benchmark_concrete_occupy(False)
+        if args.distributed and hasattr(self.approx_trainer.timm_data_train.sampler, 'set_epoch'):
+            self.approx_trainer.timm_data_train.sampler.set_epoch(self.epoch)
         pbar = self.approx_trainer.timm_data_train
         if ddp.printable():
             pbar = tqdm.tqdm(pbar, position = self.tqdm_position)
         
         for istep, batch in enumerate(pbar):
-            if istep > 200: break
+            #if istep > 20: break
 
             batch = {'pixel_values': batch[0], 'labels': batch[1]} #timm compatibility
             batch['output_attentions'] = True
@@ -281,7 +283,7 @@ class VitConcreteTrainer:
             gc.collect()
             torch.cuda.empty_cache()
         
-            if epoch >= min(self.epochs - 1, (self.epochs - 1) * 0.8):
+            if epoch >= min(self.epochs - 1, (self.epochs - 1) * 0.75):
                 self.set_concrete_hard_threshold(0.5)
                 self.train_mask_method = 'hard'
             else:
@@ -339,7 +341,7 @@ if  __name__ == '__main__':
     parser.add_argument('--batch-size', type=int, default=-1)
     parser.add_argument('--epochs', type=int, default=None)
     parser.add_argument('--p-logit', type=float, default=-0.5)
-    parser.add_argument('--n-gpus', type=int, default=1)
+    parser.add_argument('--n-gpus', type=int, default=128)
     parser.add_argument('--enable-valid', action='store_true', default=False)
     parser.add_argument('--json-postfix', type=str, default=None)
 

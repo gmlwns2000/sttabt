@@ -1,0 +1,93 @@
+{
+  "epoch": 4,
+  "epochs": 5,
+  "batch_size": 32,
+  "world_size": 1,
+  "dataset": "base",
+  "init_p_logit": -0.5,
+  "lr": 1e-05,
+  "weight_decay": 0.05,
+  "enable_valid": false,
+  "soft_result": {
+    "accuracy": 0.8541666666666666,
+    "valid_loss": 0.5913761084278425,
+    "occupy": 0.5002390742301941
+  },
+  "hard_result": {
+    "accuracy": 0.8697916666666666,
+    "valid_loss": 0.6260072290897369,
+    "occupy": 0.5001463294029236
+  },
+  "previous_results": [
+    {
+      "epoch": -1,
+      "train_mask_method": "soft",
+      "soft_result": {
+        "accuracy": 0.8541666666666666,
+        "valid_loss": 0.7237155338128408,
+        "occupy": 0.47606804966926575
+      },
+      "hard_result": {
+        "accuracy": 0.8385416666666666,
+        "valid_loss": 0.783186619480451,
+        "occupy": 0.47431427240371704
+      }
+    },
+    {
+      "epoch": 0,
+      "train_mask_method": "soft",
+      "soft_result": {
+        "accuracy": 0.859375,
+        "valid_loss": 0.6385037302970886,
+        "occupy": 0.48321253061294556
+      },
+      "hard_result": {
+        "accuracy": 0.8541666666666666,
+        "valid_loss": 0.6658930778503418,
+        "occupy": 0.4823555052280426
+      }
+    },
+    {
+      "epoch": 1,
+      "train_mask_method": "soft",
+      "soft_result": {
+        "accuracy": 0.8645833333333334,
+        "valid_loss": 0.6180757830540339,
+        "occupy": 0.48927369713783264
+      },
+      "hard_result": {
+        "accuracy": 0.8645833333333334,
+        "valid_loss": 0.6545672590533892,
+        "occupy": 0.48834070563316345
+      }
+    },
+    {
+      "epoch": 2,
+      "train_mask_method": "soft",
+      "soft_result": {
+        "accuracy": 0.8645833333333334,
+        "valid_loss": 0.622249461710453,
+        "occupy": 0.49319955706596375
+      },
+      "hard_result": {
+        "accuracy": 0.859375,
+        "valid_loss": 0.6714237481355667,
+        "occupy": 0.4930325150489807
+      }
+    },
+    {
+      "epoch": 3,
+      "train_mask_method": "soft",
+      "soft_result": {
+        "accuracy": 0.8541666666666666,
+        "valid_loss": 0.6111828510959944,
+        "occupy": 0.4984998106956482
+      },
+      "hard_result": {
+        "accuracy": 0.859375,
+        "valid_loss": 0.656103104352951,
+        "occupy": 0.49807196855545044
+      }
+    }
+  ]
+}
