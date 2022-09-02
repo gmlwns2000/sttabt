@@ -743,6 +743,8 @@ class BertLayer(nn.Module):
         self.temperature = 0.1
         self.input_dimensionality = 0
 
+        self.concrete_loss_factor = 1e-3
+
     def init_p_logits(self):
         torch.nn.init.uniform_(self.p_logit, self.concrete_init_min, self.concrete_init_max)
 
@@ -837,7 +839,7 @@ class BertLayer(nn.Module):
                 # dropout_regularizer *= self.concrete_dropout_regularizer * self.input_dimensionality
                 
                 # loss = weights_regularizer + dropout_regularizer
-                loss = ((self.p_logit - self.concrete_init_min) ** 2) * 1e-3
+                loss = ((self.p_logit - self.concrete_init_min) ** 2) * self.concrete_loss_factor
                 #loss = (torch.sigmoid(self.p_logit) ** 2) * 1e-6
                 #raise_if_nan(loss)
                 #loss = 0
@@ -854,6 +856,7 @@ class BertEncoder(nn.Module):
         for l, layer in enumerate(self.layer):
             layer.ltp_prune_token_module.init_threshold(l, config.num_hidden_layers)
         self.gradient_checkpointing = False
+        self.concrete_loss_encoder_mask_avg_factor = 1e-3
 
     def forward(
         self,
@@ -1015,7 +1018,7 @@ class BertEncoder(nn.Module):
                 count += 1
         occupy /= count
         occupy = occupy.mean()
-        return F.mse_loss(target, occupy) * 1e-3
+        return F.mse_loss(target, occupy) * self.concrete_loss_encoder_mask_avg_factor
 
 class BertPooler(nn.Module):
     def __init__(self, config):

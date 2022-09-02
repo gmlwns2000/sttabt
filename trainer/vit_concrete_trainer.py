@@ -93,6 +93,10 @@ class VitConcreteTrainer:
             arch = 'vit',
             add_pooling_layer=False,
         )
+        self.concrete_model.bert.encoder.concrete_loss_encoder_mask_avg_factor = 1e-1
+        for layer in self.concrete_model.bert.encoder.layer:
+            assert hasattr(layer, 'concrete_loss_factor')
+            layer.concrete_loss_factor = 1e-1
         
         try:
             self.concrete_model.bert.load_state_dict(
@@ -113,6 +117,7 @@ class VitConcreteTrainer:
         self.concrete_model.to(self.device).train()
         self.concrete_model.use_concrete_masking = True
         self.concrete_model = ddp.wrap_model(self.concrete_model, find_unused_paramters=True)
+        self.concrete_model.train()
 
         self.set_concrete_init_p_logit(self.init_p_logit)
         self.set_concrete_hard_threshold(None)
@@ -138,7 +143,7 @@ class VitConcreteTrainer:
         high_lr = ['p_logit']
         params = [
             {'params': [p for n, p in param_optimizer if (not any(nd in n for nd in no_decay)) and (not any(nd in n for nd in high_lr))], 'weight_decay': self.weight_decay},
-            {'params': [p for n, p in param_optimizer if (not any(nd in n for nd in no_decay)) and (any(nd in n for nd in high_lr))], 'lr':self.lr * 1.0, 'weight_decay': 0},
+            {'params': [p for n, p in param_optimizer if (not any(nd in n for nd in no_decay)) and (any(nd in n for nd in high_lr))], 'lr':self.lr * 0.1, 'weight_decay': 0},
             {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
         ]
         #print(params[1])
@@ -237,7 +242,7 @@ class VitConcreteTrainer:
 
     def train_epoch(self):
         sparse.benchmark_concrete_occupy(False)
-        if args.distributed and hasattr(self.approx_trainer.timm_data_train.sampler, 'set_epoch'):
+        if self.world_size > 1 and hasattr(self.approx_trainer.timm_data_train.sampler, 'set_epoch'):
             self.approx_trainer.timm_data_train.sampler.set_epoch(self.epoch)
         pbar = self.approx_trainer.timm_data_train
         if ddp.printable():
@@ -296,11 +301,10 @@ class VitConcreteTrainer:
                 self.train_eval()
             if self.world_size > 1:
                 ddp.dist.barrier()
-        
-        if ddp.printable():
-            for layer in self.concrete_model.module.bert.encoder.layer:
-                layer = layer # type: sparse.BertLayer
-                log(layer.p_logit.item(), layer.concrete_prop_p_logit.item())
+            if ddp.printable():
+                for layer in self.concrete_model.module.bert.encoder.layer:
+                    layer = layer # type: sparse.BertLayer
+                    log(layer.p_logit.item(), layer.concrete_prop_p_logit.item())
 
 # dispose
 
