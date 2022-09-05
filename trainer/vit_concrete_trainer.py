@@ -42,6 +42,8 @@ class VitConcreteTrainer:
         epochs = None,
         init_p_logit = 0.0,
         json_postfix = None,
+        lr = None,
+        weight_decay = None,
     ):
         self.device = device
         if batch_size < 0:
@@ -54,8 +56,8 @@ class VitConcreteTrainer:
         self.json_postfix = json_postfix
 
         self.enable_valid = enable_valid
-        self.lr = 1e-5
-        self.weight_decay = 5e-2
+        self.lr = 1e-5 if lr is None else lr
+        self.weight_decay = 5e-2 if weight_decay is None else weight_decay
         self.init_p_logit = init_p_logit
         self.epochs = tasks_to_epoch[subset] if epochs is None else epochs
         self.batch_size = tasks_to_batch_size[model] if batch_size <= 0 else batch_size
@@ -93,7 +95,8 @@ class VitConcreteTrainer:
             arch = 'vit',
             add_pooling_layer=False,
         )
-        self.concrete_model.bert.encoder.concrete_loss_encoder_mask_avg_factor = 1e-1
+        assert hasattr(self.concrete_model.bert.encoder, 'concrete_loss_encoder_mask_avg_factor')
+        self.concrete_model.bert.encoder.concrete_loss_encoder_mask_avg_factor = 1.0
         for layer in self.concrete_model.bert.encoder.layer:
             assert hasattr(layer, 'concrete_loss_factor')
             layer.concrete_loss_factor = 1e-1
@@ -249,7 +252,7 @@ class VitConcreteTrainer:
             pbar = tqdm.tqdm(pbar, position = self.tqdm_position)
         
         for istep, batch in enumerate(pbar):
-            #if istep > 20: break
+            #if (istep / len(pbar)) > 0.05 and self.train_mask_method == 'hard': break
 
             batch = {'pixel_values': batch[0], 'labels': batch[1]} #timm compatibility
             batch['output_attentions'] = True
@@ -326,6 +329,8 @@ def main_ddp(rank, world_size, ddp_port, args):
         epochs=args.epochs,
         init_p_logit=args.p_logit,
         json_postfix=args.json_postfix,
+        lr=args.lr,
+        weight_decay=args.weight_decay,
     )
     trainer.main()
 
@@ -345,6 +350,8 @@ if  __name__ == '__main__':
     parser.add_argument('--batch-size', type=int, default=-1)
     parser.add_argument('--epochs', type=int, default=None)
     parser.add_argument('--p-logit', type=float, default=-0.5)
+    parser.add_argument('--lr', type=float, default=None)
+    parser.add_argument('--weight-decay', type=float, default=None)
     parser.add_argument('--n-gpus', type=int, default=128)
     parser.add_argument('--enable-valid', action='store_true', default=False)
     parser.add_argument('--json-postfix', type=str, default=None)
