@@ -71,7 +71,7 @@ python -m trainer.vit_approx_trainer --subset base --model deit-small --factor 4
 python -m trainer.vit_approx_trainer --eval --subset base --model deit-small --factor 4
 ```
 
-### Concrete Masking Trainer: `vit_concrete_trainer.py`
+### Concrete Masking Trainer (deprecated, used for only evaluation): `vit_concrete_trainer.py`
 
 This scripts supports DDP, and this script will use all available GPUs. I don't suggest you to use this script for hyperparameter searching, because you have to disable checkpointing (which is evalutation on every epoch). 
 
@@ -90,4 +90,16 @@ python -m trainer.vit_concrete_trainer --subset base --model deit-small --factor
 
 # for train with validation set, the json result will be calculated with subset of train set.
 python -m trainer.vit_concrete_trainer --subset base --model deit-small --factor 4 --batch-size -1 --epochs 30 --p-logit -0.0 --json-prefix "" --enable-valid
+```
+
+### Concrete Masking Trainer (Cloned from DynamicViT): `dyvit_concrete_trainer.py`
+
+- Usage
+
+I am not sure `--auto_resume` is working properly... so be careful. You can turn on with `--auto_resume true` or not give the option.
+
+We should find proper epochs, maybe 8 or 16 works well?
+
+```sh
+PYTHONPATH=$PYTHONPATH:./ python -m torch.distributed.launch --nproc_per_node=8 --master_port 12311 --use_env trainer/dyvit_concrete_trainer.py --batch_size 64 --warmup_epochs 20 --epochs 30 --p-logit -1.0 --auto_resume false
 ```

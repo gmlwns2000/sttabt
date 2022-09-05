@@ -1,0 +1,23 @@
+{
+  "epoch": -1,
+  "epochs": 4,
+  "batch_size": 64,
+  "world_size": 2,
+  "dataset": "base",
+  "init_p_logit": -0.6,
+  "lr": 1e-05,
+  "weight_decay": 0.05,
+  "enable_valid": false,
+  "train_mask_method": "soft",
+  "soft_result": {
+    "accuracy": 0.69474,
+    "valid_loss": 1.4647892668767049,
+    "occupy": 0.421059250831604
+  },
+  "hard_result": {
+    "accuracy": 0.71956,
+    "valid_loss": 1.3964040568836815,
+    "occupy": 0.41726529598236084
+  },
+  "previous_results": []
+}

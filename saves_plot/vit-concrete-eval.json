@@ -1,92 +1,107 @@
 {
-  "epoch": 4,
-  "epochs": 5,
-  "batch_size": 32,
-  "world_size": 1,
+  "epoch": 5,
+  "epochs": 6,
+  "batch_size": 64,
+  "world_size": 2,
   "dataset": "base",
-  "init_p_logit": -0.5,
+  "init_p_logit": -0.6,
   "lr": 1e-05,
   "weight_decay": 0.05,
   "enable_valid": false,
+  "train_mask_method": "hard",
   "soft_result": {
-    "accuracy": 0.8541666666666666,
-    "valid_loss": 0.5913761084278425,
-    "occupy": 0.5002390742301941
+    "accuracy": 0.73382,
+    "valid_loss": 1.075269722453583,
+    "occupy": 0.38138872385025024
   },
   "hard_result": {
-    "accuracy": 0.8697916666666666,
-    "valid_loss": 0.6260072290897369,
-    "occupy": 0.5001463294029236
+    "accuracy": 0.74352,
+    "valid_loss": 1.0287501065702418,
+    "occupy": 0.3781066834926605
   },
   "previous_results": [
     {
       "epoch": -1,
       "train_mask_method": "soft",
       "soft_result": {
-        "accuracy": 0.8541666666666666,
-        "valid_loss": 0.7237155338128408,
-        "occupy": 0.47606804966926575
+        "accuracy": 0.69474,
+        "valid_loss": 1.4647892668767049,
+        "occupy": 0.421059250831604
       },
       "hard_result": {
-        "accuracy": 0.8385416666666666,
-        "valid_loss": 0.783186619480451,
-        "occupy": 0.47431427240371704
+        "accuracy": 0.71956,
+        "valid_loss": 1.3964040568836815,
+        "occupy": 0.41726529598236084
       }
     },
     {
       "epoch": 0,
       "train_mask_method": "soft",
       "soft_result": {
-        "accuracy": 0.859375,
-        "valid_loss": 0.6385037302970886,
-        "occupy": 0.48321253061294556
+        "accuracy": 0.78594,
+        "valid_loss": 0.8565469589727499,
+        "occupy": 0.550179660320282
       },
       "hard_result": {
-        "accuracy": 0.8541666666666666,
-        "valid_loss": 0.6658930778503418,
-        "occupy": 0.4823555052280426
+        "accuracy": 0.78676,
+        "valid_loss": 0.8546712683166003,
+        "occupy": 0.550621747970581
       }
     },
     {
       "epoch": 1,
       "train_mask_method": "soft",
       "soft_result": {
-        "accuracy": 0.8645833333333334,
-        "valid_loss": 0.6180757830540339,
-        "occupy": 0.48927369713783264
+        "accuracy": 0.78602,
+        "valid_loss": 0.8555991140830205,
+        "occupy": 0.5351209044456482
       },
       "hard_result": {
-        "accuracy": 0.8645833333333334,
-        "valid_loss": 0.6545672590533892,
-        "occupy": 0.48834070563316345
+        "accuracy": 0.78676,
+        "valid_loss": 0.8543496653449524,
+        "occupy": 0.534940242767334
       }
     },
     {
       "epoch": 2,
       "train_mask_method": "soft",
       "soft_result": {
-        "accuracy": 0.8645833333333334,
-        "valid_loss": 0.622249461710453,
-        "occupy": 0.49319955706596375
+        "accuracy": 0.78448,
+        "valid_loss": 0.8551472855155425,
+        "occupy": 0.5209366083145142
       },
       "hard_result": {
-        "accuracy": 0.859375,
-        "valid_loss": 0.6714237481355667,
-        "occupy": 0.4930325150489807
+        "accuracy": 0.78432,
+        "valid_loss": 0.8551970434117863,
+        "occupy": 0.520438015460968
       }
     },
     {
       "epoch": 3,
       "train_mask_method": "soft",
       "soft_result": {
-        "accuracy": 0.8541666666666666,
-        "valid_loss": 0.6111828510959944,
-        "occupy": 0.4984998106956482
+        "accuracy": 0.78516,
+        "valid_loss": 0.8576227337713865,
+        "occupy": 0.5250687599182129
       },
       "hard_result": {
-        "accuracy": 0.859375,
-        "valid_loss": 0.656103104352951,
-        "occupy": 0.49807196855545044
+        "accuracy": 0.78474,
+        "valid_loss": 0.8579995486589954,
+        "occupy": 0.5245651006698608
+      }
+    },
+    {
+      "epoch": 4,
+      "train_mask_method": "hard",
+      "soft_result": {
+        "accuracy": 0.75104,
+        "valid_loss": 0.9993142187726372,
+        "occupy": 0.38361772894859314
+      },
+      "hard_result": {
+        "accuracy": 0.7577,
+        "valid_loss": 0.9645314570605669,
+        "occupy": 0.3810601234436035
       }
     }
   ]

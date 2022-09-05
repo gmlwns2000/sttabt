@@ -207,6 +207,9 @@ class VitConcreteTrainer:
 
 # train function
 
+    def json_path(self):
+        return f'./saves_plot/vit-concrete-eval{("-"+self.json_postfix) if self.json_postfix is not None else ""}.json'
+
     def train_eval(self):
         self.set_concrete_hard_threshold(None)
         soft_result = self.eval_concrete(tqdm_prefix = 'soft prune ')
@@ -216,7 +219,7 @@ class VitConcreteTrainer:
 
         self.set_concrete_hard_threshold(None)
 
-        json_path = f'./saves_plot/vit-concrete-eval{("-"+self.json_postfix) if self.json_postfix is not None else ""}.json'
+        json_path = self.json_path()
         with open(json_path, 'w') as f:
             log('Json dumped', json_path)
             json.dump({

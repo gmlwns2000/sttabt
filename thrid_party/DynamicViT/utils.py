@@ -83,6 +83,7 @@ class SmoothedValue(object):
             max=self.max,
             value=self.value)
 
+import tqdm
 
 class MetricLogger(object):
     def __init__(self, delimiter="\t"):
@@ -142,6 +143,10 @@ class MetricLogger(object):
             log_msg.append('max mem: {memory:.0f}')
         log_msg = self.delimiter.join(log_msg)
         MB = 1024.0 * 1024.0
+        print_fn = print
+        if is_main_process():
+            iterable = tqdm.tqdm(iterable, desc=header.strip().strip(':'))
+            print_fn = tqdm.tqdm.write
         for obj in iterable:
             data_time.update(time.time() - end)
             yield obj
@@ -150,16 +155,25 @@ class MetricLogger(object):
                 eta_seconds = iter_time.global_avg * (len(iterable) - i)
                 eta_string = str(datetime.timedelta(seconds=int(eta_seconds)))
                 if torch.cuda.is_available():
-                    print(log_msg.format(
+                    print_fn(log_msg.format(
                         i, len(iterable), eta=eta_string,
                         meters=str(self),
                         time=str(iter_time), data=str(data_time),
                         memory=torch.cuda.max_memory_allocated() / MB))
+                    # print(log_msg.format(
+                    #     i, len(iterable), eta=eta_string,
+                    #     meters=str(self),
+                    #     time=str(iter_time), data=str(data_time),
+                    #     memory=torch.cuda.max_memory_allocated() / MB))
                 else:
-                    print(log_msg.format(
+                    print_fn(log_msg.format(
                         i, len(iterable), eta=eta_string,
                         meters=str(self),
                         time=str(iter_time), data=str(data_time)))
+                    # print(log_msg.format(
+                    #     i, len(iterable), eta=eta_string,
+                    #     meters=str(self),
+                    #     time=str(iter_time), data=str(data_time)))
             i += 1
             end = time.time()
         total_time = time.time() - start_time
@@ -445,6 +459,8 @@ def cosine_scheduler(base_value, final_value, epochs, niter_per_ep, warmup_epoch
 
     schedule = np.concatenate((warmup_schedule, schedule))
 
+    if len(schedule) != epochs * niter_per_ep:
+        print("OOOPS", len(schedule), epochs*niter_per_ep, epochs, niter_per_ep)
     assert len(schedule) == epochs * niter_per_ep
     return schedule
 

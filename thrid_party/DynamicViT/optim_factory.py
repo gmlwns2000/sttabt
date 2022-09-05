@@ -14,7 +14,7 @@ from timm.optim.adahessian import Adahessian
 from timm.optim.adamp import AdamP
 from timm.optim.lookahead import Lookahead
 from timm.optim.nadam import Nadam
-from timm.optim.novograd import NovoGrad
+#from timm.optim.novograd import NovoGrad
 from timm.optim.nvnovograd import NvNovoGrad
 from timm.optim.radam import RAdam
 from timm.optim.rmsprop_tf import RMSpropTF
@@ -70,7 +70,7 @@ class LayerDecayValueAssigner(object):
         return get_num_layer_for_convnext(var_name)
 
 
-def get_parameter_groups(model, weight_decay=1e-5, skip_list=(), get_num_layer=None, get_layer_scale=None, bone_lr_scale=0.01):
+def get_parameter_groups(model, weight_decay=1e-5, skip_list=(), get_num_layer=None, get_layer_scale=None, bone_lr_scale=0.01, old_wegiht_fix_epochs=5):
     parameter_group_names = {}
     parameter_group_vars = {}
 
@@ -79,6 +79,7 @@ def get_parameter_groups(model, weight_decay=1e-5, skip_list=(), get_num_layer=N
             continue  # frozen weights
         elif 'cls_token' in name or 'pos_embed' in name:
             continue # frozen weights
+        #ainl: this is for new prameter in DyViT, but we should ignore it.
         elif 'fast' in name or 'predictor' in name or 'mse' in name or 'fastmlp' in name:
         # elif 'predictor' in name:
             if len(param.shape) == 1 or name.endswith(".bias") or name in skip_list:
@@ -104,10 +105,10 @@ def get_parameter_groups(model, weight_decay=1e-5, skip_list=(), get_num_layer=N
                 scale = get_layer_scale(layer_id)
             if group_name is 'decay':
                 scale = bone_lr_scale
-                fix_step = 5
+                fix_step = old_wegiht_fix_epochs
             elif group_name is 'no_decay':
                 scale = bone_lr_scale
-                fix_step = 5
+                fix_step = old_wegiht_fix_epochs
             else:
                 scale = 1.
                 fix_step = 0
@@ -127,11 +128,14 @@ def get_parameter_groups(model, weight_decay=1e-5, skip_list=(), get_num_layer=N
 
         parameter_group_vars[group_name]["params"].append(param)
         parameter_group_names[group_name]["params"].append(name)
-    print("Param groups = %s" % json.dumps(parameter_group_names, indent=2))
+    #print("Param groups = %s" % json.dumps(parameter_group_names, indent=2))
     return list(parameter_group_vars.values())
 
 
-def create_optimizer(args, model, get_num_layer=None, get_layer_scale=None, filter_bias_and_bn=True, skip_list=None, bone_lr_scale=0.01):
+def create_optimizer(args, model, 
+    get_num_layer=None, get_layer_scale=None, filter_bias_and_bn=True, 
+    skip_list=None, bone_lr_scale=0.01, old_wegiht_fix_epochs=5
+):
     opt_lower = args.opt.lower()
     weight_decay = args.weight_decay
     # if weight_decay and filter_bias_and_bn:
@@ -141,7 +145,11 @@ def create_optimizer(args, model, get_num_layer=None, get_layer_scale=None, filt
             skip = skip_list
         elif hasattr(model, 'no_weight_decay'):
             skip = model.no_weight_decay()
-        parameters = get_parameter_groups(model, weight_decay, skip, get_num_layer, get_layer_scale, bone_lr_scale)
+        parameters = get_parameter_groups(
+            model, weight_decay, 
+            skip, get_num_layer, get_layer_scale, bone_lr_scale, 
+            old_wegiht_fix_epochs=old_wegiht_fix_epochs
+        )
         weight_decay = 0.
     else:
         parameters = model.parameters()
