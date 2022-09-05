@@ -273,7 +273,7 @@ def load_concrete_model(model_id = 'deit-small', factor=4, p_logit=0.0):
 
 def main(args):
     utils.init_distributed_mode(args)
-    print(args)
+    log(args)
     device = torch.device(args.device)
 
     # fix the seed for reproducibility
@@ -297,10 +297,10 @@ def main(args):
     sampler_train = torch.utils.data.DistributedSampler(
         dataset_train, num_replicas=num_tasks, rank=global_rank, shuffle=True, seed=args.seed,
     )
-    print("Sampler_train = %s" % str(sampler_train))
+    log("Sampler_train = %s" % str(sampler_train))
     if args.dist_eval:
         if len(dataset_val) % num_tasks != 0:
-            print('Warning: Enabling distributed evaluation with an eval dataset not divisible by process number. '
+            log('Warning: Enabling distributed evaluation with an eval dataset not divisible by process number. '
                     'This will slightly alter validation results as extra duplicate entries are added to achieve '
                     'equal num of samples per-process.')
         sampler_val = torch.utils.data.DistributedSampler(
@@ -336,7 +336,7 @@ def main(args):
     mixup_fn = None
     mixup_active = args.mixup > 0 or args.cutmix > 0. or args.cutmix_minmax is not None
     if mixup_active:
-        print("Mixup is activated!")
+        log("Mixup is activated!")
         mixup_fn = Mixup(
             mixup_alpha=args.mixup, cutmix_alpha=args.cutmix, cutmix_minmax=args.cutmix_minmax,
             prob=args.mixup_prob, switch_prob=args.mixup_switch_prob, mode=args.mixup_mode,
@@ -350,7 +350,7 @@ def main(args):
     else:
         criterion = torch.nn.CrossEntropyLoss()
 
-    print(args.model)
+    log(args.model)
 
     SPARSE_RATIO = [args.base_rate, args.base_rate - 0.2, args.base_rate - 0.4]
 
@@ -363,6 +363,8 @@ def main(args):
         model.config.problem_type = 'custom'
         model.loss_fct = criterion
 
+        log('Criterion', criterion)
+        
         criterion = DistillDiffPruningLoss_dynamic(
             teacher_model, criterion, clf_weight=1.0, mse_token=True, ratio_weight=2.0, distill_weight=0.5
         )
@@ -386,21 +388,21 @@ def main(args):
             decay=args.model_ema_decay,
             device='cpu' if args.model_ema_force_cpu else '',
             resume='')
-        print("Using EMA with decay = %.8f" % args.model_ema_decay)
+        log("Using EMA with decay = %.8f" % args.model_ema_decay)
 
     model_without_ddp = model
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
     #print("Model = %s" % str(model_without_ddp))
-    print('number of params:', n_parameters)
+    log('number of params:', n_parameters)
 
     total_batch_size = args.batch_size * args.update_freq * utils.get_world_size()
     num_training_steps_per_epoch = len(dataset_train) // total_batch_size
-    print("LR = %.8f" % args.lr)
-    print("Batch size = %d" % total_batch_size)
-    print("Update frequent = %d" % args.update_freq)
-    print("Number of training examples = %d" % len(dataset_train))
-    print("Number of training training per epoch = %d" % num_training_steps_per_epoch)
+    log("LR = %.8f" % args.lr)
+    log("Batch size = %d" % total_batch_size)
+    log("Update frequent = %d" % args.update_freq)
+    log("Number of training examples = %d" % len(dataset_train))
+    log("Number of training training per epoch = %d" % num_training_steps_per_epoch)
     
     assigner = None
 
@@ -423,14 +425,14 @@ def main(args):
 
     loss_scaler = NativeScaler() # if args.use_amp is False, this won't be used
 
-    print("Use Cosine LR scheduler")
+    log("Use Cosine LR scheduler")
     lr_schedule_values = utils.cosine_scheduler(
         args.lr, args.min_lr, args.epochs, num_training_steps_per_epoch,
         warmup_epochs=args.warmup_epochs, warmup_steps=args.warmup_steps,
     )
-    print(lr_schedule_values)
+    log(lr_schedule_values)
     for epoch in range(args.epochs):
-        print(f'lr@e{epoch}', lr_schedule_values[num_training_steps_per_epoch*epoch])
+        log(f'lr@e{epoch}', lr_schedule_values[num_training_steps_per_epoch*epoch])
     # import plotext as plt
     # plt.plot(lr_schedule_values)
     # plt.title("learning rate")
@@ -440,7 +442,7 @@ def main(args):
         args.weight_decay_end = args.weight_decay
     wd_schedule_values = utils.cosine_scheduler(
         args.weight_decay, args.weight_decay_end, args.epochs, num_training_steps_per_epoch)
-    print("Max WD = %.7f, Min WD = %.7f" % (max(wd_schedule_values), min(wd_schedule_values)))
+    log("Max WD = %.7f, Min WD = %.7f" % (max(wd_schedule_values), min(wd_schedule_values)))
 
 
     #print("criterion = %s" % str(criterion))
@@ -454,12 +456,12 @@ def main(args):
         optimizer=optimizer, loss_scaler=loss_scaler, model_ema=model_ema)
 
     if args.eval:
-        print(f"Eval only mode")
+        log(f"Eval only mode")
         test_stats = evaluate(data_loader_val, model, device, use_amp=args.use_amp)
-        print(f"Accuracy of the network on {len(dataset_val)} test images: {test_stats['acc1']:.5f}%")
+        log(f"Accuracy of the network on {len(dataset_val)} test images: {test_stats['acc1']:.5f}%")
         return
 
-    print("Start training for %d epochs" % args.epochs)
+    log("Start training for %d epochs" % args.epochs)
     start_time = time.time()
     def evaluate_concrete(dataloader, model, device, use_amp=False):
         model_without_ddp = model
@@ -470,13 +472,13 @@ def main(args):
         model_without_ddp.bert.set_concrete_hard_threshold(None)
         soft_result = evaluate(dataloader, model, device, use_amp=use_amp)
         soft_occupy = sparse.benchmark_get_average('concrete_occupy')
-        print(f'Soft Occupy: {soft_occupy}')
+        log(f'Soft Occupy: {soft_occupy}')
 
         sparse.benchmark_reset()
         model_without_ddp.bert.set_concrete_hard_threshold(0.5)
         hard_result = evaluate(dataloader, model, device, use_amp=use_amp)
         hard_occupy = sparse.benchmark_get_average('concrete_occupy')
-        print(f'Hard Occupy: {hard_occupy}')
+        log(f'Hard Occupy: {hard_occupy}')
 
         return {
             **{f'soft_{k}': v for k, v in soft_result.items()},
@@ -517,14 +519,14 @@ def main(args):
         if data_loader_val is not None:
             test_stats = evaluate_concrete(data_loader_val, model, device, use_amp=args.use_amp)
             log('Test stat.', test_stats)
-            print(f"Accuracy of the model on the {len(dataset_val)} test images: {test_stats['acc1']:.2f}%")
+            log(f"Accuracy of the model on the {len(dataset_val)} test images: {test_stats['acc1']:.2f}%")
             if max_accuracy < test_stats["acc1"]:
                 max_accuracy = test_stats["acc1"]
                 if args.output_dir and args.save_ckpt:
                     utils.save_model(
                         args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                         loss_scaler=loss_scaler, epoch="best", model_ema=model_ema, best_acc=max_accuracy, best_acc_ema=max_accuracy_ema)
-            print(f'Max accuracy: {max_accuracy:.2f}%')
+            log(f'Max accuracy: {max_accuracy:.2f}%')
 
             if log_writer is not None:
                 log_writer.update(test_acc1=test_stats['acc1'], head="perf", step=epoch)
@@ -540,14 +542,14 @@ def main(args):
             if args.model_ema and args.model_ema_eval:
                 test_stats_ema = evaluate_concrete(data_loader_val, model_ema.ema, device, use_amp=args.use_amp)
                 log('Test stat. EMA', test_stats_ema)
-                print(f"Accuracy of the model EMA on {len(dataset_val)} test images: {test_stats_ema['acc1']:.2f}%")
+                log(f"Accuracy of the model EMA on {len(dataset_val)} test images: {test_stats_ema['acc1']:.2f}%")
                 if max_accuracy_ema < test_stats_ema["acc1"]:
                     max_accuracy_ema = test_stats_ema["acc1"]
                     if args.output_dir and args.save_ckpt:
                         utils.save_model(
                             args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                             loss_scaler=loss_scaler, epoch="best-ema", model_ema=model_ema, best_acc=max_accuracy, best_acc_ema=max_accuracy_ema)
-                print(f'Max EMA accuracy: {max_accuracy_ema:.2f}%')
+                log(f'Max EMA accuracy: {max_accuracy_ema:.2f}%')
                 if log_writer is not None:
                     log_writer.update(test_acc1_ema=test_stats_ema['acc1'], head="perf", step=epoch)
                 log_stats.update({**{f'test_{k}_ema': v for k, v in test_stats_ema.items()}})
@@ -570,7 +572,7 @@ def main(args):
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-    print('Training time {}'.format(total_time_str))
+    log('Training time {}'.format(total_time_str))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Dynamic training script', parents=[get_args_parser()])

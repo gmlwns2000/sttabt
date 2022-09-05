@@ -11,6 +11,7 @@ from typing import Iterable, Optional
 import torch
 from timm.data import Mixup
 from timm.utils import accuracy, ModelEma
+from models import sparse_token
 
 import thrid_party.DynamicViT.utils as utils
 from trainer.dyvit.losses import DistillDiffPruningLoss_dynamic
@@ -54,14 +55,19 @@ def train_one_epoch(model: torch.nn.Module, criterion,
         
         with torch.cuda.amp.autocast(enabled=use_amp):
             batch = {'pixel_values': samples, 'labels': targets}
+            sparse_token.benchmark_reset()
+            sparse_token.benchmark_concrete_occupy(True)
             output_hf = model(**batch)
+            occupy = sparse_token.benchmark_get_average('concrete_occupy')
 
             loss = output_hf.loss
             output = output_hf[1]
 
             if isinstance(criterion, DistillDiffPruningLoss_dynamic):
                 #print("use distil loss")
-                loss = criterion(batch, output_hf, loss, model)
+                loss, loss_detail = criterion(batch, output_hf, loss, model)
+                del loss_detail['loss']
+                loss_detail['occupy'] = occupy
 
         loss_value = loss.item()
 
@@ -97,6 +103,7 @@ def train_one_epoch(model: torch.nn.Module, criterion,
             class_acc = None
         metric_logger.update(loss=loss_value)
         metric_logger.update(class_acc=class_acc)
+        metric_logger.update(**loss_detail)
         min_lr = 10.
         max_lr = 0.
         for group in optimizer.param_groups:

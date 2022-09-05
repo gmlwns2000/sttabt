@@ -66,7 +66,16 @@ class DistillDiffPruningLoss_dynamic(torch.nn.Module):
         loss = base_loss + self.distill_weight * cls_kl_loss
         # + self.distill_weight * token_kl_loss
 
-        return loss
+        # if self.print_mode:
+        #     if (self.count % 100) == 0:
+        #         print(f"DistillDiffPruningLoss: loss={loss.item():.4f}, loss_base={base_loss.item():.4f}, loss_cls_kl={self.distill_weight * cls_kl_loss.item():.4f}")
+        #     self.count += 1
+
+        return loss, {
+            'loss': loss.item(),
+            'loss_base': base_loss.item(),
+            'loss_kl': cls_kl_loss.item(),
+        }
 
     def forward_old(self, inputs, outputs, labels):
         """
