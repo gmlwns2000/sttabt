@@ -2383,11 +2383,12 @@ class ApproxSparseBertForSequenceClassification(BertPreTrainedModel):
                 loss = loss + loss_reg
             loss = loss + self.bert.encoder.loss_concrete(input_mask=attention_mask)
 
-        return SequenceClassifierOutput(
+        ret = SequenceClassifierOutput(
             loss=loss,
             logits=logits,
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
+        return ret
 
 #endregion
