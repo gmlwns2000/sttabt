@@ -248,10 +248,10 @@ def load_concrete_model(model_id = 'deit-small', factor=4, p_logit=0.0):
     )
     log('ConcreteModel problem define', model.config.problem_type)
     assert hasattr(concrete_model.bert.encoder, 'concrete_loss_encoder_mask_avg_factor')
-    concrete_model.bert.encoder.concrete_loss_encoder_mask_avg_factor = 2.0
+    concrete_model.bert.encoder.concrete_loss_encoder_mask_avg_factor = 100.0 # this is different with NLP tasks :?
     for layer in concrete_model.bert.encoder.layer:
         assert hasattr(layer, 'concrete_loss_factor')
-        layer.concrete_loss_factor = 1e-1
+        layer.concrete_loss_factor = 1e-3 # ease the factor, and let ratio decide it.
     
     try:
         concrete_model.bert.load_state_dict(
@@ -493,9 +493,9 @@ def main(args):
             **hard_result,
         }
     
-    if data_loader_val is not None:
-        test_stats = evaluate_concrete(data_loader_val, model, device, use_amp=args.use_amp)
-        log('Test stat. Before training', test_stats)
+    # if data_loader_val is not None:
+    #     test_stats = evaluate_concrete(data_loader_val, model, device, use_amp=args.use_amp)
+    #     log(f'Test stat. Before training @ epoch {args.start_epoch}', test_stats)
     
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:

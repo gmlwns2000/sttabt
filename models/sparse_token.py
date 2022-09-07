@@ -36,6 +36,7 @@ from transformers.models.bert.modeling_bert import \
     BertModel as OriginalBertModel
 from transformers.utils import logging
 from transformers.models.vit.modeling_vit import ViTEmbeddings
+import transformers
 
 from utils.sparse_flops_calculation import flops_sparse_approx_bert_model
 from utils.sparse_flops_calculation import ModelConfig as FlopsConfig
@@ -2269,6 +2270,16 @@ class ApproxSparseBertModel(nn.Module):
         
         return output
 
+from dataclasses import dataclass
+
+@dataclass
+class ApproxSparseBertForSequenceClassificationOutput(transformers.modeling_outputs.ModelOutput):
+    loss: Optional[torch.FloatTensor] = None
+    logits: torch.FloatTensor = None
+    hidden_states: Optional[Tuple[torch.FloatTensor]] = None
+    attentions: Optional[Tuple[torch.FloatTensor]] = None
+    loss_details: Optional[object] = None
+
 class ApproxSparseBertForSequenceClassification(BertPreTrainedModel):
     def __init__(self, config, approx_bert, arch='bert', add_pooling_layer=True):
         super().__init__(config)
@@ -2374,20 +2385,34 @@ class ApproxSparseBertForSequenceClassification(BertPreTrainedModel):
             output = (logits,) + outputs[2:]
             return ((loss,) + output) if loss is not None else output
 
+        base_loss = loss
+
         first_layer = self.bert.encoder.layer[0] # type: BertLayer
+
+        loss_ltp = 0
         if first_layer.ltp_prune_token and (loss is not None):
-            loss += self.bert.loss_ltp_regularization() * self.ltp_lambda
+            loss_ltp = self.bert.loss_ltp_regularization() * self.ltp_lambda
+            loss += loss_ltp
+
+        loss_conc_reg = 0
+        loss_conc_ratio = 0
         if first_layer.output.dense.concrete_mask is not None and (loss is not None):
             for layer in self.bert.encoder.layer:
-                loss_reg = layer.loss_concrete({'attention_mask': attention_mask})
-                loss = loss + loss_reg
-            loss = loss + self.bert.encoder.loss_concrete(input_mask=attention_mask)
+                loss_conc_reg += layer.loss_concrete({'attention_mask': attention_mask})
+            loss_conc_ratio = self.bert.encoder.loss_concrete(input_mask=attention_mask)
+            loss = loss + loss_conc_reg + loss_conc_ratio
 
-        ret = SequenceClassifierOutput(
+        ret = ApproxSparseBertForSequenceClassificationOutput(
             loss=loss,
             logits=logits,
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
+            loss_details={
+                'loss_total': loss,
+                'loss_ltp': loss_ltp,
+                'loss_conc_reg': loss_conc_reg,
+                'loss_conc_ratio': loss_conc_ratio,
+            }
         )
         return ret
 

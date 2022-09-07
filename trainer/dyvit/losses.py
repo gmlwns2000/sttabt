@@ -75,6 +75,9 @@ class DistillDiffPruningLoss_dynamic(torch.nn.Module):
             'loss': loss.item(),
             'loss_base': base_loss.item(),
             'loss_kl': cls_kl_loss.item(),
+            'loss_conc_reg': output_hf.loss_details['loss_conc_reg'].item(),
+            'loss_conc_ratio': output_hf.loss_details['loss_conc_ratio'].item(),
+            'loss_ltp': output_hf.loss_details['loss_ltp'], #debug purpose
         }
 
     def forward_old(self, inputs, outputs, labels):
