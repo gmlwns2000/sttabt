@@ -191,6 +191,9 @@ def get_args_parser():
 
     # concrete masking settings
     parser.add_argument('--p-logit', type=float, default=0.0)
+    parser.add_argument('--approx-factor', type=int, default=4)
+    parser.add_argument('--max-hard-train-epochs', type=int, default=999,
+                        help='if you set this 0, then hard mask train is disabled')
 
     return parser
 
@@ -245,7 +248,7 @@ def load_concrete_model(model_id = 'deit-small', factor=4, p_logit=0.0):
     )
     log('ConcreteModel problem define', model.config.problem_type)
     assert hasattr(concrete_model.bert.encoder, 'concrete_loss_encoder_mask_avg_factor')
-    concrete_model.bert.encoder.concrete_loss_encoder_mask_avg_factor = 1.0
+    concrete_model.bert.encoder.concrete_loss_encoder_mask_avg_factor = 2.0
     for layer in concrete_model.bert.encoder.layer:
         assert hasattr(layer, 'concrete_loss_factor')
         layer.concrete_loss_factor = 1e-1
@@ -356,7 +359,9 @@ def main(args):
 
     if args.model == 'deit-small':
         #TODO: add args factor
-        model, teacher_model = load_concrete_model(model_id=args.model, factor=4, p_logit=args.p_logit)
+        model, teacher_model = load_concrete_model(
+            model_id=args.model, factor=args.approx_factor, p_logit=args.p_logit
+        )
         teacher_model.eval()
         teacher_model = teacher_model.to(device)
 
@@ -498,7 +503,10 @@ def main(args):
         if log_writer is not None:
             log_writer.set_step(epoch * num_training_steps_per_epoch * args.update_freq)
 
-        if epoch >= min(args.epochs - 1, round((args.epochs - 1) * 0.9)):
+        if epoch >= max(
+            args.epochs - args.max_hard_train_epochs, 
+            min(args.epochs - 1, round((args.epochs - 1) * 0.9))
+        ):
             model_without_ddp.bert.set_concrete_hard_threshold(0.5)
             log('Hard training')
         else:
@@ -536,6 +544,8 @@ def main(args):
             log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                          **{f'test_{k}': v for k, v in test_stats.items()},
                          'epoch': epoch,
+                         'factor': args.approx_factor,
+                         'p_logit': args.p_logit,
                          'n_parameters': n_parameters}
 
             # repeat testing routines for EMA, if ema eval is turned on
