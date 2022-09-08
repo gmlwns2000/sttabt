@@ -17,7 +17,7 @@ def execute_proc(cmd):
         universal_newlines=True, 
         shell=True, 
         preexec_fn=os.setsid, 
-        stderr=subprocess.STDOUT,
+        #stderr=subprocess.STDOUT,
         env=my_env,
     ) as popen:
         try:
