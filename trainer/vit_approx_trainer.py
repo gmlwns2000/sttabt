@@ -579,7 +579,7 @@ class VitApproxTrainer:
         if self.dataloader_lib == 'hf':
             pbar = self.dataset.get_train_iter()
         elif self.dataloader_lib == 'timm':
-            pbar = self.timm_data_test
+            pbar = self.timm_data_train
         else: raise Exception('unknown loader lib')
         
         if ddp.printable():
@@ -633,14 +633,16 @@ class VitApproxTrainer:
         
         for epoch in range(self.epochs):
             self.epoch = epoch
-            self.train_epoch()
+            #self.train_epoch()
             ddp.barrier()
-            if ddp.printable():
-                self.eval_model(self.model, self.approx_bert.module, show_message=True)
-                self.save()
+            # if ddp.printable():
+            #     self.eval_model(self.model, self.approx_bert.module, show_message=True)
+            #     self.save()
             ddp.barrier()
         
         self.dispose()
+        if ddp.printable():
+            print('EXIT_PATTERN')
     
     def main_eval(self):
         try:
@@ -704,13 +706,14 @@ def main():
     parser.add_argument('--factor', type=int, default=4)
     parser.add_argument('--init-checkpoint', type=str, default=None)
     parser.add_argument('--batch-size', type=int, default=-1)
+    parser.add_argument('--n-gpus', type=int, default=999)
     parser.add_argument('--eval', default=False, action='store_true')
 
     args = parser.parse_args()
     print(args)
 
     if not args.eval:
-        ddp.spawn(main_ddp, args=(args,))
+        ddp.spawn(main_ddp, args=(args,), n_gpus=args.n_gpus)
     else:
         main_trainer(0, 1, args)
 

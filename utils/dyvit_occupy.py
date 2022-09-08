@@ -1,13 +1,16 @@
 """
+== 는 직접 실행한 결과
+.. 는 논문에서 제시한 결과
 DyViT@0.1 avg occupy 0.25678525641025635
 DyViT@0.2 avg occupy 0.2884006410256411
 DyViT@0.3 avg occupy 0.327400641025641  == train failed at epoch 25, 64.706%:ema, 65.910%
 DyViT@0.4 avg occupy 0.3751698717948718 == 74.854:ema, 74.948
-DyViT@0.5 avg occupy 0.4330929487179487
-DyViT@0.6 avg occupy 0.5025544871794873
-DyViT@0.7 avg occupy 0.5849391025641026
-DyViT@0.8 avg occupy 0.6816314102564104
+DyViT@0.5 avg occupy 0.4330929487179487 .. 77.5
+DyViT@0.6 avg occupy 0.5025544871794873 .. 78.5
+DyViT@0.7 avg occupy 0.5849391025641026 .. 79.3
+DyViT@0.8 avg occupy 0.6816314102564104 .. 79.6
 DyViT@0.9 avg occupy 0.7940160256410257
+DeiT-S .. 79.8
 """
 
 def dyvit_occupy(k, num_layers=12, prune_loc = [3, 6, 9]):

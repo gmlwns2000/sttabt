@@ -583,6 +583,7 @@ def main(args):
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     log('Training time {}'.format(total_time_str))
+    log('EXIT_PATTERN')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Dynamic training script', parents=[get_args_parser()])
