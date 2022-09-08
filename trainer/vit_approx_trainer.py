@@ -633,11 +633,11 @@ class VitApproxTrainer:
         
         for epoch in range(self.epochs):
             self.epoch = epoch
-            #self.train_epoch()
+            self.train_epoch()
             ddp.barrier()
-            # if ddp.printable():
-            #     self.eval_model(self.model, self.approx_bert.module, show_message=True)
-            #     self.save()
+            if ddp.printable():
+                self.eval_model(self.model, self.approx_bert.module, show_message=True)
+                self.save()
             ddp.barrier()
         
         self.dispose()
