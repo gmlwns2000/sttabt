@@ -1,8 +1,8 @@
 """
 DyViT@0.1 avg occupy 0.25678525641025635
 DyViT@0.2 avg occupy 0.2884006410256411
-DyViT@0.3 avg occupy 0.327400641025641
-DyViT@0.4 avg occupy 0.3751698717948718
+DyViT@0.3 avg occupy 0.327400641025641  == train failed at epoch 25, 64.706%:ema, 65.910%
+DyViT@0.4 avg occupy 0.3751698717948718 == 74.854:ema, 74.948
 DyViT@0.5 avg occupy 0.4330929487179487
 DyViT@0.6 avg occupy 0.5025544871794873
 DyViT@0.7 avg occupy 0.5849391025641026

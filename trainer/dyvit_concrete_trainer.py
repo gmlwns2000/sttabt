@@ -192,7 +192,7 @@ def get_args_parser():
     # concrete masking settings
     parser.add_argument('--p-logit', type=float, default=0.0)
     parser.add_argument('--approx-factor', type=int, default=4)
-    parser.add_argument('--max-hard-train-epochs', type=int, default=999,
+    parser.add_argument('--max-hard-train-epochs', type=int, default=0,
                         help='if you set this 0, then hard mask train is disabled')
 
     return parser
