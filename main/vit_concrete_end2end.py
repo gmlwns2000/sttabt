@@ -41,6 +41,7 @@ def execute_proc(cmd):
 def run_approx(args):
     cmd = f"python -m trainer.vit_approx_trainer --factor {args.factor} --n-gpus {args.n_gpus}"
     return_code = execute_proc(cmd)
+    log('Approx Train Finished!')
     if return_code != 0:
         raise Exception('approx trainer failed to run with return code', return_code)
 
