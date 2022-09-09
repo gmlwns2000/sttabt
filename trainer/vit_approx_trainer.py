@@ -442,7 +442,7 @@ class VitApproxTrainer:
             if self.dataloader_lib == 'hf':
                 batch = {k: torch.tensor(batch[k]).to(self.device, non_blocking=True) for k in batch.keys()}
             elif self.dataloader_lib == 'timm':
-                batch = {'pixel_values': batch[0], 'labels': batch[1]} #timm compatibility
+                batch = {'pixel_values': batch[0].to(self.device), 'labels': batch[1].to(self.device)} #timm compatibility
             else: raise Exception('unknown loader lib')
             
             labels = batch['labels']
@@ -530,7 +530,7 @@ class VitApproxTrainer:
             if self.dataloader_lib == 'hf':
                 batch = {k: torch.tensor(batch[k])[self.device*math.ceil(self.batch_size / self.world_size):(self.device + 1)*math.ceil(self.batch_size / self.world_size)].to(self.device, non_blocking=True) for k in batch.keys()}
             elif self.dataloader_lib == 'timm':
-                batch = {'pixel_values': batch[0], 'labels': batch[1]} #timm compatibility
+                batch = {'pixel_values': batch[0].to(self.device), 'labels': batch[1].to(self.device)} #timm compatibility
             else: raise Exception('unknown loader lib')
             
             batch['output_attentions'] = True
@@ -594,7 +594,7 @@ class VitApproxTrainer:
                         for k, v in batch.items()
                     }
             elif self.dataloader_lib == 'timm':
-                batch = {'pixel_values': batch[0], 'labels': batch[1]} #timm compatibility
+                batch = {'pixel_values': batch[0].to(self.device), 'labels': batch[1].to(self.device)} #timm compatibility
             else: raise Exception('unknown loader lib')
             batch['output_attentions'] = True
             batch['output_hidden_states'] = True

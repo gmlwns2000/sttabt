@@ -6,12 +6,15 @@ import time
 def log(*args):
     print('VitConcreteEnd2End:', *args)
 
-def execute_proc(cmd):
+def execute_proc(cmd, new_envs=None):
     log('execute', cmd)
     #return_code = subprocess.call(cmd, shell=True)
     #return 0
     my_env = os.environ.copy()
     my_env["PYTHONPATH"] = my_env.get("PYTHONPATH", '') + ":./"
+    if new_envs is not None:
+        for key in new_envs:
+            my_env[key] = new_envs[key]
     with subprocess.Popen(cmd, 
         stdout=subprocess.PIPE, 
         universal_newlines=True, 
@@ -40,7 +43,9 @@ def execute_proc(cmd):
 
 def run_approx(args):
     cmd = f"python -m trainer.vit_approx_trainer --factor {args.factor} --n-gpus {args.n_gpus}"
-    return_code = execute_proc(cmd)
+    return_code = execute_proc(cmd, new_envs={
+        'IMAGENET_ROOT': args.imagenet_root
+    })
     log('Approx Train Finished!')
     if return_code != 0:
         raise Exception('approx trainer failed to run with return code', return_code)
@@ -57,7 +62,7 @@ def run_p_logits(args):
             log('WARN: update freq seems less then 1. Did you put too much batch_size? update_freq update to 1.')
             update_freq = 1
         
-        cmd = f"python -m torch.distributed.launch --nproc_per_node={args.n_gpus} --master_port={args.master_port} --use_env trainer/dyvit_concrete_trainer.py --batch_size {args.batch_size} --update_freq {update_freq} --warmup_epochs {args.warmup_epochs} --epochs {args.epochs} --p-logit {p} --max-hard-train-epochs 0 --approx-factor {args.factor} --auto_resume {str(args.auto_resume).lower()} --output_dir ./saves/dyvit-concrete-f{args.factor}-{p}-nohard-e{args.epochs}-we{args.warmup_epochs}"
+        cmd = f"python -m torch.distributed.launch --nproc_per_node={args.n_gpus} --master_port={args.master_port} --use_env trainer/dyvit_concrete_trainer.py --batch_size {args.batch_size} --update_freq {update_freq} --warmup_epochs {args.warmup_epochs} --epochs {args.epochs} --p-logit {p} --max-hard-train-epochs 0 --approx-factor {args.factor} --auto_resume {str(args.auto_resume).lower()} --output_dir ./saves/dyvit-concrete-f{args.factor}-{p}-nohard-e{args.epochs}-we{args.warmup_epochs} --data_path=\"{args.imagenet_root}\""
         return_code = execute_proc(cmd)
         if return_code != 0:
             raise Exception('concrete trainer failed to run with return code', return_code)
@@ -73,6 +78,7 @@ def main():
     parser.add_argument('--epochs', type=int, default=20)
     parser.add_argument('--warmup-epochs', type=int, default=14)
     parser.add_argument('--n-gpus', type=int, default=8)
+    parser.add_argument('--imagenet-root', type=str, default='/d1/dataset/ILSVRC2012/')
     parser.add_argument('--master-port', type=int, default=12127)
     parser.add_argument('--skip-approx', action='store_true', default=False)
     parser.add_argument('--auto-resume', action='store_true', default=False)
