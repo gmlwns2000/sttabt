@@ -2,6 +2,26 @@ import argparse
 import subprocess
 import sys,os,signal
 import time
+from datetime import datetime
+
+__print = print
+__print_fd = None
+__print_log_dir = './saves/vit_concrete_end2end_logs'
+if not os.path.exists(__print_log_dir):
+    os.mkdir(__print_log_dir)
+__print_log_path = f'{__print_log_dir}/{datetime.now().strftime("%Y-%d-%m-%H-%M-%S-%f")}.log'
+
+def print(*args, **kwargs):
+    global __print, __print_fd, __print_log_dir, __print_log_path
+    __print(*args, **kwargs)
+    try:
+        if __print_fd is None:
+            __print_fd = open(__print_log_path, 'w', buffering=1)
+        __print_fd.write(" ".join([str(a) for a in args]))
+        __print_fd.write(kwargs.get('end', '\n'))
+        __print_fd.flush()
+    except Exception as ex:
+        __print('error while print out to log', ex)
 
 def log(*args):
     print('VitConcreteEnd2End:', *args)
