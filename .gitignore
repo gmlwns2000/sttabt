@@ -7,8 +7,9 @@ cache/
 .vscode/
 *.zip
 dataset/squad2/*.json
-saves/
+saves/*
 cache
 pretrained/
 logs/
 *.log
+!saves/README.md
