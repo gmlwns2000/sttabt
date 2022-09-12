@@ -26,7 +26,7 @@ SUBSET_TO_NAME = {
     "wnli": "WNLI",
 }
 STR_IMAGENET_1K = 'ImageNet-1k'
-STR_TOP1_ACCURACY = 'Top-1 Accuracy'
+STR_TOP1_ACCURACY = 'Top-1 Accuracy (%)'
 
 PLT_STYLE = 'seaborn-bright'
 
