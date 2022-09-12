@@ -23,6 +23,31 @@ def dyvit_occupy(k, num_layers=12, prune_loc = [3, 6, 9]):
     occupies.append(1/192)
     return sum(occupies) / len(occupies)
 
+#init DYVIT_ACCURACY
+
+DYVIT_BASE_RATE_TO_ACC = [
+    (0.3, 65.910),
+    (0.4, 74.948),
+    (0.5, 77.5),
+    (0.6, 78.5),
+    (0.7, 79.4),
+    (0.8, 79.6),
+    (0.9, 79.7),
+    (1.0, 79.8),
+]
+
+DYVIT_RESULTS = []
+
+for base_rate, acc1 in DYVIT_BASE_RATE_TO_ACC:
+    DYVIT_RESULTS.append({
+        'base_rate': base_rate,
+        'accuracy': acc1,
+        'occupy': dyvit_occupy(base_rate)
+    })
+
 if __name__ == '__main__':
     for k in [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]:
         print(f'DyViT@{k} avg occupy', dyvit_occupy(k))
+    
+    for dic in DYVIT_RESULTS:
+        print(f"DyViT@{dic['base_rate']},occupy:{dic['occupy']} = {dic['accuracy']}%")

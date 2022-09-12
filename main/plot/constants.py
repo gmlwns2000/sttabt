@@ -25,6 +25,8 @@ SUBSET_TO_NAME = {
     "stsb": "STSB",
     "wnli": "WNLI",
 }
+STR_IMAGENET_1K = 'ImageNet-1k'
+STR_TOP1_ACCURACY = 'Top-1 Accuracy'
 
 PLT_STYLE = 'seaborn-bright'
 
@@ -35,10 +37,13 @@ STR_STTABT_ABSATT_F4 = 'STTABT@f4 (Actual Att.)'
 STR_STTABT_APPROX_F8 = 'STTABT@f8 (Approx. Att.)'
 STR_STTABT_ABSATT_F8 = 'STTABT@f8 (Actual Att.)'
 STR_STTABT_CONCRETE_WITH_TRAIN = 'STTABT (Concrete, with train)'
+STR_STTABT_CONCRETE_WITH_TRAIN_EMA = 'STTABT$_{ema}$ (Concrete, with train)'
 STR_STTABT_CONCRETE_WO_TRAIN = 'STTABT (Concrete, w/o train)'
 STR_LTP_BEST_VALID = 'LTP (Best valid.)'
+STR_DYNAMIC_VIT = 'DynamicViT'
 STR_MANUAL_TOPK = 'Manual Top-k'
 STR_BERT_BASE = 'BERT$_{BASE}$'
+STR_DEIT_SMALL = 'DeiT$_{small}$'
 
 STR_GFLOPS = 'GFLOPs'
 STR_AVERAGE_KEEP_TOKEN_RATIO = 'Average Keep Token Ratio (%)'
