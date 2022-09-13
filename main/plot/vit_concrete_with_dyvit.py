@@ -102,6 +102,12 @@ def main(factor=4):
             'ys_concrete_ema': ys_concrete_ema,
             'xs_base': xs_base,
             'ys_base': ys_base,
+            'xs_approx': xs_approx,
+            'ys_approx': ys_approx,
+            'xs_absatt': xs_absatt,
+            'ys_absatt': ys_absatt,
+            'xs_forward': xs_forward,
+            'ys_forward': ys_forward,
         }, f, indent=2)
 
     plt.clf()
@@ -142,17 +148,17 @@ def main(factor=4):
     plt.plot(
         xs_approx, ys_approx,
         label=STR_STTABT_APPROX, color=COLOR_STTABT_APPROX,
-        marker='o', linewidth=1.2,
+        marker='o', linewidth=1.2, zorder=9,
     )
     plt.plot(
         xs_absatt, ys_absatt,
         label=STR_STTABT_ABSATT, color=COLOR_STTABT_ABSATT,
-        marker='o', linewidth=1.2,
+        marker='o', linewidth=1.2, zorder=10,
     )
     plt.plot(
         xs_forward, ys_forward,
         label=STR_MANUAL_TOPK, color=COLOR_MANUAL_TOPK,
-        marker='x', linewidth=1.2, linestyle='--'
+        marker='x', linewidth=1.2, linestyle='--', zorder=-10,
     )
 
     #restore ylim
