@@ -84,7 +84,7 @@ def plot_exam(subset_name, data):
     json_path = plot_name + '.json'
     png_path = plot_name + '.png'
     with open(json_path, 'w') as f:
-        json.dump(data, f)
+        json.dump(data, f, indent=2)
     
     plt.clf()
 
