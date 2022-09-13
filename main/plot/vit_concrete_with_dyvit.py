@@ -167,7 +167,7 @@ def main(factor=4):
     plt.grid(True)
     plt.xlabel(STR_AVERAGE_KEEP_TOKEN_RATIO)
     plt.ylabel(STR_TOP1_ACCURACY)
-    plt.legend()
+    plt.legend(prop={'size': 9})
     plt.title(f'{STR_IMAGENET_1K}', fontsize=12)
 
     plt.savefig(f'{PLOT_NAME}.png', dpi=320)
