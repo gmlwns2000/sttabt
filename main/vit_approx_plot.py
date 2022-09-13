@@ -5,7 +5,7 @@ from trainer.vit_approx_trainer import VitApproxTrainer
 
 model = 'deit-small'
 subsets = ['base']
-kxs = [0.05, 0.1, 0.2, 0.4, 0.8]
+kxs = [0.1, 0.2, 0.3, 0.4, 0.6, 0.8]
 EXPORT_NAME = './saves_plot/vit-approx'
 
 def exam_subset(subset, factor, kxs):
