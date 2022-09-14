@@ -30,7 +30,11 @@ def render(data_f4, data_f8, header):
             kxs.add(key[1])
     kxs = list(sorted(kxs))
 
-    combined_fig = plt.figure(figsize=(21,7))
+    layout = '3x3'
+    if layout == '3x3':
+        combined_fig = plt.figure(figsize=(12,9.5))
+    else:
+        combined_fig = plt.figure(figsize=(21,7))
     
     for subset in subsets:
         metric = data_f4[(subset, kxs[0])]['metric']
@@ -74,14 +78,19 @@ def render(data_f4, data_f8, header):
                 'kxs': kxs,
             }, f)
         
-        if GLUE_SUBSETS.index(subset) < 5:
-            ax = combined_fig.add_subplot(2, 10, 
-                (GLUE_SUBSETS.index(subset)*2 + 1, GLUE_SUBSETS.index(subset)*2 + 2)
+        if layout == '3x3':
+            ax = combined_fig.add_subplot(3, 3, 
+                GLUE_SUBSETS.index(subset)+1
             )
         else:
-            ax = combined_fig.add_subplot(2, 10, 
-                (GLUE_SUBSETS.index(subset)*2 + 2, GLUE_SUBSETS.index(subset)*2 + 3)
-            )
+            if GLUE_SUBSETS.index(subset) < 5:
+                ax = combined_fig.add_subplot(2, 10, 
+                    (GLUE_SUBSETS.index(subset)*2 + 1, GLUE_SUBSETS.index(subset)*2 + 2)
+                )
+            else:
+                ax = combined_fig.add_subplot(2, 10, 
+                    (GLUE_SUBSETS.index(subset)*2 + 2, GLUE_SUBSETS.index(subset)*2 + 3)
+                )
         ax.plot(
             xs_approx8, ys_approx8, 
             label=STR_STTABT_APPROX_F8, color=COLOR_STTABT_APPROX,
@@ -144,18 +153,48 @@ def render(data_f4, data_f8, header):
         #ax.legend()
         ax.set_title(SUBSET_TO_NAME[subset], fontsize=16)
     
-    handles, labels = ax.get_legend_handles_labels()
-    legend = combined_fig.legend(handles, labels, loc='lower center', fontsize=16, ncol = 4)
-    combined_fig.tight_layout()
-    combined_fig.subplots_adjust(bottom=0.19)
-    combined_fig.savefig(
-        f'./saves_plot/approx-glue-{header}-all-flops.png',
-        bbox_extra_artists=(legend, ), bbox_inches='tight', dpi=320
-    )
-    combined_fig.savefig(
-        f'./saves_plot/approx-glue-{header}-all-flops.svg',
-        bbox_extra_artists=(legend, ), bbox_inches='tight', dpi=320
-    )
+    # handles, labels = ax.get_legend_handles_labels()
+    # legend = combined_fig.legend(handles, labels, loc='lower center', fontsize=16, ncol = 4)
+    # combined_fig.tight_layout()
+    # combined_fig.subplots_adjust(bottom=0.19)
+    # combined_fig.savefig(
+    #     f'./saves_plot/approx-glue-{header}-all-flops.png',
+    #     bbox_extra_artists=(legend, ), bbox_inches='tight', dpi=320
+    # )
+    # combined_fig.savefig(
+    #     f'./saves_plot/approx-glue-{header}-all-flops.svg',
+    #     bbox_extra_artists=(legend, ), bbox_inches='tight', dpi=320
+    # )
+    if layout == '3x3':
+        handles, labels = ax.get_legend_handles_labels()
+        legend = combined_fig.legend(handles, labels, loc='lower center', fontsize=12, ncol = 4)
+        combined_fig.tight_layout()
+        combined_fig.subplots_adjust(bottom=0.12)
+        combined_fig.savefig(
+            f'./saves_plot/approx-glue-{header}-all-flops.png',
+            bbox_extra_artists=(legend, ), bbox_inches='tight', dpi=320
+        )
+        combined_fig.savefig(
+            f'./saves_plot/approx-glue-{header}-all-flops.svg',
+            bbox_extra_artists=(legend, ), bbox_inches='tight', dpi=320
+        )
+        combined_fig.savefig(
+            f'./saves_plot/approx-glue-{header}-all-flops.pdf',
+            bbox_extra_artists=(legend, ), bbox_inches='tight', dpi=320
+        )
+    else:
+        handles, labels = ax.get_legend_handles_labels()
+        legend = combined_fig.legend(handles, labels, loc='lower center', fontsize=16, ncol = 4)
+        combined_fig.tight_layout()
+        combined_fig.subplots_adjust(bottom=0.19)
+        combined_fig.savefig(
+            f'./saves_plot/approx-glue-{header}-all-flops.png',
+            bbox_extra_artists=(legend, ), bbox_inches='tight', dpi=320
+        )
+        combined_fig.savefig(
+            f'./saves_plot/approx-glue-{header}-all-flops.svg',
+            bbox_extra_artists=(legend, ), bbox_inches='tight', dpi=320
+        )
 
 def main(path_f4, path_f8, header):
     if not os.path.exists(path_f4):
