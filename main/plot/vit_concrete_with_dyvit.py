@@ -172,6 +172,7 @@ def main(factor=4):
 
     plt.savefig(f'{PLOT_NAME}.png', dpi=320)
     plt.savefig(f'{PLOT_NAME}.svg')
+    plt.savefig(f'{PLOT_NAME}.pdf')
 
     print('done')
 
