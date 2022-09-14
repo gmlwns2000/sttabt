@@ -5,7 +5,7 @@ DyViT@0.1 avg occupy 0.25678525641025635
 DyViT@0.2 avg occupy 0.2884006410256411
 DyViT@0.3 avg occupy 0.327400641025641  == train failed at epoch 25, 64.706%:ema, 65.910%
 DyViT@0.4 avg occupy 0.3751698717948718 == 74.854:ema, 74.948
-DyViT@0.5 avg occupy 0.4330929487179487 .. 77.5
+DyViT@0.5 avg occupy 0.4330929487179487 == 77.622:ema, 77.611
 DyViT@0.6 avg occupy 0.5025544871794873 .. 78.5
 DyViT@0.7 avg occupy 0.5849391025641026 .. 79.3
 DyViT@0.8 avg occupy 0.6816314102564104 .. 79.6
@@ -28,7 +28,7 @@ def dyvit_occupy(k, num_layers=12, prune_loc = [3, 6, 9]):
 DYVIT_BASE_RATE_TO_ACC = [
     (0.3, 65.910),
     (0.4, 74.948),
-    (0.5, 77.5),
+    (0.5, 77.622),
     (0.6, 78.5),
     (0.7, 79.4),
     (0.8, 79.6),
