@@ -124,10 +124,22 @@ def plot():
         for factor in data[init_mode].keys():
             items = data[init_mode][factor]
             row = []
+            mse_sum = 0
+            kldiv_sum = 0
             for subset in GLUE_SUBSETS:
                 item = items.get(subset, {'mse':0.0, 'kldiv':0.0})
-                row.append(item['mse'])
-                row.append(item['kldiv'])
+                mse = item['mse']
+                kl = item['kldiv']
+                mse_sum += mse
+                kldiv_sum += kl
+                row.append(mse)
+                row.append(kl)
+
+            #add dataset average
+            mse_avg = mse_sum / len(GLUE_SUBSETS)
+            kldiv_avg = kldiv_sum / len(GLUE_SUBSETS)
+            row += [mse_avg, kldiv_avg]
+
             rows.append((
                 (init_mode_to_name[init_mode], factor), row
             ))
@@ -140,6 +152,8 @@ def plot():
     for subset in GLUE_SUBSETS:
         inds.append((SUBSET_TO_NAME[subset], 'MSE'))
         inds.append((SUBSET_TO_NAME[subset], 'KL Div.'))
+    inds.append(('Average GLUE', 'MSE'))
+    inds.append(('Average GLUE', 'KL Div.'))
     df.index = pd.MultiIndex.from_tuples(inds)
     #df = df.transpose()
     styler = df.style
