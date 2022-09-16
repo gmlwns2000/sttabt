@@ -242,19 +242,20 @@ def main():
 
     def imwrite(name, img):
         path = f'./saves_plot/visualization/{name}'
-        cv2.imwrite(path, img)
+        cv2.imwrite(path+'.png', img)
+        cv2.imwrite(path+'.jpg', img)
         print('main.imwrite:', path)
     
     plot_stacks, plot_stacks_labeled = combine_plots(plots_dyvit, plots_concrete)
-    imwrite('vit_token_visualization.png', plot_stacks)
-    imwrite('vit_token_visualization_labeled.png', plot_stacks_labeled)
+    imwrite('vit_token_visualization', plot_stacks)
+    imwrite('vit_token_visualization_labeled', plot_stacks_labeled)
 
     interest_ids = [5, 13] #[5, 9, 13]
     def filter(lst, ids):
         return [item for i, item in enumerate(lst) if i in ids]
     plot_stacks, plot_stacks_labeled = combine_plots(filter(plots_dyvit, interest_ids), filter(plots_concrete, interest_ids))
-    imwrite('vit_token_visualization_interested.png', plot_stacks)
-    imwrite('vit_token_visualization_interested_labeled.png', plot_stacks_labeled)
+    imwrite('vit_token_visualization_interested', plot_stacks)
+    imwrite('vit_token_visualization_interested_labeled', plot_stacks_labeled)
 
 if __name__ == '__main__':
     main()
