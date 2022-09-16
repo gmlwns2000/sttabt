@@ -1,4 +1,5 @@
 def load_samples(subset):
+    #batch = {'input_ids', 'attention_mask'}
     pass
 
 def load_models(subset, ltp_config, concrete_config):
@@ -32,7 +33,7 @@ def vis_glue(subset='sst2'):
     model_ltp, model_concrete = load_models(subset, ltp_config, concrete_config)
     lines, batch = load_samples(subset)
 
-    #run
+    #run, gather masks
 
     #visualize
 
