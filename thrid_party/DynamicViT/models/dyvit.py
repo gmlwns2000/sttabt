@@ -395,6 +395,8 @@ class VisionTransformerDiffPruning(nn.Module):
         trunc_normal_(self.cls_token, std=.02)
         self.apply(self._init_weights)
 
+        self.viz_mode = False
+
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
             trunc_normal_(m.weight, std=.02)
@@ -429,6 +431,8 @@ class VisionTransformerDiffPruning(nn.Module):
         init_n = 14 * 14
         prev_decision = torch.ones(B, init_n, 1, dtype=x.dtype, device=x.device)
         policy = torch.ones(B, init_n + 1, 1, dtype=x.dtype, device=x.device)
+        if self.viz_mode:
+            decisions = [[] for _ in self.pruning_loc]
         for i, blk in enumerate(self.blocks):
             if i in self.pruning_loc:
                 spatial_x = x[:, 1:]
@@ -444,6 +448,8 @@ class VisionTransformerDiffPruning(nn.Module):
                     score = pred_score[:,:,0]
                     num_keep_node = int(init_n * self.token_ratio[p_count])
                     keep_policy = torch.argsort(score, dim=1, descending=True)[:, :num_keep_node]
+                    if self.viz_mode:
+                        decisions[p_count].append(keep_policy)
                     cls_policy = torch.zeros(B, 1, dtype=keep_policy.dtype, device=keep_policy.device)
                     now_policy = torch.cat([cls_policy, keep_policy + 1], dim=1)
                     x = batch_index_select(x, now_policy)
@@ -467,6 +473,8 @@ class VisionTransformerDiffPruning(nn.Module):
             else:
                 return x, out_pred_prob
         else:
+            if self.viz_mode:
+                return x, decisions
             return x
 
 class VisionTransformerTeacher(nn.Module):
