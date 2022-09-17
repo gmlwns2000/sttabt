@@ -108,7 +108,7 @@ def vis_dyvit(checkpoint_path, imsize=224, patchsize=16, base_rate=0.4):
     plot_imgs = []
     for i, img in enumerate(imgs):
         plot_img = render_image(img, input_masks[i])
-        path = f'./saves_plot/visualization/{i}_dyvit.png'
+        path = f'./saves_plot/visualization_vit/{i}_dyvit.png'
         cv2.imwrite(path, plot_img)
         plot_imgs.append(plot_img)
         print('vis_dyvit:', path)
@@ -150,7 +150,7 @@ def vis_concrete(checkpoint_path, imsize=224, patchsize=16, factor=4, p_logit=-1
     plot_imgs = []
     for i, img in enumerate(imgs):
         plot_img = render_image(img, input_masks[i])
-        path = f'./saves_plot/visualization/{i}_concrete.png'
+        path = f'./saves_plot/visualization_vit/{i}_concrete.png'
         cv2.imwrite(path, plot_img)
         plot_imgs.append(plot_img)
         print('vis_concrete:', path)
@@ -241,7 +241,7 @@ def main():
     )
 
     def imwrite(name, img):
-        path = f'./saves_plot/visualization/{name}'
+        path = f'./saves_plot/visualization_vit/{name}'
         cv2.imwrite(path+'.png', img)
         cv2.imwrite(path+'.jpg', img)
         print('main.imwrite:', path)
