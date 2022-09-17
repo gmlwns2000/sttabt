@@ -37,6 +37,8 @@ class ModelConfig:
         approx_hidden_size=None,
         approx_intermediate_size=None,
         token_occupies=None,
+        patch_size=16,
+        dyvit_pruning_loc=[3,6,9],
     ):
         self.num_layer = num_layer
         self.num_heads = num_heads
@@ -52,16 +54,26 @@ class ModelConfig:
         self.token_occupies = token_occupies
         self.in_seq_len = None
         self.out_seq_len = None
+        self.patch_size = patch_size
+        self.dyvit_pruning_loc = dyvit_pruning_loc
 
 def flops_bert_embedding(c: ModelConfig):
     if c.arch == 'bert':
         #BertEmbeddings
         #nn.Embeddings does not have float operation (sparse lookup)
+
+        #encoding addition
         flops = 2 * c.token_occupies[0] * c.seq_len * c.hidden_size
         flops += LAYER_NORM_FLOPS * c.token_occupies[0] * c.seq_len * c.hidden_size
         return flops
     elif c.arch == 'vit':
-        raise Exception()
+        #ViTEmbeddings
+        #vit embedding use conv fc.
+        #assume there is no patch embedding resize
+        flops = 2 * c.token_occupies[0] * c.seq_len * (c.patch_size ** 2) * c.hidden_size
+        flops += 2 * c.token_occupies[0] * c.seq_len * c.hidden_size
+        flops += LAYER_NORM_FLOPS * c.token_occupies[0] * c.seq_len * c.hidden_size
+        return flops
 
 def flops_bert_self_attention(c: ModelConfig):
     flops = 0
@@ -179,6 +191,22 @@ def flops_sparse_update(c:ModelConfig):
             flops += (SIGMOID_FLOPS + 2 * LOG_FLOPS + 3)*c.seq_len
             flops += c.seq_len * (c.num_layer - ilayer)
             flops += c.seq_len
+    elif c.sparse_mode == 'dyvit':
+        for ilayer in range(c.num_layer):
+            if ilayer in c.dyvit_pruning_loc:
+                in_seq_len = c.token_occupies[ilayer]*c.seq_len
+                #calculate in_conv
+                flops += 2*in_seq_len*c.hidden_size*c.hidden_size
+                flops += LAYER_NORM_FLOPS*in_seq_len*c.hidden_size
+                #calculate global_x
+                flops += in_seq_len*c.hidden_size/2*2
+                #calculate out_conv
+                flops += 2*in_seq_len*c.hidden_size*(c.hidden_size/2)
+                flops += LAYER_NORM_FLOPS*in_seq_len*c.hidden_size/2
+                flops += 2*in_seq_len*(c.hidden_size/2)*(c.hidden_size/4)
+                flops += LAYER_NORM_FLOPS*in_seq_len*c.hidden_size/4
+                flops += 2*in_seq_len*(c.hidden_size/4)*2
+                flops += SOFTMAX_FLOPS*in_seq_len*2
     else:
         raise Exception()
     return flops
@@ -190,7 +218,7 @@ def flops_sparse_approx_bert_model(config:ModelConfig):
     approx_config.token_occupies = [1,] * (approx_config.num_layer+1)
     if config.sparse_mode in ['approx', 'concrete']:
         approx_flops = flops_sparse_bert_model(approx_config)
-    elif config.sparse_mode == 'forward':
+    elif config.sparse_mode in ['forward', 'dyvit']:
         approx_flops = 0
     else: raise Exception()
     update_flops = flops_sparse_update(config)
@@ -205,7 +233,7 @@ def human_readable(flops):
     elif flops >= 1e+12:
         return f'{flops / 1e+12:.1f} TFLOPs'
     elif flops >= 1e+9:
-        return f'{flops / 1e+9:.1f} GFLOPs'
+        return f'{flops / 1e+9:.2f} GFLOPs'
     elif flops >= 1e+6:
         return f'{flops / 1e+6:.1f} MFLOPs'
     elif flops >= 1e+3:
@@ -215,7 +243,7 @@ def human_readable(flops):
 
 if __name__ == '__main__':
     import random
-    SEQ = 144
+    SEQ = 128
 
     def exam(base_config):
         base_flops = flops_sparse_bert_model(base_config)
@@ -283,7 +311,17 @@ if __name__ == '__main__':
             flops += flops_sparse_update(config)
         print('forward update', human_readable(flops / 1000), f'{flops / 1000 / base_flops * 100:.1f}%')
 
-        for mode in ['approx', 'forward', 'concrete']:
+        flops = 0
+        for _ in range(1000):
+            config = copy.deepcopy(base_config)
+            config.approx_hidden_size = config.hidden_size / 4
+            config.approx_intermediate_size = config.intermediate_size / 4
+            config.sparse_mode = 'dyvit'
+            config.token_occupies = [random.random() * 0.4 + 0.1 for _ in range(config.num_layer+1)]
+            flops += flops_sparse_update(config)
+        print('dyvit update', human_readable(flops / 1000), f'{flops / 1000 / base_flops * 100:.1f}%')
+
+        for mode in ['approx', 'forward', 'concrete', 'dyvit']:
             flops = 0
             for _ in range(1000):
                 factor = 8
@@ -322,3 +360,31 @@ if __name__ == '__main__':
     print('bert-large')
     print('-'*80)
     exam(large_config)
+
+    base_config = ModelConfig(
+        num_layer=12,
+        num_heads=3,
+        hidden_size=192,
+        intermediate_size=192*4,
+        seq_len=196,
+        arch='vit',
+        token_occupies=None
+    )
+    print('-'*80)
+    print('deit-small')
+    print('-'*80)
+    exam(base_config)
+
+    base_config = ModelConfig(
+        num_layer=12,
+        num_heads=6,
+        hidden_size=384,
+        intermediate_size=384*4,
+        seq_len=(224//16)**2,
+        arch='vit',
+        token_occupies=None
+    )
+    print('-'*80)
+    print('deit-small')
+    print('-'*80)
+    exam(base_config)

@@ -98,7 +98,7 @@ def render_mask(tokenizer: "transformers.BertTokenizerFast", ids, attention_mask
 
     # Rotate the tick labels and set their alignment.
     ax.tick_params(top=True, bottom=False, labeltop=True, labelbottom=False)
-    plt.setp(ax.get_xticklabels(), rotation=-90, ha="right", rotation_mode="anchor")
+    plt.setp(ax.get_xticklabels(), rotation=-60, ha="right", rotation_mode="anchor")
 
     ax.set_title(title)
     fig.tight_layout()

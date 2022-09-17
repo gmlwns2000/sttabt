@@ -13,6 +13,8 @@ DyViT@0.9 avg occupy 0.7940160256410257
 DeiT-S .. 79.8
 """
 
+from utils import sparse_flops_calculation as flops
+
 def dyvit_occupy(k, num_layers=12, prune_loc = [3, 6, 9]):
     occupy = 1.0
     occupies = []
@@ -39,10 +41,27 @@ DYVIT_BASE_RATE_TO_ACC = [
 DYVIT_RESULTS = []
 
 for base_rate, acc1 in DYVIT_BASE_RATE_TO_ACC:
+    occupy = 1.0
+    occupies = [occupy]
+    pruning_loc = [3,6,9]
+    for i in range(12):
+        if i in pruning_loc:
+            occupy *= base_rate
+        occupies.append(occupy)
     DYVIT_RESULTS.append({
         'base_rate': base_rate,
         'accuracy': acc1,
-        'occupy': dyvit_occupy(base_rate)
+        'occupy': dyvit_occupy(base_rate),
+        'flops': flops.flops_sparse_approx_bert_model(flops.ModelConfig(
+            num_layer=12,
+            num_heads=6,
+            hidden_size=384,
+            intermediate_size=384*4,
+            seq_len=196,
+            arch='vit',
+            token_occupies=occupies,
+            sparse_mode='dyvit'
+        ))
     })
 
 if __name__ == '__main__':
@@ -50,4 +69,4 @@ if __name__ == '__main__':
         print(f'DyViT@{k} avg occupy', dyvit_occupy(k))
     
     for dic in DYVIT_RESULTS:
-        print(f"DyViT@{dic['base_rate']},occupy:{dic['occupy']} = {dic['accuracy']}%")
+        print(f"DyViT@{dic['base_rate']},occupy:{dic['occupy']} = {dic['accuracy']}%, flops: {flops.human_readable(dic['flops'])}")
