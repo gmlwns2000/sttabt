@@ -159,11 +159,11 @@ def vis_glue(subset='sst2'):
     #visualize
     plots_concrete = render_masks(
         tokenizer, batch, masks_concrete, "STTABT (Concrete)",
-        [f'./saves_plot/visualization_nlp/{i}_concrete' for i in range(len(masks_concrete))]
+        [f'./saves_plot/visualization_nlp/{subset}_{i}_concrete' for i in range(len(masks_concrete))]
     )
     plots_ltp = render_masks(
         tokenizer, batch, masks_ltp, "LTP",
-        [f'./saves_plot/visualization_nlp/{i}_ltp' for i in range(len(masks_concrete))]
+        [f'./saves_plot/visualization_nlp/{subset}_{i}_ltp' for i in range(len(masks_concrete))]
     )
 
 def main():
