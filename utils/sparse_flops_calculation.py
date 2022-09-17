@@ -25,6 +25,8 @@ CDF_FLOPS = 10
 TOPK_FLOPS = 35
 TOPK_FLOPS_LOG = 35
 
+MM_FLOPS = 2
+
 class ModelConfig:
     def __init__(self,
         num_layer,
@@ -70,20 +72,20 @@ def flops_bert_embedding(c: ModelConfig):
         #ViTEmbeddings
         #vit embedding use conv fc.
         #assume there is no patch embedding resize
-        flops = 2 * c.token_occupies[0] * c.seq_len * (c.patch_size ** 2) * c.hidden_size
-        flops += 2 * c.token_occupies[0] * c.seq_len * c.hidden_size
+        flops = MM_FLOPS * c.token_occupies[0] * c.seq_len * (c.patch_size ** 2) * c.hidden_size
+        flops += c.token_occupies[0] * c.seq_len * c.hidden_size
         flops += LAYER_NORM_FLOPS * c.token_occupies[0] * c.seq_len * c.hidden_size
         return flops
 
 def flops_bert_self_attention(c: ModelConfig):
     flops = 0
-    flops += 2*c.in_seq_len*c.hidden_size*c.hidden_size #q
-    flops += 2*c.out_seq_len*c.hidden_size*c.hidden_size #k
-    flops += 2*c.in_seq_len*c.hidden_size*c.hidden_size #v
+    flops += MM_FLOPS*c.in_seq_len*c.hidden_size*c.hidden_size #q
+    flops += MM_FLOPS*c.out_seq_len*c.hidden_size*c.hidden_size #k
+    flops += MM_FLOPS*c.in_seq_len*c.hidden_size*c.hidden_size #v
     head_hidden = c.hidden_size / c.num_heads
     
     #attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
-    flops += c.num_heads*2*c.out_seq_len*head_hidden*c.in_seq_len
+    flops += c.num_heads*MM_FLOPS*c.out_seq_len*head_hidden*c.in_seq_len
 
     #attention_scores = attention_scores / math.sqrt(self.attention_head_size)
     flops += c.num_heads*c.out_seq_len*c.in_seq_len
@@ -92,12 +94,12 @@ def flops_bert_self_attention(c: ModelConfig):
     flops += c.num_heads * SOFTMAX_FLOPS * c.out_seq_len * c.in_seq_len
 
     #context_layer = torch.matmul(attention_probs, value_layer)
-    flops += 2*c.out_seq_len*c.in_seq_len*head_hidden*c.num_heads
+    flops += MM_FLOPS*c.out_seq_len*c.in_seq_len*head_hidden*c.num_heads
 
     return flops
 
 def flops_bert_self_output(c: ModelConfig):
-    flops = 2*c.hidden_size*c.hidden_size + c.hidden_size
+    flops = MM_FLOPS*c.hidden_size*c.hidden_size + c.hidden_size
     if c.arch == 'bert':
         flops += LAYER_NORM_FLOPS * c.hidden_size + c.hidden_size
     flops *= c.out_seq_len
@@ -109,13 +111,13 @@ def flops_bert_attention(c: ModelConfig):
     return flops
 
 def flops_bert_intermediate(c: ModelConfig):
-    flops = 2*c.hidden_size*c.intermediate_size + c.intermediate_size
+    flops = MM_FLOPS*c.hidden_size*c.intermediate_size + c.intermediate_size
     flops += ACTIVATION_FLOPS*c.intermediate_size
     flops *= c.out_seq_len
     return flops
 
 def flops_bert_output(c: ModelConfig):
-    flops = 2*c.intermediate_size*c.hidden_size + c.hidden_size
+    flops = MM_FLOPS*c.intermediate_size*c.hidden_size + c.hidden_size
     flops += c.hidden_size
     if c.arch == 'bert': flops += c.hidden_size * LAYER_NORM_FLOPS
     flops *= c.out_seq_len
@@ -145,10 +147,43 @@ def flops_bert_encoder(c: ModelConfig):
 
 def flops_sparse_bert_model(c: ModelConfig):
     assert len(c.token_occupies) == (c.num_layer+1)
+
+    global LAYER_NORM_FLOPS, \
+        ACTIVATION_FLOPS, \
+        SOFTMAX_FLOPS, \
+        SIGMOID_FLOPS, \
+        LOG_FLOPS, \
+        CDF_FLOPS, \
+        TOPK_FLOPS, \
+        TOPK_FLOPS_LOG, MM_FLOPS
+
+    if c.arch == 'vit':
+        #https://github.com/facebookresearch/fvcore/blob/main/fvcore/nn/flop_count.py#L31
+        #we need to fuse the operations, ignore operations
+        prev_values = (
+            MM_FLOPS, LOG_FLOPS, SIGMOID_FLOPS, CDF_FLOPS, 
+            SOFTMAX_FLOPS, ACTIVATION_FLOPS, LAYER_NORM_FLOPS
+        )
+        MM_FLOPS = 1    #fvcore use fused mm
+        LOG_FLOPS = 0
+        SIGMOID_FLOPS = 0
+        CDF_FLOPS = 0
+        SOFTMAX_FLOPS = 0
+        ACTIVATION_FLOPS = 0
+        LAYER_NORM_FLOPS = 5
+        # we do not ignore topk, since for topk is not negligible
+
     flops = flops_bert_embedding(c)
     flops += flops_bert_encoder(c)
     if c.arch == 'vit':
         flops += LAYER_NORM_FLOPS * c.hidden_size #pooled output
+    
+    if c.arch == 'vit':
+        (
+            MM_FLOPS, LOG_FLOPS, SIGMOID_FLOPS, CDF_FLOPS, 
+            SOFTMAX_FLOPS, ACTIVATION_FLOPS, LAYER_NORM_FLOPS
+        ) = prev_values
+
     return flops
 
 def flops_sparse_update(c:ModelConfig):
@@ -167,7 +202,7 @@ def flops_sparse_update(c:ModelConfig):
             in_seq_len = c.token_occupies[ilayer]*c.seq_len
             out_seq_len = c.token_occupies[ilayer+1]*c.seq_len
             #unmaks query
-            flops += 2*abs(out_seq_len - in_seq_len)*c.hidden_size*c.hidden_size
+            flops += MM_FLOPS*abs(out_seq_len - in_seq_len)*c.hidden_size*c.hidden_size
             flops += (c.num_heads + 1)*c.seq_len*in_seq_len
             flops += (c.seq_len + 1)*in_seq_len
             flops += TOPK_FLOPS * in_seq_len + TOPK_FLOPS_LOG * math.log(in_seq_len)
@@ -196,22 +231,47 @@ def flops_sparse_update(c:ModelConfig):
             if ilayer in c.dyvit_pruning_loc:
                 in_seq_len = c.token_occupies[ilayer]*c.seq_len
                 #calculate in_conv
-                flops += 2*in_seq_len*c.hidden_size*c.hidden_size
+                flops += MM_FLOPS*in_seq_len*c.hidden_size*c.hidden_size
                 flops += LAYER_NORM_FLOPS*in_seq_len*c.hidden_size
                 #calculate global_x
                 flops += in_seq_len*c.hidden_size/2*2
                 #calculate out_conv
-                flops += 2*in_seq_len*c.hidden_size*(c.hidden_size/2)
+                flops += MM_FLOPS*in_seq_len*c.hidden_size*(c.hidden_size/2)
                 flops += LAYER_NORM_FLOPS*in_seq_len*c.hidden_size/2
-                flops += 2*in_seq_len*(c.hidden_size/2)*(c.hidden_size/4)
+                flops += MM_FLOPS*in_seq_len*(c.hidden_size/2)*(c.hidden_size/4)
                 flops += LAYER_NORM_FLOPS*in_seq_len*c.hidden_size/4
-                flops += 2*in_seq_len*(c.hidden_size/4)*2
+                flops += MM_FLOPS*in_seq_len*(c.hidden_size/4)*2
                 flops += SOFTMAX_FLOPS*in_seq_len*2
     else:
         raise Exception()
     return flops
 
 def flops_sparse_approx_bert_model(config:ModelConfig):
+    global LAYER_NORM_FLOPS, \
+        ACTIVATION_FLOPS, \
+        SOFTMAX_FLOPS, \
+        SIGMOID_FLOPS, \
+        LOG_FLOPS, \
+        CDF_FLOPS, \
+        TOPK_FLOPS, \
+        TOPK_FLOPS_LOG, MM_FLOPS
+
+    if config.arch == 'vit':
+        #https://github.com/facebookresearch/fvcore/blob/main/fvcore/nn/flop_count.py#L31
+        #we need to fuse the operations, ignore operations
+        prev_values = (
+            MM_FLOPS, LOG_FLOPS, SIGMOID_FLOPS, CDF_FLOPS, 
+            SOFTMAX_FLOPS, ACTIVATION_FLOPS, LAYER_NORM_FLOPS
+        )
+        MM_FLOPS = 1
+        LOG_FLOPS = 0
+        SIGMOID_FLOPS = 0
+        CDF_FLOPS = 0
+        SOFTMAX_FLOPS = 0
+        ACTIVATION_FLOPS = 0
+        LAYER_NORM_FLOPS = 5
+
+    
     approx_config = copy.deepcopy(config)
     approx_config.hidden_size = approx_config.approx_hidden_size
     approx_config.intermediate_size = approx_config.approx_intermediate_size
@@ -223,6 +283,13 @@ def flops_sparse_approx_bert_model(config:ModelConfig):
     else: raise Exception()
     update_flops = flops_sparse_update(config)
     sparse_flops = flops_sparse_bert_model(config)
+
+    if config.arch == 'vit':
+        (
+            MM_FLOPS, LOG_FLOPS, SIGMOID_FLOPS, CDF_FLOPS, 
+            SOFTMAX_FLOPS, ACTIVATION_FLOPS, LAYER_NORM_FLOPS
+        ) = prev_values
+    
     return approx_flops + sparse_flops + update_flops
 
 def human_readable(flops):
@@ -363,15 +430,29 @@ if __name__ == '__main__':
 
     base_config = ModelConfig(
         num_layer=12,
-        num_heads=3,
-        hidden_size=192,
-        intermediate_size=192*4,
-        seq_len=196,
+        num_heads=12,
+        hidden_size=768,
+        intermediate_size=768*4,
+        seq_len=14*14+1,
         arch='vit',
         token_occupies=None
     )
     print('-'*80)
-    print('deit-small')
+    print('deit-base@fp32')
+    print('-'*80)
+    exam(base_config)
+
+    base_config = ModelConfig(
+        num_layer=12,
+        num_heads=3,
+        hidden_size=192,
+        intermediate_size=192*4,
+        seq_len=14*14+1,
+        arch='vit',
+        token_occupies=None
+    )
+    print('-'*80)
+    print('deit-tiny@fp32')
     print('-'*80)
     exam(base_config)
 
@@ -380,11 +461,11 @@ if __name__ == '__main__':
         num_heads=6,
         hidden_size=384,
         intermediate_size=384*4,
-        seq_len=(224//16)**2,
+        seq_len=14*14+1,
         arch='vit',
         token_occupies=None
     )
     print('-'*80)
-    print('deit-small')
+    print('deit-small@fp32')
     print('-'*80)
     exam(base_config)
