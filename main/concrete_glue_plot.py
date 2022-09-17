@@ -98,7 +98,8 @@ def exp_p_logit(
     device, tqdm_position, 
     i, subset, factor, batch_size, p_logit,
     lr_multiplier=1.0, epochs_multiplier=1.0, grad_acc_multiplier=1.0, 
-    eval_valid=False, eval_test=True
+    eval_valid=False, eval_test=True,
+    restore_checkpoint=False, return_trainer=False,
 ):
     gc.collect()
     torch.cuda.empty_cache()
@@ -122,6 +123,21 @@ def exp_p_logit(
     trainer.epochs = math.ceil(concrete.task_to_epochs[subset] * current_epoch_factors[i] * epochs_multiplier)
     trainer.epochs = int(max(trainer.epochs, 2))
     trainer.set_concrete_init_p_logit(p_logit)
+
+    loaded = False
+    if restore_checkpoint:
+        path_dir = './saves/concrete-glue'
+        if not os.path.exists(path_dir):
+            os.mkdir(path_dir)
+        path_pth = f'{path_dir}/concrete-glue-{subset}-f{factor}-p{p_logit}-l{lr}-e{trainer.epochs}-g{trainer.gradient_accumulate_steps}.pth'
+        if os.path.exists(path_pth):
+            print('exp_p_logit: load pth', path_pth)
+            state = torch.load(path_pth, map_location='cpu')
+            trainer.sparse_bert.load_state_dict(state['sparse_bert'])
+            del state
+            loaded = True
+        else:
+            print('exp_p_logit: not found pth', path_pth)
 
     def exam():
         concrete.sparse.benchmark_reset()
@@ -150,11 +166,18 @@ def exp_p_logit(
     gc.collect()
     torch.cuda.empty_cache()
 
-    concrete.sparse.benchmark_sparse_approx_flops(False)
-    concrete.sparse.benchmark_concrete_occupy(False)
-    trainer.main()
-    gc.collect()
-    torch.cuda.empty_cache()
+    if not loaded:
+        concrete.sparse.benchmark_sparse_approx_flops(False)
+        concrete.sparse.benchmark_concrete_occupy(False)
+        trainer.main()
+        gc.collect()
+        torch.cuda.empty_cache()
+
+        if restore_checkpoint:
+            print('exp_p_logit: save pth', path_pth)
+            torch.save({
+                'sparse_bert': trainer.sparse_bert.state_dict()
+            }, path_pth)
 
     concrete.sparse.benchmark_sparse_approx_flops(True)
     concrete.sparse.benchmark_concrete_occupy(True)
@@ -171,7 +194,7 @@ def exp_p_logit(
     if eval_test:
         print(f'[{i+1}/{len(p_logits)}]({subset}) occupy: {occupy} flops: {flops} metric: {metric} occupy_no: {occupy_no_train} flops_no: {flops_no_train} metric_no: {metric_no_train}')
 
-    return {
+    ret_dict = {
         'i': i,
         'metric_name': metric_name,
         'occupy_no_train':occupy_no_train,
@@ -191,6 +214,9 @@ def exp_p_logit(
         'epochs_multiplier':epochs_multiplier, 
         'grad_acc_multiplier':grad_acc_multiplier,
     }
+    if return_trainer:
+        return ret_dict, trainer
+    return ret_dict
 
 def query_best_hyperparameter(args):
     # if already best validated hyperparameter is cached, then return from disk.

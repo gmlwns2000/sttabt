@@ -1,4 +1,4 @@
-import argparse, json, itertools
+import argparse, json, itertools, os, torch
 from matplotlib import pyplot as plt
 from main.concrete_glue_plot import GLUE_SUBSETS
 from utils.glue import get_score
@@ -73,20 +73,50 @@ def search_hparam(subset, batch_size):
     
     return hparam, results
 
-def run_exp_inner(device, tqdm_position, subset, batch_size, ltp_lambda, ltp_temperature):
+def run_exp_inner(
+    device, tqdm_position, subset, batch_size, ltp_lambda, ltp_temperature,
+    restore_checkpoint=False, return_trainer=False, skip_eval=False
+):
     trainer = ltp.LtpTrainer(subset, batch_size=batch_size, device=device)
     trainer.tqdm_position = tqdm_position
     trainer.reset_train()
     trainer.sparse_bert.module.ltp_lambda = ltp_lambda
     trainer.sparse_bert.module.bert.set_ltp_temperature(ltp_temperature)
-    trainer.main()
 
-    ltp.sparse.benchmark_reset()
-    result = trainer.eval_sparse_model(show_message=False, split='test')
-    test_metric, _ = get_score(result)
-    test_occupy = ltp.sparse.benchmark_get_average('ltp_occupy')
+    loaded = False
+    if restore_checkpoint:
+        path_dir = './saves/ltp-glue'
+        if not os.path.exists(path_dir):
+            os.mkdir(path_dir)
+        path_pth = f'{path_dir}/ltp-glue-{subset}-{ltp_lambda}-{ltp_temperature}.pth'
+        
+        if os.exists(path_pth):
+            print('run_exp_inner: load pth', path_pth)
+            state = torch.load(path_pth, map_location='cpu')
+            trainer.sparse_bert.load_state_dict(state['sparse_bert'])
+            del state
+            loaded = True
+        else:
+            print('run_exp_inner: not find pth', path_pth)
+    
+    if not loaded:
+        trainer.main()
+        if restore_checkpoint:
+            print('run_exp_inner: save pth', path_pth)
+            torch.save({
+                'sparse_bert': trainer.sparse_bert.state_dict(),
+            }, path_pth)
 
-    return {
+    if skip_eval:
+        test_metric = {}
+        test_occupy = 0.0
+    else:
+        ltp.sparse.benchmark_reset()
+        result = trainer.eval_sparse_model(show_message=False, split='test')
+        test_metric, _ = get_score(result)
+        test_occupy = ltp.sparse.benchmark_get_average('ltp_occupy')
+
+    ret_dict = {
         'subset': subset,
         'batch_size': batch_size,
         'lambda': ltp_lambda,
@@ -94,6 +124,10 @@ def run_exp_inner(device, tqdm_position, subset, batch_size, ltp_lambda, ltp_tem
         'test_metric': test_metric,
         'test_occupy': test_occupy,
     }
+
+    if return_trainer:
+        return ret_dict, trainer
+    return ret_dict
 
 def run_exp(subset, batch_size, lambdas, hparam):
     cases = [(subset, batch_size, ld, hparam[ld]['temperature'])for ld in lambdas]
