@@ -90,7 +90,7 @@ def run_exp_inner(
             os.mkdir(path_dir)
         path_pth = f'{path_dir}/ltp-glue-{subset}-{ltp_lambda}-{ltp_temperature}.pth'
         
-        if os.exists(path_pth):
+        if os.path.exists(path_pth):
             print('run_exp_inner: load pth', path_pth)
             state = torch.load(path_pth, map_location='cpu')
             trainer.sparse_bert.load_state_dict(state['sparse_bert'])
