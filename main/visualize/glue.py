@@ -98,7 +98,7 @@ def render_mask(tokenizer: "transformers.BertTokenizerFast", ids, attention_mask
 
     # Rotate the tick labels and set their alignment.
     ax.tick_params(top=True, bottom=False, labeltop=True, labelbottom=False)
-    plt.setp(ax.get_xticklabels(), rotation=-30, ha="right", rotation_mode="anchor")
+    plt.setp(ax.get_xticklabels(), rotation=-90, ha="right", rotation_mode="anchor")
 
     ax.set_title(title)
     fig.tight_layout()
@@ -106,8 +106,8 @@ def render_mask(tokenizer: "transformers.BertTokenizerFast", ids, attention_mask
     fig.canvas.draw()
     data = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
     img = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-    plt.savefig(filename + '.png')
-    plt.savefig(filename + '.pdf')
+    plt.savefig(filename + '.png', bbox_inches='tight',pad_inches=0.1)
+    plt.savefig(filename + '.pdf', bbox_inches='tight',pad_inches=0.1)
     print('render_mask:', filename, '.pdf, .png')
     
     return img
