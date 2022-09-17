@@ -159,11 +159,16 @@ def main():
     for i, txt in enumerate(labels_other):
         ax.annotate(txt, (xs_other[i], ys_other[i]), fontsize=6)
     
-    plt.grid()
     plt.legend(prop={'size': 9})
     plt.title(f'{STR_IMAGENET_1K}', fontsize=12)
     plt.xlabel('GFLOPs')
     plt.ylabel(STR_TOP1_ACCURACY)
+
+    y_bot, y_top = plt.ylim()
+    y_bot = y_top - (y_top-y_bot) * 0.6
+    plt.ylim(y_bot, y_top)
+    
+    plt.grid(which='both', axis='both')
 
     filename = './saves_plot/vit-flops'
     plt.savefig(filename+'.png')
