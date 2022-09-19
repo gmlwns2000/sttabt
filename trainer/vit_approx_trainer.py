@@ -85,6 +85,7 @@ class VitApproxTrainer:
         init_checkpoint = None,
         dataloader_lib = 'timm',
         enable_valid = False,
+        epochs=-1,
     ):
         self.seed()
 
@@ -98,6 +99,8 @@ class VitApproxTrainer:
         self.device = device
         self.factor = factor
         self.epochs = tasks_to_epoch[self.subset]
+        if epochs > 0:
+            self.epochs = epochs
         if batch_size <= 0:
             batch_size = tasks_to_batch_size[self.model_id]
         self.batch_size = batch_size
@@ -460,7 +463,7 @@ class VitApproxTrainer:
         #score = metric.compute()
         score = {'accuracy': acc_sum / acc_count}
 
-        if show_message: print(score)
+        if show_message: print('VitApproxTrainer.eval_model_metric:', score)
         return score
     
     def eval_model_metric_base(self, show_message=False):
@@ -567,7 +570,7 @@ class VitApproxTrainer:
             for k in metric.keys():
                 loss_sum[k] = metric[k]
         
-        if show_message: print(loss_sum)
+        if show_message: print('VitApproxTrainer.eval_model:', loss_sum)
         return loss_sum
 
 # Train Impl
@@ -691,6 +694,7 @@ def main_trainer(device, world_size, args):
         factor=args.factor,
         init_checkpoint=args.init_checkpoint,
         model=args.model,
+        epochs=args.epochs,
     )
     if not args.eval:
         trainer.main()
@@ -706,6 +710,7 @@ def main():
     parser.add_argument('--factor', type=int, default=4)
     parser.add_argument('--init-checkpoint', type=str, default=None)
     parser.add_argument('--batch-size', type=int, default=-1)
+    parser.add_argument('--epochs', type=int, default=-1)
     parser.add_argument('--n-gpus', type=int, default=999)
     parser.add_argument('--eval', default=False, action='store_true')
 

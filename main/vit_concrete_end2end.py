@@ -62,7 +62,7 @@ def execute_proc(cmd, new_envs=None):
                 log('process exited')
 
 def run_approx(args):
-    cmd = f"python -m trainer.vit_approx_trainer --factor {args.factor} --n-gpus {args.n_gpus}"
+    cmd = f"python -m trainer.vit_approx_trainer --factor {args.factor} --n-gpus {args.n_gpus} --epochs {args.approx_epochs}"
     return_code = execute_proc(cmd, new_envs={
         'IMAGENET_ROOT': args.imagenet_root
     })
@@ -95,6 +95,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--factor', type=int, default=4)
     parser.add_argument('--batch-size', type=int, default=64)
+    parser.add_argument('--approx-epochs', type=int, default=30)
     parser.add_argument('--epochs', type=int, default=20)
     parser.add_argument('--warmup-epochs', type=int, default=14)
     parser.add_argument('--n-gpus', type=int, default=8)
