@@ -68,7 +68,7 @@ def load_concrete(factor=4, p_logits=[-3, -2, -1.5, -1.25, -1, -0.5, 0.0, 0.5, 1
         with open(path_log, 'r') as f:
             lines = f.readlines()
             if len(lines) < epochs:
-                print(f'load_concrete: train is not finished at epoch {len(lines)+1}')
+                print(f'load_concrete: train is not finished at epoch {len(lines)+1}', path_log)
                 continue
             line = lines[-1].strip().strip('\n')
             data = json.loads(line)
