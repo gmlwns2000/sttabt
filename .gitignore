@@ -8,8 +8,12 @@ cache/
 *.zip
 dataset/squad2/*.json
 saves/*
+saves
 cache
 pretrained/
 logs/
 *.log
+saves.bak/
+
 !saves/README.md
+!./saves/README.md
