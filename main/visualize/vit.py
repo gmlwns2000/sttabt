@@ -241,7 +241,7 @@ def main():
     #three layers
     interest_ids = [5, 7]
     interested_layers = [3,6,9]
-    labels_layer = [str(i+1) for i in interested_layers]
+    labels_layer = [0,]+[str(i+1) for i in interested_layers]
     plots_dyvit = vis_dyvit(
         checkpoint_path='./thrid_party/DynamicViT/logs/dynamicvit_deit-s-0.4/checkpoint-29.pth',
         base_rate=0.4, interested_layer=interested_layers
