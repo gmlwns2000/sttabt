@@ -76,7 +76,7 @@ def load_dyvit(checkpoint_path, base_rate=0.4):
     return model, PRUNING_LOC
 
 @torch.no_grad()
-def vis_dyvit(checkpoint_path, imsize=224, patchsize=16, base_rate=0.4):
+def vis_dyvit(checkpoint_path, imsize=224, patchsize=16, base_rate=0.4, interested_layer=None):
     print('vis_dyvit:', checkpoint_path)
     def get_keep_indices(decisions):
         keep_indices = []
@@ -107,7 +107,7 @@ def vis_dyvit(checkpoint_path, imsize=224, patchsize=16, base_rate=0.4):
 
     plot_imgs = []
     for i, img in enumerate(imgs):
-        plot_img = render_image(img, input_masks[i])
+        plot_img = render_image(img, input_masks[i] if interested_layer is None else input_masks[i][interested_layer])
         path = f'./saves_plot/visualization_vit/{i}_dyvit.png'
         cv2.imwrite(path, plot_img)
         plot_imgs.append(plot_img)
@@ -129,7 +129,7 @@ def load_concrete(checkpoint_path, factor=4, p_logit=-1.5):
     return model
 
 @torch.no_grad()
-def vis_concrete(checkpoint_path, imsize=224, patchsize=16, factor=4, p_logit=-1.5):
+def vis_concrete(checkpoint_path, imsize=224, patchsize=16, factor=4, p_logit=-1.5, interested_layer=None):
     print('vis_concrete:', checkpoint_path)
     assert os.path.exists(checkpoint_path)
     
@@ -149,7 +149,7 @@ def vis_concrete(checkpoint_path, imsize=224, patchsize=16, factor=4, p_logit=-1
     
     plot_imgs = []
     for i, img in enumerate(imgs):
-        plot_img = render_image(img, input_masks[i])
+        plot_img = render_image(img, input_masks[i] if interested_layer is None else input_masks[i][interested_layer])
         path = f'./saves_plot/visualization_vit/{i}_concrete.png'
         cv2.imwrite(path, plot_img)
         plot_imgs.append(plot_img)
@@ -157,7 +157,7 @@ def vis_concrete(checkpoint_path, imsize=224, patchsize=16, factor=4, p_logit=-1
     
     return plot_imgs
 
-def label_stacked_plot(plot):
+def label_stacked_plot(plot, labels_layer=None):
     left_pad = 224
     top_pad = 112
     left_stack_top_margin = 112 + top_pad
@@ -194,7 +194,7 @@ def label_stacked_plot(plot):
     x = top_stack_left_margin
     i = 0
     while x < (W + left_pad):
-        text = "Original" if i == 0 else f"Layer {i}"
+        text = "Original" if i == 0 else (f"Layer {i}" if (labels_layer is None or i >= len(labels_layer)) else labels_layer[i])
 
         (label_width, label_height), baseline = cv2.getTextSize(text, font_face, font_scale, font_thickness)
         img = cv2.putText(img, text, (x - label_width // 2, top_pad - top_stack_bottom_margin), font_face, font_scale, font_color, font_thickness, cv2.LINE_AA)
@@ -220,39 +220,58 @@ def label_stacked_plot(plot):
     
     return img
 
-def combine_plots(plots_dyvit, plots_concrete):
+def combine_plots(plots_dyvit, plots_concrete, labels_layer=None):
     plot_stacks = []
     for i in range(len(plots_dyvit)):
         plot_stacks.append(plots_concrete[i])
         plot_stacks.append(plots_dyvit[i])
     plot_stacks = np.concatenate(plot_stacks, axis=0)
     
-    return plot_stacks, label_stacked_plot(plot_stacks)
+    return plot_stacks, label_stacked_plot(plot_stacks, labels_layer=labels_layer)
 
 def main():
+    def imwrite(name, img):
+        path = f'./saves_plot/visualization_vit/{name}'
+        cv2.imwrite(path+'.png', img)
+        cv2.imwrite(path+'.jpg', img)
+        print('main.imwrite:', path)
+    def filter(lst, ids):
+        return [item for i, item in enumerate(lst) if i in ids]
+    
+    #three layers
+    interest_ids = [5, 7]
+    interested_layers = [3,6,9]
+    labels_layer = [str(i+1) for i in interested_layers]
+    plots_dyvit = vis_dyvit(
+        checkpoint_path='./thrid_party/DynamicViT/logs/dynamicvit_deit-s-0.4/checkpoint-29.pth',
+        base_rate=0.4, interested_layer=interested_layers
+    )
+    plots_concrete = vis_concrete(
+        checkpoint_path='./saves/dyvit-concrete-f4--1.5-nohard-e20-we14/checkpoint-19.pth',
+        factor=4, p_logit=-1.5, interested_layer=interested_layers
+    )
+    plot_stacks, plot_stacks_labeled = combine_plots(filter(plots_dyvit, interest_ids), filter(plots_concrete, interest_ids), labels_layer)
+    imwrite('vit_token_visualization_interested_layers_labeled', plot_stacks_labeled)
+    interest_ids = [0, 4]
+    plot_stacks, plot_stacks_labeled = combine_plots(filter(plots_dyvit, interest_ids), filter(plots_concrete, interest_ids), labels_layer)
+    imwrite('vit_token_visualization_interested_layers_labeled_2', plot_stacks_labeled)
+
+    #full layers
+    interested_layers = None
     plots_dyvit = vis_dyvit(
         checkpoint_path='./thrid_party/DynamicViT/logs/dynamicvit_deit-s-0.4/checkpoint-29.pth',
         base_rate=0.4
     )
     plots_concrete = vis_concrete(
         checkpoint_path='./saves/dyvit-concrete-f4--1.5-nohard-e20-we14/checkpoint-19.pth',
-        factor=4,
-        p_logit=-1.5
+        factor=4, p_logit=-1.5
     )
-
-    def imwrite(name, img):
-        path = f'./saves_plot/visualization_vit/{name}'
-        cv2.imwrite(path+'.png', img)
-        cv2.imwrite(path+'.jpg', img)
-        print('main.imwrite:', path)
     
     plot_stacks, plot_stacks_labeled = combine_plots(plots_dyvit, plots_concrete)
     imwrite('vit_token_visualization', plot_stacks)
     imwrite('vit_token_visualization_labeled', plot_stacks_labeled)
 
-    interest_ids = [5, 13] #[5, 9, 13]
-    def filter(lst, ids):
-        return [item for i, item in enumerate(lst) if i in ids]
+    interest_ids = [5, 7]
     plot_stacks, plot_stacks_labeled = combine_plots(filter(plots_dyvit, interest_ids), filter(plots_concrete, interest_ids))
     imwrite('vit_token_visualization_interested', plot_stacks)
     imwrite('vit_token_visualization_interested_labeled', plot_stacks_labeled)
