@@ -179,8 +179,8 @@ def main(fig_scales=[1.0, 0.7]):
         plt.grid(which='both', axis='both')
 
         filename = './saves_plot/vit-flops' + ('' if fig_scale == 1.0 else f'-x{fig_scale}')
-        plt.savefig(filename+'.png')
-        plt.savefig(filename+'.pdf')
+        plt.savefig(filename+'.png', bbox_inches='tight', pad_inches=0.05)
+        plt.savefig(filename+'.pdf', bbox_inches='tight', pad_inches=0.05)
     
     for fig_scale in fig_scales:
         _render(fig_scale)
