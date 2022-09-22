@@ -75,7 +75,7 @@ def load_approx(factor=4):
         ys_base,
     )
 
-def main(factor=4):
+def main(factor=4, font_scale=1.0, fig_scale=1.0):
     xs_dyvit, ys_dyvit = load_dyvit()
     (
         xs_concrete, ys_concrete, 
@@ -111,6 +111,7 @@ def main(factor=4):
         }, f, indent=2)
 
     plt.clf()
+    plt.figure(figsize=(6.4*fig_scale,4.8*fig_scale))
 
     xscale = 100
     xs_dyvit = scale(xs_dyvit, xscale)
@@ -165,16 +166,18 @@ def main(factor=4):
     plt.ylim((y_bot, y_top))
     
     plt.grid(True)
-    plt.xlabel(STR_AVERAGE_KEEP_TOKEN_RATIO)
-    plt.ylabel(STR_TOP1_ACCURACY)
-    plt.legend(prop={'size': 9})
-    plt.title(f'{STR_IMAGENET_1K}', fontsize=12)
+    plt.xlabel(STR_AVERAGE_KEEP_TOKEN_RATIO, fontsize=10*font_scale)
+    plt.ylabel(STR_TOP1_ACCURACY, fontsize=10*font_scale)
+    plt.legend(prop={'size': 9*font_scale})
+    plt.title(f'{STR_IMAGENET_1K}', fontsize=12*font_scale)
 
-    plt.savefig(f'{PLOT_NAME}.png', dpi=320)
-    plt.savefig(f'{PLOT_NAME}.svg')
-    plt.savefig(f'{PLOT_NAME}.pdf')
+    plt.savefig(f'{PLOT_NAME}.png', dpi=320, bbox_inches='tight', pad_inches=0.05)
+    plt.savefig(f'{PLOT_NAME}.svg', bbox_inches='tight', pad_inches=0.05)
+    plt.savefig(f'{PLOT_NAME}.pdf', bbox_inches='tight', pad_inches=0.05)
 
     print('done')
 
 if __name__ == '__main__':
     main()
+    PLOT_NAME += '-small'
+    main(fig_scale=0.75)

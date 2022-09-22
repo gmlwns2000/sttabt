@@ -133,7 +133,7 @@ def load_concrete(factor=4, p_logits=[-3, -2, -1.5, -1.25, -1, -0.5, 0.0, 0.5, 1
         return [], [], [], []
     return ([ret[j][i] for j in range(len(ret))] for i in range(len(ret[0])))
 
-def main():
+def main(fig_scales=[1.0, 0.7]):
     xs_dyvit, ys_dyvit = load_dyvit()
     xs_dyvit = scale(xs_dyvit, 1e-9)
 
@@ -142,43 +142,48 @@ def main():
 
     xs_other, ys_other, labels_other, colors_other = load_points()
 
-    plt.clf()
-    fig, ax = plt.subplots()
-    plt.plot(
-        xs_dyvit, ys_dyvit, 
-        label=STR_DYNAMIC_VIT, color='orange',
-        marker='o', linestyle='-', linewidth=1.2, zorder=1,
-    )
-    plt.plot(
-        xs_concrete, ys_concrete, 
-        label="STTABT@f4 (Concrete) DeiT-S", color=COLOR_STTABT_CONCRETE_WITH_TRAIN,
-        marker='^', linestyle='--', linewidth=1.2, zorder=99,
-    )
-    if len(xs_concrete_f8) > 0:
+    def _render(fig_scale):
+        plt.clf()
+        plt.figure(figsize=(6.4*fig_scale, 4.8*fig_scale))
+        fig, ax = plt.subplots(figsize=(6.4*fig_scale, 4.8*fig_scale))
         plt.plot(
-            xs_concrete_f8, ys_concrete_f8, 
-            label="STTABT@f8 (Concrete) DeiT-S", color=COLOR_STTABT_CONCRETE_WITH_TRAIN,
-            marker='^', linestyle='-', linewidth=1.2, zorder=99,
+            xs_dyvit, ys_dyvit, 
+            label=STR_DYNAMIC_VIT, color='orange',
+            marker='o', linestyle='-', linewidth=1.2, zorder=1,
         )
-    
-    for i, txt in enumerate(labels_other):
-        plt.scatter(xs_other[i], ys_other[i], color=colors_other[i])
-        ax.annotate(txt, (xs_other[i], ys_other[i]), fontsize=6)
-    
-    plt.legend(prop={'size': 9})
-    plt.title(f'{STR_IMAGENET_1K}', fontsize=12)
-    plt.xlabel('GFLOPs')
-    plt.ylabel(STR_TOP1_ACCURACY)
+        plt.plot(
+            xs_concrete, ys_concrete, 
+            label="STTABT@f4 (Concrete) DeiT-S", color=COLOR_STTABT_CONCRETE_WITH_TRAIN,
+            marker='^', linestyle='--', linewidth=1.2, zorder=99,
+        )
+        if len(xs_concrete_f8) > 0:
+            plt.plot(
+                xs_concrete_f8, ys_concrete_f8, 
+                label="STTABT@f8 (Concrete) DeiT-S", color=COLOR_STTABT_CONCRETE_WITH_TRAIN,
+                marker='^', linestyle='-', linewidth=1.2, zorder=99,
+            )
+        
+        for i, txt in enumerate(labels_other):
+            plt.scatter(xs_other[i], ys_other[i], color=colors_other[i])
+            ax.annotate(txt, (xs_other[i], ys_other[i]), fontsize=7)
+        
+        plt.legend(prop={'size': 9})
+        plt.title(f'{STR_IMAGENET_1K}', fontsize=12)
+        plt.xlabel('GFLOPs')
+        plt.ylabel(STR_TOP1_ACCURACY)
 
-    y_bot, y_top = plt.ylim()
-    y_bot = y_top - (y_top-y_bot) * 0.96
-    plt.ylim(y_bot, y_top)
-    
-    plt.grid(which='both', axis='both')
+        y_bot, y_top = plt.ylim()
+        y_bot = y_top - (y_top-y_bot) * 0.7
+        plt.ylim(y_bot, y_top)
+        
+        plt.grid(which='both', axis='both')
 
-    filename = './saves_plot/vit-flops'
-    plt.savefig(filename+'.png')
-    plt.savefig(filename+'.pdf')
+        filename = './saves_plot/vit-flops' + ('' if fig_scale == 1.0 else f'-x{fig_scale}')
+        plt.savefig(filename+'.png')
+        plt.savefig(filename+'.pdf')
+    
+    for fig_scale in fig_scales:
+        _render(fig_scale)
 
 if __name__ == '__main__':
     main()
