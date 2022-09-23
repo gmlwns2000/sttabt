@@ -128,109 +128,6 @@ def main():
         xs_ltp = scale(xs_ltp, x_scale)
         xs_forward = scale(xs_forward, x_scale)
         xs_bert = scale(xs_bert, x_scale)
-
-        # plt.clf()
-        # plt.plot(
-        #     xs_sparse, ys_sparse, 
-        #     label=STR_STTABT_APPROX, color=COLOR_STTABT_APPROX, 
-        #     marker='o', linewidth=1.2, zorder=10
-        # )
-        # plt.plot(
-        #     xs_absatt, ys_absatt, 
-        #     label=STR_STTABT_ABSATT, color=COLOR_STTABT_ABSATT,
-        #     marker='o', linewidth=1.2, 
-        # )
-        # plt.plot(
-        #     xs_concrete_train, ys_concrete_train, 
-        #     label=STR_STTABT_CONCRETE_WITH_TRAIN, color=COLOR_STTABT_CONCRETE_WITH_TRAIN, 
-        #     marker='^', linewidth=1.2, zorder=10
-        # )
-        # plt.plot(
-        #     xs_concrete_no_train, ys_concrete_no_train, 
-        #     label=STR_STTABT_CONCRETE_WO_TRAIN, color=COLOR_STTABT_CONCRETE_WO_TRAIN,
-        #     marker='^', linewidth=1.2, 
-        # )
-        # plt.plot(
-        #     xs_ltp, ys_ltp, 
-        #     label=STR_LTP_BEST_VALID, color=COLOR_LTP_BEST_VALID, 
-        #     marker='x', linewidth=1.2, linestyle='--'
-        # )
-        # plt.plot(
-        #     xs_forward, ys_forward, 
-        #     label=STR_MANUAL_TOPK, color=COLOR_MANUAL_TOPK, 
-        #     marker='x', linewidth=1.2, linestyle='--'
-        # )
-        # plt.plot(
-        #     xs_bert, ys_bert, 
-        #     label=STR_BERT_BASE, color=COLOR_BERT_BASE, 
-        #     linestyle=':', zorder=-99
-        # )
-        # plt.grid(True)
-        # plt.xlabel(STR_AVERAGE_KEEP_TOKEN_RATIO)
-        # plt.ylabel(metric_display_name)
-        # plt.legend()
-        # plt.title(f'{SUBSET_TO_NAME[subset]}', fontsize=12)
-        # plt.savefig(plot_name+'.svg', dpi=320)
-
-        def bert_xs(*xss):
-            xss = sum(xss, start=[])
-            return [min(xss), max(xss)]
-
-        # plt.clf()
-        # plt.plot(
-        #     xs_sparse, ys_sparse, 
-        #     label=STR_STTABT_APPROX, color=COLOR_STTABT_APPROX, 
-        #     marker='o', linewidth=1.2, zorder=10
-        # )
-        # plt.plot(
-        #     xs_absatt, ys_absatt, 
-        #     label=STR_STTABT_ABSATT, color=COLOR_STTABT_ABSATT,
-        #     marker='o', linewidth=1.2, 
-        # )
-        # plt.plot(
-        #     xs_concrete_no_train, ys_concrete_no_train, 
-        #     label=STR_STTABT_CONCRETE_WO_TRAIN, color=COLOR_STTABT_CONCRETE_WO_TRAIN, 
-        #     marker='^', linewidth=1.2, 
-        # )
-        # plt.plot(
-        #     xs_forward, ys_forward, 
-        #     label=STR_MANUAL_TOPK, color=COLOR_MANUAL_TOPK, 
-        #     marker='x', linewidth=1.2, linestyle='--'
-        # )
-        # plt.plot(
-        #     bert_xs(xs_sparse, xs_absatt, xs_concrete_no_train, xs_forward), ys_bert, 
-        #     label=STR_BERT_BASE, color=COLOR_BERT_BASE, 
-        #     linestyle=':', zorder=-99
-        # )
-        # plt.grid(True)
-        # plt.xlabel(STR_AVERAGE_KEEP_TOKEN_RATIO)
-        # plt.ylabel(metric_display_name)
-        # plt.legend()
-        # plt.title(f'{SUBSET_TO_NAME[subset]}', fontsize=12)
-        # plt.savefig(plot_name+'-no-train.svg', dpi=320)
-
-        # plt.clf()
-        # plt.plot(
-        #     xs_concrete_train, ys_concrete_train, 
-        #     label=STR_STTABT_CONCRETE_WITH_TRAIN, color=COLOR_STTABT_CONCRETE_WITH_TRAIN, 
-        #     marker='^', linewidth=1.2, zorder=10
-        # )
-        # plt.plot(
-        #     xs_ltp, ys_ltp, 
-        #     label=STR_LTP_BEST_VALID, color=COLOR_LTP_BEST_VALID, 
-        #     linewidth=1.2, marker='x', linestyle='--'
-        # )
-        # plt.plot(
-        #     bert_xs(xs_concrete_train, xs_ltp), ys_bert, 
-        #     label=STR_BERT_BASE, color=COLOR_BERT_BASE, 
-        #     linestyle=':', zorder=-99
-        # )
-        # plt.grid(True)
-        # plt.xlabel(STR_AVERAGE_KEEP_TOKEN_RATIO)
-        # plt.ylabel(metric_display_name)
-        # plt.legend()
-        # plt.title(f'{SUBSET_TO_NAME[subset]}', fontsize=12)
-        # plt.savefig(plot_name+'-train.svg', dpi=320)
         
         if layout == '3x3':
             ax = combined_fig.add_subplot(3, 3, 
@@ -314,15 +211,15 @@ def main():
             combined_fig.subplots_adjust(bottom=0.13)
             combined_fig.savefig(
                 f'saves_plot/combined-glue-all.png',
-                bbox_extra_artists=(legend, ), bbox_inches='tight', dpi=320
+                bbox_extra_artists=(legend, ), bbox_inches='tight', dpi=320, pad_inches=0.05
             )
             combined_fig.savefig(
                 f'saves_plot/combined-glue-all.svg',
-                bbox_extra_artists=(legend, ), bbox_inches='tight', dpi=320
+                bbox_extra_artists=(legend, ), bbox_inches='tight', dpi=320, pad_inches=0.05
             )
             combined_fig.savefig(
                 f'saves_plot/combined-glue-all.pdf',
-                bbox_extra_artists=(legend, ), bbox_inches='tight', dpi=320
+                bbox_extra_artists=(legend, ), bbox_inches='tight', dpi=320, pad_inches=0.05
             )
         else:
             handles, labels = ax.get_legend_handles_labels()
@@ -331,15 +228,15 @@ def main():
             combined_fig.subplots_adjust(bottom=0.2)
             combined_fig.savefig(
                 f'saves_plot/combined-glue-all.png',
-                bbox_extra_artists=(legend, ), bbox_inches='tight', dpi=320
+                bbox_extra_artists=(legend, ), bbox_inches='tight', dpi=320, pad_inches=0.05
             )
             combined_fig.savefig(
                 f'saves_plot/combined-glue-all.svg',
-                bbox_extra_artists=(legend, ), bbox_inches='tight', dpi=320
+                bbox_extra_artists=(legend, ), bbox_inches='tight', dpi=320, pad_inches=0.05
             )
             combined_fig.savefig(
                 f'saves_plot/combined-glue-all.pdf',
-                bbox_extra_artists=(legend, ), bbox_inches='tight', dpi=320
+                bbox_extra_artists=(legend, ), bbox_inches='tight', dpi=320, pad_inches=0.05
             )
 
     if len(skipped) > 0:
