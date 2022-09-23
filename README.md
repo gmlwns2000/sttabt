@@ -1,4 +1,4 @@
-# Sparse Token Transformer with Attention Back-Tracking
+# STTABT: Sparse Token Transformer with Attention Back-Tracking
 
 Sparse Token Transformer with Attention Back-Tracking
 
