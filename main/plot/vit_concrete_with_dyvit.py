@@ -168,7 +168,7 @@ def main(factor=4, font_scale=1.0, fig_scale=1.0):
     plt.grid(True)
     plt.xlabel(STR_AVERAGE_KEEP_TOKEN_RATIO, fontsize=10*font_scale)
     plt.ylabel(STR_TOP1_ACCURACY, fontsize=10*font_scale)
-    plt.legend(prop={'size': 9*font_scale})
+    plt.legend(prop={'size': 9*font_scale}).set_zorder(1000)
     plt.title(f'{STR_IMAGENET_1K}', fontsize=12*font_scale)
 
     plt.savefig(f'{PLOT_NAME}.png', dpi=320, bbox_inches='tight', pad_inches=0.05)
