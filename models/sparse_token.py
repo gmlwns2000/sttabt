@@ -1,6 +1,6 @@
 """
 Sparse Token Transformer with Attetion Back Tracking
-Heejun Lee
+***
 2022
 """
 

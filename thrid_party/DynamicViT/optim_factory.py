@@ -79,7 +79,7 @@ def get_parameter_groups(model, weight_decay=1e-5, skip_list=(), get_num_layer=N
             continue  # frozen weights
         elif 'cls_token' in name or 'pos_embed' in name:
             continue # frozen weights
-        #ainl: this is for new prameter in DyViT, but we should ignore it.
+        #this is for new prameter in DyViT, but we should ignore it.
         elif 'fast' in name or 'predictor' in name or 'mse' in name or 'fastmlp' in name:
         # elif 'predictor' in name:
             if len(param.shape) == 1 or name.endswith(".bias") or name in skip_list:
