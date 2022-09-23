@@ -3,7 +3,7 @@ This script train
 transformers.ViTForImageClassification
 for specified dataset
 
-HEEJUN LEE
+***
 """
 
 import random
