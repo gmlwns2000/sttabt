@@ -158,8 +158,8 @@ def vis_concrete(checkpoint_path, imsize=224, patchsize=16, factor=4, p_logit=-1
     return plot_imgs
 
 def label_stacked_plot(plot, labels_layer=None):
-    left_pad = 224
-    top_pad = 112
+    left_pad = 275
+    top_pad = 63
     left_stack_top_margin = 112 + top_pad
     left_stack_item_height = 224
     left_stack_item_right_pad = 24
@@ -167,9 +167,9 @@ def label_stacked_plot(plot, labels_layer=None):
     top_stack_bottom_margin = 16
     top_stack_item_width = 224
     font_face = cv2.FONT_HERSHEY_PLAIN
-    font_scale = 2.0
+    font_scale = 2.7
     font_color = (0,0,0)
-    font_thickness = 2
+    font_thickness = 3
     grid_line_color = (255,255,255)
     grid_line_thickness = 3
 
