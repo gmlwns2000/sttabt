@@ -103,10 +103,10 @@ def get_parameter_groups(model, weight_decay=1e-5, skip_list=(), get_num_layer=N
         if group_name not in parameter_group_names:
             if get_layer_scale is not None:
                 scale = get_layer_scale(layer_id)
-            if group_name is 'decay':
+            if group_name == 'decay':
                 scale = bone_lr_scale
                 fix_step = old_wegiht_fix_epochs
-            elif group_name is 'no_decay':
+            elif group_name == 'no_decay':
                 scale = bone_lr_scale
                 fix_step = old_wegiht_fix_epochs
             else:

@@ -11,32 +11,33 @@ from trainer import vit_concrete_trainer as vit_concrete
 
 COLOR_DEIT = 'blue'
 COLOR_SPVIT = 'magenta'
-COLOR_IA = 'brown'
+COLOR_IA = 'green'
 COLOR_S2 = 'black'
 COLOR_HVT = 'gray'
 
 def load_points():
-    #return [flops] [accuracy] [name] [color]
+    #return [flops] [accuracy] [name] [color] [offset(x, y)]
+    # we left only baselines that derived from DeiT-S, not others
     ret = [
         #from SPViT paper
-        (1.24, 72.2, 'DeiT-T', COLOR_DEIT),
+        (1.24, 72.2, 'DeiT-T', COLOR_DEIT, (0.1,-0.2)),
         # (1.0, 72.2, 'SPViT-DeiT-T'),
         # (2.13, 75.00, 'T2T-ViT-10'),
         # (0.93, 72.0, 'PS-ViT'),
         # (0.95, 70.12, 'S$^2$ViTE'),
 
-        (4.58, 79.8, 'DeiT-S', COLOR_DEIT),
-        (2.64, 79.34, 'SPViT-DeiT-S', COLOR_SPVIT),
-        (3.15, 79.1, 'IA-RED$^2$', COLOR_IA),
-        (3.14, 79.22, 'S$^2$ ViTE', COLOR_S2),
-        (2.4, 78.00, 'HVT-S-1', COLOR_HVT),
+        (4.58, 79.8, 'DeiT-S', COLOR_DEIT, (-0.5,-0.4)),
+        (2.64, 79.34, 'SPViT-DeiT-S', COLOR_SPVIT, (-0.97,-0.3)),
+        (3.15, 79.1, 'IA-RED$^2$', COLOR_IA, (-0.65,-0.4)),
+        (3.14, 79.22, 'S$^2$ ViTE', COLOR_S2, (0.05,0)),
+        (2.4, 78.00, 'HVT-S-1', COLOR_HVT, (0.1,-0.45)),
         
-        (3.25, 79.0, 'DeiT-S/320', COLOR_DEIT),
-        # (2.00, 78.65, 'SPViT-DeiT-S/320'), # this removed since it is not originate from DeiT.
+        (3.25, 79.0, 'DeiT-S/320', COLOR_DEIT, (0.1,-0.2)),
+        # (2.00, 78.65, 'SPViT-DeiT-S/320'),
         
-        (2.65, 78.53, 'DeiT-S/288', COLOR_DEIT),
+        (2.65, 78.53, 'DeiT-S/288', COLOR_DEIT, (0.1,-0.4)),
         
-        (2.14, 77.21, 'DeiT-S/256', COLOR_DEIT),
+        (2.14, 77.21, 'DeiT-S/256', COLOR_DEIT, (0.1,-0.2)),
         # (1.29, 76.87, 'SPViT-DeiT-T/256'),
     ]
     return ([ret[j][i] for j in range(len(ret))] for i in range(len(ret[0])))
@@ -140,7 +141,7 @@ def main(fig_scales=[1.0, 0.7]):
     xs_concrete, ys_concrete, xs_concrete_ema, ys_concrete_ema = load_concrete(factor=4)
     xs_concrete_f8, ys_concrete_f8, xs_concrete_ema_f8, ys_concrete_ema_f8 = load_concrete(factor=8)
 
-    xs_other, ys_other, labels_other, colors_other = load_points()
+    xs_other, ys_other, labels_other, colors_other, offsets_other = load_points()
 
     def _render(fig_scale):
         plt.clf()
@@ -164,8 +165,12 @@ def main(fig_scales=[1.0, 0.7]):
             )
         
         for i, txt in enumerate(labels_other):
+            ox, oy = offsets_other[i]
             plt.scatter(xs_other[i], ys_other[i], color=colors_other[i])
-            ax.annotate(txt, (xs_other[i], ys_other[i]), fontsize=7)
+            ax.annotate(
+                txt, (xs_other[i] + ox, ys_other[i] + oy), 
+                fontsize=8, color=colors_other[i], zorder=10000
+            )
         
         plt.legend(prop={'size': 9})
         plt.title(f'{STR_IMAGENET_1K}', fontsize=12)
