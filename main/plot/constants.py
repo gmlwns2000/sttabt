@@ -49,7 +49,7 @@ STR_BERT_BASE = 'BERT$_{BASE}$'
 STR_DEIT_SMALL = 'DeiT$_{small}$'
 
 STR_GFLOPS = 'GFLOPs'
-STR_AVERAGE_KEEP_TOKEN_RATIO = 'Average Keep Token Ratio (%)'
+STR_AVERAGE_KEEP_TOKEN_RATIO = 'Average Token Retention Ratio (%)'
 
 COLOR_STTABT_APPROX = 'blue'
 COLOR_STTABT_APPROX_F4 = 'blue'
