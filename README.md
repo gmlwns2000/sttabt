@@ -15,6 +15,11 @@ python -m main.plot.vit_concrete_flops
 python -m main.visualize.vit
 ```
 
+lvvit
+
+
+python -m main.vit_concrete_end2end --factor 4 --n-gpus 3 --model lvvit-small --master-port 14431 --auto-resume --p-logits "-1.5 -1.0 -0.5 0.0 1.0"
+
 ## GLUE Tasks
 
 WIP...
