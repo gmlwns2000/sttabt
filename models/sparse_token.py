@@ -1617,17 +1617,21 @@ class ApproxBertModel(nn.Module):
         
         # loss prediction
         #print(approx_output.logits[0])
-        loss_pred = F.cross_entropy(
-            F.softmax(approx_output.logits, dim=-1),
-            F.softmax(original_output.logits, dim=-1)
-        )
-        # loss_pred = F.mse_loss(
+        # loss_pred = F.kl_div(
         #     F.softmax(approx_output.logits, dim=-1),
         #     F.softmax(original_output.logits, dim=-1),
+        #     reduction='batchmean'
         # )
+        # HOTFIX: LVVIT
+        loss_pred = F.mse_loss(
+            F.softmax(approx_output.logits, dim=-1),
+            F.softmax(original_output.logits, dim=-1),
+        )
         #print(approx_output.logits[0], original_output.logits[0])
         if self.arch == 'vit':
             loss_pred *= 1/10
+            # HOTFIX: LVVIT
+            loss_pred *= 2000
         if self.wiki_train or self.ignore_pred:
             loss_pred *= 0
 

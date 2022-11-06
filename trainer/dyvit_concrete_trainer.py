@@ -206,20 +206,24 @@ from utils import ddp
 import transformers
 
 def load_concrete_model(model_id = 'deit-small', factor=4, p_logit=0.0):
-    if model_id in ['vit-base', 'deit-base', 'deit-small']:
+    if model_id in ['vit-base', 'deit-base', 'deit-small', 'lvvit-small']:
         model_cls = transformers.ViTForImageClassification
     elif model_id in ['deit-base-distilled', 'deit-small-distilled']:
         model_cls = transformers.DeiTForImageClassification
     else: raise Exception()
     model_id_hf = vit_approx.finetuned_to_hf['imagenet'][model_id]
-    model = model_cls.from_pretrained(model_id_hf)
+    if model_id.startswith('lvvit-'):
+        from models.lvvit_huggingface import load_model as load_lvvit
+        model = load_lvvit(model_id)
+    else:
+        model = model_cls.from_pretrained(model_id_hf)
     log('Base model loaded from', model_id_hf)
 
     approx_bert = sparse.ApproxBertModel(
         model.config, 
         factor=factor, 
         arch='vit',
-        ignore_pred=True
+        ignore_pred=False
     )
     vit_approx.load_state_dict_interpolated(approx_bert.bert, vit_approx.get_vit(model).state_dict())
     approx_bert = ddp.MimicDDP(approx_bert)
@@ -253,6 +257,12 @@ def load_concrete_model(model_id = 'deit-small', factor=4, p_logit=0.0):
         assert hasattr(layer, 'concrete_loss_factor')
         layer.concrete_loss_factor = 1e-3 # ease the factor, and let ratio decide it.
     
+    # HOTFIX: lvvit
+    import copy
+    concrete_model.bert.embeddings.patch_embeddings = \
+        copy.deepcopy(model.vit.embeddings.patch_embeddings)
+    concrete_model.bert.embeddings.patch_embeddings.sttabt_patched = True
+
     try:
         concrete_model.bert.load_state_dict(
             vit_approx.get_vit(model).state_dict(),
@@ -357,7 +367,7 @@ def main(args):
 
     SPARSE_RATIO = [args.base_rate, args.base_rate - 0.2, args.base_rate - 0.4]
 
-    if args.model == 'deit-small':
+    if args.model == 'deit-small' or args.model == 'lvvit-small':
         #TODO: add args factor
         model, teacher_model = load_concrete_model(
             model_id=args.model, factor=args.approx_factor, p_logit=args.p_logit
@@ -373,6 +383,7 @@ def main(args):
         criterion = DistillDiffPruningLoss_dynamic(
             teacher_model, criterion, clf_weight=1.0, mse_token=True, ratio_weight=2.0, distill_weight=0.5
         )
+    else: raise Exception()
     
     # if use_teacher:
     #     if 'convnext' in args.model or 'deit' in args.model or 'swin' in args.model:

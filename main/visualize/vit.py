@@ -115,9 +115,9 @@ def vis_dyvit(checkpoint_path, imsize=224, patchsize=16, base_rate=0.4, interest
     
     return plot_imgs
 
-def load_concrete(checkpoint_path, factor=4, p_logit=-1.5):
+def load_concrete(checkpoint_path, factor=4, p_logit=-1.5, model_id='deit-small'):
     model, teacher_model = dyvit_concrete.load_concrete_model(
-        model_id='deit-small', factor=factor, p_logit=p_logit
+        model_id=model_id, factor=factor, p_logit=p_logit
     )
     model = model.eval() #type: sparse.ApproxSparseBertForSequenceClassification
 

@@ -52,12 +52,22 @@ def load_dyvit():
     ret = sorted(ret, key=lambda it: it[0])
     return ([ret[j][i] for j in range(len(ret))] for i in range(len(ret[0])))
 
-def load_concrete(factor=4, p_logits=[-3, -2, -1.5, -1.25, -1, -0.5, 0.0, 0.5, 1.0], epochs=20, warmup_epochs=14, device=0):
+def load_concrete(
+    factor=4, 
+    p_logits=[-3, -2, -1.5, -1.25, -1, -0.5, 0.0, 0.5, 1.0], 
+    epochs=20, 
+    warmup_epochs=14, 
+    device=0,
+    model_id='deit-small'
+):
     #return [flops] [accuracy] [flops_ema] [accuracy_ema]
     ret = []
     dataloader_test = None
     for p in p_logits:
-        path_dir = f'./saves/dyvit-concrete-f{factor}-{p}-nohard-e{epochs}-we{warmup_epochs}/'
+        if model_id == 'deit-small':
+            path_dir = f'./saves/dyvit-concrete-f{factor}-{p}-nohard-e{epochs}-we{warmup_epochs}/'
+        else:
+            path_dir = f'./saves/dyvit-concrete-{model_id}-f{factor}-{p}-nohard-e{epochs}-we{warmup_epochs}/'
         path_checkpoint = path_dir + f'checkpoint-{epochs-1}.pth'
         path_log = path_dir + 'log.txt'
         path_flops = path_dir + 'flops-analysis.json'
@@ -91,7 +101,7 @@ def load_concrete(factor=4, p_logits=[-3, -2, -1.5, -1.25, -1, -0.5, 0.0, 0.5, 1
                 )
                 dataloader_test = trainer.approx_trainer.timm_data_test
             
-            model = load_concrete_model(path_checkpoint, factor=factor, p_logit=p)
+            model = load_concrete_model(path_checkpoint, factor=factor, p_logit=p, model_id=model_id)
             model = model.to(device).eval()
 
             def evaluate(model):
@@ -134,12 +144,14 @@ def load_concrete(factor=4, p_logits=[-3, -2, -1.5, -1.25, -1, -0.5, 0.0, 0.5, 1
         return [], [], [], []
     return ([ret[j][i] for j in range(len(ret))] for i in range(len(ret[0])))
 
-def main(fig_scales=[1.0, 0.7]):
+def main(fig_scales=[1.0, 0.7], model_id = 'deit-small'):
     xs_dyvit, ys_dyvit = load_dyvit()
     xs_dyvit = scale(xs_dyvit, 1e-9)
 
-    xs_concrete, ys_concrete, xs_concrete_ema, ys_concrete_ema = load_concrete(factor=4)
-    xs_concrete_f8, ys_concrete_f8, xs_concrete_ema_f8, ys_concrete_ema_f8 = load_concrete(factor=8)
+    xs_concrete, ys_concrete, xs_concrete_ema, ys_concrete_ema = \
+        load_concrete(factor=4, model_id=model_id)
+    xs_concrete_f8, ys_concrete_f8, xs_concrete_ema_f8, ys_concrete_ema_f8 = \
+        load_concrete(factor=8, model_id=model_id)
 
     xs_other, ys_other, labels_other, colors_other, offsets_other = load_points()
 
@@ -152,15 +164,18 @@ def main(fig_scales=[1.0, 0.7]):
             label=STR_DYNAMIC_VIT, color='orange',
             marker='o', linestyle='-', linewidth=1.2, zorder=1,
         )
+        model_label = 'DeiT-S'
+        if model_id == 'lvvit-small':
+            model_label = 'LV-S'
         plt.plot(
             xs_concrete, ys_concrete, 
-            label="STTABT@f4 (Concrete) DeiT-S", color=COLOR_STTABT_CONCRETE_WITH_TRAIN,
+            label=f"STTABT@f4 (Concrete) {model_label}", color=COLOR_STTABT_CONCRETE_WITH_TRAIN,
             marker='^', linestyle='--', linewidth=1.2, zorder=99,
         )
         if len(xs_concrete_f8) > 0:
             plt.plot(
                 xs_concrete_f8, ys_concrete_f8, 
-                label="STTABT@f8 (Concrete) DeiT-S", color=COLOR_STTABT_CONCRETE_WITH_TRAIN,
+                label=f"STTABT@f8 (Concrete) {model_label}", color=COLOR_STTABT_CONCRETE_WITH_TRAIN,
                 marker='^', linestyle='-', linewidth=1.2, zorder=99,
             )
         
@@ -183,7 +198,10 @@ def main(fig_scales=[1.0, 0.7]):
         
         plt.grid(which='both', axis='both')
 
-        filename = './saves_plot/vit-flops' + ('' if fig_scale == 1.0 else f'-x{fig_scale}')
+        if model_id == 'deit-small':
+            filename = './saves_plot/vit-flops' + ('' if fig_scale == 1.0 else f'-x{fig_scale}')
+        else:
+            filename = f'./saves_plot/vit-flops-{model_id}' + ('' if fig_scale == 1.0 else f'-x{fig_scale}')
         plt.savefig(filename+'.png', bbox_inches='tight', pad_inches=0.05)
         plt.savefig(filename+'.pdf', bbox_inches='tight', pad_inches=0.05)
     

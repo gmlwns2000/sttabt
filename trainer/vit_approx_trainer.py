@@ -1,6 +1,6 @@
 import math
 import random
-import torch
+import torch, copy
 torch.set_num_threads(1)
 from torch import optim, nn
 import numpy as np
@@ -22,6 +22,7 @@ tasks_to_batch_size = {
     'vit-base': 16,
     'deit-base': 16,
     'deit-small': 32,
+    'lvvit-small': 32,
 }
 
 tasks_to_dataset = {
@@ -48,6 +49,7 @@ model_to_hf = {
     'deit-base': 'facebook/deit-base-patch16-224',
     'deit-small': 'facebook/deit-small-patch16-224',
     'deit-small-distilled': 'facebook/deit-small-distilled-patch16-224',
+    'lvvit-small': 'lvvit-small',
 }
 
 finetuned_to_hf = {
@@ -56,6 +58,7 @@ finetuned_to_hf = {
         'deit-base': 'facebook/deit-base-patch16-224',
         'deit-small': 'facebook/deit-small-patch16-224',
         'deit-small-distilled': 'facebook/deit-small-distilled-patch16-224',
+        'lvvit-small': 'lvvit-small',
     }
 }
 
@@ -157,7 +160,9 @@ class VitApproxTrainer:
 
         from timm.data import create_dataset, create_loader, resolve_data_config, Mixup, FastCollateMixup, AugMixDataset
         import timm
-        assert self.model_id == 'deit-small'
+
+        assert self.model_id in ['deit-small', 'lvvit-small']
+
         data_dir = env_vars.get_imagenet_root()
         dataset_name = 'imagenet'
         arg_train_split = 'train'
@@ -306,7 +311,7 @@ class VitApproxTrainer:
         self.timm_data_test = loader_eval
 
     def get_base_model(self) -> "transformers.ViTForImageClassification":
-        if self.model_id in ['vit-base', 'deit-base', 'deit-small']:
+        if self.model_id in ['vit-base', 'deit-base', 'deit-small', 'lvvit-small']:
             model_cls = transformers.ViTForImageClassification
         elif self.model_id in ['deit-base-distilled', 'deit-small-distilled']:
             model_cls = transformers.DeiTForImageClassification
@@ -314,6 +319,12 @@ class VitApproxTrainer:
 
         if self.subset == 'base':
             print('VitApproxTrainer: base model', self.model_id_hf)
+            
+            #HOTFIX: lvvit load
+            if self.model_id_hf.startswith('lvvit-'):
+                from models.lvvit_huggingface import load_model
+                return load_model(self.model_id_hf)
+            
             return model_cls.from_pretrained(self.model_id_hf)
         elif self.subset in ['cifar100']:
             #trained from trainer.vit_trainer
@@ -347,12 +358,30 @@ class VitApproxTrainer:
         self.model = self.get_base_model()
         self.model = self.model.to(self.device)
 
-        self.approx_bert = sparse.ApproxBertModel(
-            self.model.config, 
-            factor=self.factor, 
-            arch='vit',
-            ignore_pred=self.subset=='base'
-        )
+        #HOTFIX: LVVIT compat
+        if self.model_id_hf.startswith('lvvit-'):
+            self.approx_bert = sparse.ApproxBertModel(
+                self.model.config, 
+                factor=self.factor, 
+                arch='vit',
+                ignore_pred=False,
+            )
+
+            from models.lvvit_layers import PatchEmbed4_2
+            self.approx_bert.bert.embeddings.patch_embeddings = \
+                PatchEmbed4_2(224, 16, 3, self.approx_bert.config.hidden_size)
+            self.approx_bert.bert.embeddings.patch_embeddings.sttabt_patched = True
+        # self.approx_bert.bert.embeddings.patch_embeddings = \
+        #     copy.deepcopy(self.model.vit.embeddings.patch_embeddings)
+        # self.approx_bert.bert.embeddings.patch_embeddings.sttabt_patched = True
+        else:
+            self.approx_bert = sparse.ApproxBertModel(
+                self.model.config, 
+                factor=self.factor, 
+                arch='vit',
+                ignore_pred=self.subset=='base'
+            )
+
         self.approx_bert = self.approx_bert.to(self.device)
         load_state_dict_interpolated(self.approx_bert.bert, get_vit(self.model).state_dict())
         self.approx_bert = ddp.wrap_model(self.approx_bert, find_unused_paramters=True)
@@ -588,7 +617,9 @@ class VitApproxTrainer:
         if ddp.printable():
             pbar = tqdm.tqdm(pbar)
         
-        for batch in pbar:
+        for istep, batch in enumerate(pbar):
+            # if istep > 100: break
+
             if self.dataloader_lib == 'hf':
                 batch = {k: torch.tensor(batch[k]).to(self.device, non_blocking=True) for k in batch.keys()}
                 if self.world_size != 1:
