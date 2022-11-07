@@ -96,10 +96,10 @@ def get_dataloader(subset, tokenizer, batch_size, split='train'):
         #     result["label"] = [(label_to_id[l] if l != -1 else -1) for l in examples["label"]]
         return result
 
-    dataset = dataset.map(lambda examples: {'labels': examples['label']}, batched=True, batch_size=1024)
-    if split == 'train':
+    if split.startswith('train[:'): #shuffle when train set
         dataset = dataset.sort('label')
         dataset = dataset.shuffle(seed=random.randint(0, 10000))
+    dataset = dataset.map(lambda examples: {'labels': examples['label']}, batched=True, batch_size=1024)
     dataset = dataset.map(encode, batched=True, batch_size=1024)
     dataset.set_format(type='torch', columns=['input_ids', 'token_type_ids', 'attention_mask', 'labels'])
 
