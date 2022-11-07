@@ -146,6 +146,11 @@ def set_update_input_mask_accumulate_indices(value):
     global __mask_acc_indices
     __mask_acc_indices = value
 
+__abt_default_p = 0.1
+def set_abt_default_p(value):
+    global __abt_default_p
+    __abt_default_p = value
+
 def update_input_mask_from_previous_attention(
     attention_mask, # mask may None (vit)
     previous_attention, 
@@ -158,7 +163,7 @@ def update_input_mask_from_previous_attention(
     k_estimate = False,
     accumulate_indices = None,
 ):
-    global __mask_acc_indices
+    global __mask_acc_indices, __abt_default_p
     if accumulate_indices is None:
         accumulate_indices = __mask_acc_indices
     
@@ -196,7 +201,7 @@ def update_input_mask_from_previous_attention(
     att = torch.gather(att, 1, output_token_indices.unsqueeze(-1).expand(NBATCH, output_token_indices.shape[1], TLEN))
     if apply_token_impact: 
         #todo fix this..
-        att = att * output_token_impact.unsqueeze(-1) * 0.1 + att * 0.9
+        att = att * output_token_impact.unsqueeze(-1) * __abt_default_p + att * (1 - __abt_default_p)
     
     if token_reduce_method == 'avg':
         att = torch.mean(att, dim=1)                 #reduce token, column mean
@@ -1758,6 +1763,8 @@ def run_bert_with_concrete(
     approx_bert: "ApproxBertModel",
     input_dict: "dict", 
 ):
+    global __abt_default_p
+
     reset_input_mask(sparse_bert)
     #with torch.no_grad():
     attention_input_dict = copy.deepcopy(input_dict)
@@ -1857,6 +1864,7 @@ def run_bert_with_concrete(
             # use score as randomness source.
             concrete_score_mode = 'score_uniform'
             if concrete_score_mode == 'prob':
+                assert False
                 concrete_score = score
                 concrete_score_min = torch.min(concrete_score + (concrete_score < EPS) * 99, dim=1, keepdim=True)[0]
                 concrete_score_max = torch.max(concrete_score, dim=1, keepdim=True)[0]
@@ -1891,12 +1899,14 @@ def run_bert_with_concrete(
 
                 N, T, _ = uni_att_score.shape
                 uni_att_score = uni_att_score * last_mask.unsqueeze(-1)
-                score_prop = 0.1
+                score_prop = __abt_default_p
                 uni_att_score = torch.sum(
                     uni_att_score * last_concrete_score.unsqueeze(-1) * score_prop + uni_att_score * (1-score_prop), dim=1
                 ) / (torch.sum(last_mask, dim=1, keepdim=True) + EPS)
+                raise_if_nan(uni_att_score)
                 
                 uni_att_score = uni_att_score / (torch.max(uni_att_score, dim=-1, keepdim=True)[0] + EPS)
+                raise_if_nan(uni_att_score)
                 #uni_att_score = (0.05 + 0.95 * uni_att_score * (score > EPS)) * input_dict['attention_mask']
                 empty_base = 0.01
                 uni_att_score = (empty_base + (1-empty_base) * uni_att_score) * input_dict['attention_mask']
