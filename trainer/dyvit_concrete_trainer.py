@@ -170,7 +170,7 @@ def get_args_parser():
                         help='Enabling distributed evaluation')
     parser.add_argument('--disable_eval', type=utils.str2bool, default=False,
                         help='Disabling evaluation during training')
-    parser.add_argument('--num_workers', default=10, type=int)
+    parser.add_argument('--num_workers', default=16, type=int)
     parser.add_argument('--pin_mem', type=utils.str2bool, default=True,
                         help='Pin CPU memory in DataLoader for more efficient (sometimes) transfer to GPU.')
 
@@ -218,14 +218,28 @@ def load_concrete_model(model_id = 'deit-small', factor=4, p_logit=0.0):
     else:
         model = model_cls.from_pretrained(model_id_hf)
     log('Base model loaded from', model_id_hf)
+    
+    #HOTFIX: LVVIT compat
+    if model_id.startswith('lvvit-'):
+        approx_bert = sparse.ApproxBertModel(
+            model.config, 
+            factor=factor, 
+            arch='vit',
+            ignore_pred=False,
+        )
 
-    approx_bert = sparse.ApproxBertModel(
-        model.config, 
-        factor=factor, 
-        arch='vit',
-        ignore_pred=False
-    )
-    vit_approx.load_state_dict_interpolated(approx_bert.bert, vit_approx.get_vit(model).state_dict())
+        from models.lvvit_layers import PatchEmbed4_2
+        approx_bert.bert.embeddings.patch_embeddings = \
+            PatchEmbed4_2(224, 16, 3, approx_bert.config.hidden_size)
+        approx_bert.bert.embeddings.patch_embeddings.sttabt_patched = True
+    else:
+        approx_bert = sparse.ApproxBertModel(
+            model.config, 
+            factor=factor, 
+            arch='vit',
+            ignore_pred=False
+        )
+        vit_approx.load_state_dict_interpolated(approx_bert.bert, vit_approx.get_vit(model).state_dict())
     approx_bert = ddp.MimicDDP(approx_bert)
     #load from state_dict
     path = f'./saves/vit-approx-{model_id}-base-{factor}.pth'
@@ -244,11 +258,18 @@ def load_concrete_model(model_id = 'deit-small', factor=4, p_logit=0.0):
     del state
     approx_bert = approx_bert.module
 
+    if model_id == 'deit-small':
+        patch_embedding_mode = 'vit'
+    elif model_id == 'lvvit-small':
+        patch_embedding_mode = 'lvvit'
+    else: raise Exception()
+
     concrete_model = sparse.ApproxSparseBertForSequenceClassification(
         model.config,
         approx_bert,
         arch = 'vit',
         add_pooling_layer=False,
+        patch_embedding_mode=patch_embedding_mode
     )
     log('ConcreteModel problem define', model.config.problem_type)
     assert hasattr(concrete_model.bert.encoder, 'concrete_loss_encoder_mask_avg_factor')

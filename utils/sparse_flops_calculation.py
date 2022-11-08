@@ -41,6 +41,8 @@ class ModelConfig:
         token_occupies=None,
         patch_size=16,
         dyvit_pruning_loc=[3,6,9],
+        patch_embeding_mode = 'vit',
+        image_size = 224,
     ):
         self.num_layer = num_layer
         self.num_heads = num_heads
@@ -58,6 +60,36 @@ class ModelConfig:
         self.out_seq_len = None
         self.patch_size = patch_size
         self.dyvit_pruning_loc = dyvit_pruning_loc
+        self.patch_embeding_mode = patch_embeding_mode
+        self.image_size = image_size
+
+from typing import List
+from numpy import prod
+
+#https://github.com/facebookresearch/fvcore/blob/34cceb47e0298a7bebee8491328ab2c983c7a0a2/fvcore/nn/jit_handles.py#L129
+def flops_conv_op(
+    x_shape: List[int],
+    w_shape: List[int],
+    out_shape: List[int],
+    transposed: bool = False,
+):
+    """
+    Count flops for convolution. Note only multiplication is
+    counted. Computation for addition and bias is ignored.
+    Flops for a transposed convolution are calculated as
+    flops = (x_shape[2:] * prod(w_shape) * batch_size).
+    Args:
+        x_shape (list(int)): The input shape before convolution.
+        w_shape (list(int)): The filter shape.
+        out_shape (list(int)): The output shape after convolution.
+        transposed (bool): is the convolution transposed
+    Returns:
+        int: the number of flops
+    """
+    batch_size = x_shape[0]
+    conv_shape = (x_shape if transposed else out_shape)[2:]
+    flop = batch_size * prod(w_shape) * prod(conv_shape) * MM_FLOPS
+    return flop
 
 def flops_bert_embedding(c: ModelConfig):
     if c.arch == 'bert':
@@ -69,13 +101,46 @@ def flops_bert_embedding(c: ModelConfig):
         flops += LAYER_NORM_FLOPS * c.token_occupies[0] * c.seq_len * c.hidden_size
         return flops
     elif c.arch == 'vit':
-        #ViTEmbeddings
-        #vit embedding use conv fc.
-        #assume there is no patch embedding resize
-        flops = MM_FLOPS * c.token_occupies[0] * c.seq_len * (c.patch_size ** 2) * c.hidden_size
-        flops += c.token_occupies[0] * c.seq_len * c.hidden_size
-        flops += LAYER_NORM_FLOPS * c.token_occupies[0] * c.seq_len * c.hidden_size
-        return flops
+        if c.patch_embeding_mode == 'vit':
+            #ViTEmbeddings
+            #vit embedding use conv fc.
+            #assume there is no patch embedding resize
+            flops = MM_FLOPS * c.token_occupies[0] * c.seq_len * (c.patch_size ** 2) * c.hidden_size
+            flops += c.token_occupies[0] * c.seq_len * c.hidden_size
+            flops += LAYER_NORM_FLOPS * c.token_occupies[0] * c.seq_len * c.hidden_size
+            return flops
+        elif c.patch_embeding_mode == 'lvvit':
+            #LVViT patch embedding is different.
+            #lvvit_layers.PatchEmbed4_2
+            isize = c.image_size
+            flops = 0
+            
+            # conv must perform regardless token drops...
+            # self.conv1 = nn.Conv2d(in_chans, 64, kernel_size=7, stride=2, padding=3, bias=False)  # 112x112
+            flops += flops_conv_op((1, 3, isize, isize), (3,64,7,7), (1,64,isize,isize))
+            # self.bn1 = nn.BatchNorm2d(64)
+            flops += prod((1,64,isize,isize)) * 2
+            # self.relu = nn.ReLU(inplace=True)
+            flops += prod((1,64,isize,isize))
+            
+            # self.conv2 = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1, bias=False)  # 112x112
+            flops += flops_conv_op((1, 64, isize, isize), (64,64,3,3), (1,64,isize,isize))
+            # self.bn2 = nn.BatchNorm2d(64)
+            flops += prod((1,64,isize,isize)) * 2
+            flops += prod((1,64,isize,isize))
+
+            # self.conv3 = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1, bias=False)  
+            flops += flops_conv_op((1, 64, isize, isize), (64,64,3,3), (1,64,isize,isize))
+            # self.bn3 = nn.BatchNorm2d(64)
+            flops += prod((1,64,isize,isize)) * 2
+            flops += prod((1,64,isize,isize))
+
+            # self.proj = nn.Conv2d(64, embed_dim, kernel_size=new_patch_size, stride=new_patch_size)
+            flops = MM_FLOPS * c.token_occupies[0] * c.seq_len * (c.patch_size ** 2) * c.hidden_size
+            print('TTESTSST:')
+            return flops
+        else: raise Exception()
+    else: raise Exception()
 
 def flops_bert_self_attention(c: ModelConfig):
     flops = 0

@@ -1092,11 +1092,12 @@ class SparseBertModel(BertPreTrainedModel):
 
     def __init__(self, 
         config, arch='bert',
-        add_pooling_layer=True
+        add_pooling_layer=True, patch_embedding_mode = 'vit'
     ):
         super().__init__(config)
         self.config = config
         self.arch = arch
+        self.patch_embedding_mode = patch_embedding_mode
 
         if arch == 'bert':
             self.embeddings = BertEmbeddings(config)
@@ -2156,7 +2157,10 @@ class ApproxSparseBertModelWrapper(nn.Module):
         return output
 
 class ApproxSparseBertModel(nn.Module):
-    def __init__(self, bert=None, approx_bert=None, sparse_bert=None, add_pooling_layer=True, ks=0.5, arch='bert'):
+    def __init__(self, 
+        bert=None, approx_bert=None, sparse_bert=None, add_pooling_layer=True, 
+        ks=0.5, arch='bert', 
+    ):
         super().__init__()
 
         self.arch = arch
@@ -2245,7 +2249,10 @@ class ApproxSparseBertModel(nn.Module):
                 approx_hidden_size=self.approx_bert.config.hidden_size,
                 approx_intermediate_size=self.approx_bert.config.intermediate_size,
                 sparse_mode=mode,
+                image_size=224,
+                patch_embeding_mode=self.sparse_bert.patch_embedding_mode,
             )
+            print('AAFFE:', self.sparse_bert.patch_embedding_mode)
             layer_token_occupies = []
             if mode in ['approx', 'forward']:
                 #from channel indices
@@ -2295,13 +2302,20 @@ class ApproxSparseBertForSequenceClassificationOutput(transformers.modeling_outp
     loss_details: Optional[object] = None
 
 class ApproxSparseBertForSequenceClassification(BertPreTrainedModel):
-    def __init__(self, config, approx_bert, arch='bert', add_pooling_layer=True):
+    def __init__(self, 
+        config, approx_bert, 
+        arch='bert', add_pooling_layer=True, patch_embedding_mode = 'vit'
+    ):
         super().__init__(config)
         self.num_labels = config.num_labels
         self.config = config
         self.arch = arch
         
-        self.bert = SparseBertModel(config, arch=arch, add_pooling_layer=add_pooling_layer)
+        self.bert = SparseBertModel(
+            config, 
+            arch=arch, add_pooling_layer=add_pooling_layer, 
+            patch_embedding_mode=patch_embedding_mode
+        )
         if arch == 'bert':
             classifier_dropout = (
                 config.classifier_dropout if config.classifier_dropout is not None else config.hidden_dropout_prob

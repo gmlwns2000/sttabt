@@ -96,7 +96,7 @@ def load_concrete(
             #load dataloader_test
             if dataloader_test is None:
                 trainer = vit_concrete.VitConcreteTrainer(
-                    subset='base', model='deit-small', factor=factor, batch_size=-1, device='cpu',
+                    subset='base', model=model_id, factor=factor, batch_size=-1, device='cpu',
                     world_size=1, enable_valid=False, epochs=epochs
                 )
                 dataloader_test = trainer.approx_trainer.timm_data_test
@@ -152,6 +152,8 @@ def main(fig_scales=[1.0, 0.7], model_id = 'deit-small'):
         load_concrete(factor=4, model_id=model_id)
     xs_concrete_f8, ys_concrete_f8, xs_concrete_ema_f8, ys_concrete_ema_f8 = \
         load_concrete(factor=8, model_id=model_id)
+    xs_concrete_lvvit, ys_concrete_lvvit, xs_concrete_lvvit_ema, ys_concrete_lvvit_ema = \
+        load_concrete(factor=4, model_id=model_id)
 
     xs_other, ys_other, labels_other, colors_other, offsets_other = load_points()
 
@@ -177,6 +179,12 @@ def main(fig_scales=[1.0, 0.7], model_id = 'deit-small'):
                 xs_concrete_f8, ys_concrete_f8, 
                 label=f"STTABT@f8 (Concrete) {model_label}", color=COLOR_STTABT_CONCRETE_WITH_TRAIN,
                 marker='^', linestyle='-', linewidth=1.2, zorder=99,
+            )
+        if len(xs_concrete_lvvit) > 0:
+            plt.plot(
+                xs_concrete_f8, ys_concrete_f8, 
+                label=f"STTABT@f4 (Concrete) {model_label}", color=COLOR_STTABT_CONCRETE_WITH_TRAIN,
+                marker='o', linestyle='-', linewidth=1.2, zorder=99,
             )
         
         for i, txt in enumerate(labels_other):
