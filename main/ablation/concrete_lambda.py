@@ -102,7 +102,7 @@ def plot_all(
     ax.set_xticklabels(lambdas_p)
     ax.set_xlabel('$\lambda_{p}$')
 
-    ax.set_title('CoLA (Metric/Occupy)')
+    ax.set_title('CoLA (Metric/Token Retention Ratio)')
 
     matrix = np.zeros((3, 3))
     for i in range(3):
