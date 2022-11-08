@@ -102,7 +102,7 @@ def plot_all():
     plt.ylabel('Metric')
     plt.title(SUBSET_TO_NAME['cola'])
 
-    plt.savefig('./saves_plot/ablation-concrete-p.pdf')
+    plt.savefig('./saves_plot/ablation-concrete-p.pdf', bbox_inches='tight')
     plt.clf()
 
 if __name__ == '__main__':
