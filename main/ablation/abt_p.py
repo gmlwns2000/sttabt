@@ -2,6 +2,7 @@ import json
 import models.sparse_token as sparse
 from trainer import glue_base as glue
 from trainer import concrete_trainer as concrete
+from main.plot.constants import *
 
 def get_metric(metric):
     metrics = ['acc', 'accuracy', 'matthews_correlation', 'f1_score']
@@ -42,6 +43,8 @@ def run_exp_with_p(pvalue, epochs=2, factor=4, subset='cola', p_logit=-0.5, batc
 
         return get_metric(result)
 
+JSON_PATH = './saves_plot/ablation-concrete-p.json'
+
 def exp_all():
     results = {}
 
@@ -71,7 +74,37 @@ def exp_all():
                 'metrics': metrics,
             }
 
-    with open('./saves_plot/ablation-concrete-p.json', 'w') as f:
+    with open(JSON_PATH, 'w') as f:
         json.dump(results, f, indent=2)
 
-exp_all()
+def plot_all():
+    import pandas as pd
+    from matplotlib import pyplot as plt
+    plt.style.use('seaborn-bright')
+
+    with open(JSON_PATH, 'r') as f:
+        results = json.load(f)
+
+    df = pd.DataFrame()
+    for method in ['abt', 'concrete']:
+        for factor in [4, 8]:
+            method_name = {
+                'abt': 'ABT',
+                'concrete': 'Concrete Masking',
+            }[method]
+            name = f'{method_name}@f{factor}'
+            df[name] = results[f'{method}.{factor}']['metrics']
+    df.index = results['abt.4']['ps']
+    
+    df.plot()
+    plt.grid()
+    plt.xlabel('$p$')
+    plt.ylabel('Metric')
+    plt.title(SUBSET_TO_NAME['cola'])
+
+    plt.savefig('./saves_plot/ablation-concrete-p.pdf')
+    plt.clf()
+
+if __name__ == '__main__':
+    # exp_all()
+    plot_all()
