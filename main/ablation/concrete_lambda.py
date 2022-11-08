@@ -89,7 +89,7 @@ def plot_all(
             np.array(results[f'mask{lambdas_mask[i]}']['occupies'])
     print(matrix)
 
-    fig, [ax, ax1] = plt.subplots(1, 2)
+    fig, [ax, ax1] = plt.subplots(1, 2, tight_layout=True)
 
     ax.imshow(matrix)
     # fig.colorbar()
@@ -119,6 +119,8 @@ def plot_all(
     ax1.set_xlabel('$\lambda_{p}$')
 
     ax1.set_title('CoLA (Metric)')
+
+    fig.tight_layout()
 
     plt.savefig('./saves_plot/ablation-concrete-lambda.pdf', bbox_inches='tight')
     plt.clf()
