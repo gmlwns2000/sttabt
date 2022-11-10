@@ -31,7 +31,7 @@ class VitApproxTrainerMViT:
             batch_size = 16
         self.batch_size = batch_size
 
-        base_lr = 5e-4
+        base_lr = 1e-3
         self.lr = base_lr * (batch_size*world_size/512.0)
         print('VitTrainer: Configured LR', self.lr)
 
