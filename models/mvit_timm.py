@@ -22,6 +22,7 @@ from typing import Union, List, Tuple, Optional
 import torch
 import torch.utils.checkpoint as checkpoint
 from torch import nn
+from torch.nn import functional as F
 
 from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
 from timm.models.fx_features import register_notrace_function
@@ -888,6 +889,14 @@ class MultiScaleVit(nn.Module):
             trunc_normal_tf_(self.cls_token, std=0.02)
         self.apply(self._init_weights)
 
+        self.loss_mode = 'cls'
+
+        #for approx training
+        self.main_model = None
+        
+        #for concrete training
+        self.approx_net = None
+
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
             trunc_normal_tf_(m.weight, std=0.02)
@@ -963,11 +972,28 @@ class MultiScaleVit(nn.Module):
                 x = x[:, 0]
         return x if pre_logits else self.head(x)
 
-    def forward(self, x):
+    def forward(self, pixel_values=None, labels=None):
+        assert pixel_values is not None
+
+        x = pixel_values
         x = self.forward_features(x)
         x = self.forward_head(x)
-        return x
-
+        
+        loss = 0.0
+        if labels is not None:
+            if self.loss_mode == 'cls':
+                loss = F.cross_entropy(x, labels)
+            elif self.loss_mode == 'approx':
+                main_model = self.main_model #type: MultiScaleViT
+                raise "todo"
+            elif self.loss_mode == 'concrete':
+                approx_net = self.approx_net #type: MultiScaleViT
+                raise "todo"
+        
+        ret = OrderedDict()
+        ret['logits'] = x
+        ret['loss'] = loss
+        return ret
 
 def checkpoint_filter_fn(state_dict, model):
     if 'stages.0.blocks.0.norm1.weight' in state_dict:
@@ -1205,8 +1231,11 @@ if __name__ == '__main__':
     mvit = mvitv2_tiny_sttabt() #type: MultiScaleVit
     approx_net = init_approx_net_from(mvit)
 
-    mvit(img)
-    approx_net(img)
+    out = mvit(img)
+    out_approx = approx_net(img)
+
+    assert out.shape == out_approx.shape
+    print(out.shape)
 
     attention_scores = []
     p_logits = []
