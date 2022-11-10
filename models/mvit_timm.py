@@ -42,6 +42,13 @@ def _cfg(url='', **kwargs):
     }
 
 
+__debug = False
+def dlog(*args):
+    global __debug
+    if __debug:
+        print('[DBG]', *args)
+
+
 default_cfgs = dict(
     mvitv2_tiny=_cfg(url='https://dl.fbaipublicfiles.com/mvit/mvitv2_models/MViTv2_T_in1k.pyth'),
     mvitv2_small=_cfg(url='https://dl.fbaipublicfiles.com/mvit/mvitv2_models/MViTv2_S_in1k.pyth'),
@@ -410,7 +417,11 @@ class MultiScaleAttentionPoolFirst(nn.Module):
                 self.rel_pos_h,
                 self.rel_pos_w,
             )
+        self.last_attention_score = attn
         attn = attn.softmax(dim=-1)
+        self.last_attention_prob = attn
+        raise "not supported"
+        dlog('MVIT: last score', self.last_attention_score.shape, 'last prob', self.last_attention_prob.shape, 'pool first')
         x = attn @ v
 
         if self.residual_pooling:
@@ -448,6 +459,16 @@ class MultiScaleAttention(nn.Module):
         self.has_cls_token = has_cls_token
         padding_q = tuple([int(q // 2) for q in kernel_q])
         padding_kv = tuple([int(kv // 2) for kv in kernel_kv])
+
+        dlog("MPHA:", {
+            'dim':dim,
+            'dimout':dim_out,
+            'kernel_q':kernel_q,
+            'kernel_kv': kernel_kv,
+            'strideq': stride_q,
+            'stridekv':stride_kv,
+            'clstk':has_cls_token,
+        })
 
         self.qkv = nn.Linear(dim, dim_out * 3, bias=qkv_bias)
         self.proj = nn.Linear(dim_out, dim_out)
@@ -531,6 +552,7 @@ class MultiScaleAttention(nn.Module):
             q, q_tok = reshape_pre_pool(q, feat_size, self.has_cls_token)
             q = self.pool_q(q)
             q, q_size = reshape_post_pool(q, self.num_heads, q_tok)
+            dlog('pooled q', self.pool_q.weight.shape)
         else:
             q_size = feat_size
         if self.norm_q is not None:
@@ -540,6 +562,7 @@ class MultiScaleAttention(nn.Module):
             k, k_tok = reshape_pre_pool(k, feat_size, self.has_cls_token)
             k = self.pool_k(k)
             k, k_size = reshape_post_pool(k, self.num_heads, k_tok)
+            dlog('pooled k', self.pool_k.weight.shape)
         else:
             k_size = feat_size
         if self.norm_k is not None:
@@ -549,6 +572,7 @@ class MultiScaleAttention(nn.Module):
             v, v_tok = reshape_pre_pool(v, feat_size, self.has_cls_token)
             v = self.pool_v(v)
             v, _ = reshape_post_pool(v, self.num_heads, v_tok)
+            dlog('pooled v', self.pool_v.weight.shape)
         if self.norm_v is not None:
             v = self.norm_v(v)
 
@@ -563,7 +587,10 @@ class MultiScaleAttention(nn.Module):
                 self.rel_pos_h,
                 self.rel_pos_w,
             )
+        self.last_attention_score = attn
         attn = attn.softmax(dim=-1)
+        self.last_attention_prob = attn
+        dlog('MVIT: last score ', self.last_attention_score.shape, 'last prob', self.last_attention_prob.shape)
         x = attn @ v
 
         if self.residual_pooling:
@@ -615,7 +642,9 @@ class MultiScaleBlock(nn.Module):
             self.shortcut_pool_attn = None
 
         att_dim = dim_out if expand_attn else dim
-        attn_layer = MultiScaleAttentionPoolFirst if pool_first else MultiScaleAttention
+        # attn_layer = MultiScaleAttentionPoolFirst if pool_first else MultiScaleAttention
+        assert not pool_first
+        attn_layer = MultiScaleAttention
         self.attn = attn_layer(
             dim,
             att_dim,
@@ -644,6 +673,10 @@ class MultiScaleBlock(nn.Module):
         )
         self.drop_path2 = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
 
+        self.concrete_init_min = 0.0
+        self.concrete_init_max = 0.0
+        self.p_logit = nn.Parameter(torch.empty(1).uniform_(self.concrete_init_min, self.concrete_init_max))
+
     def _shortcut_pool(self, x, feat_size: List[int]):
         if self.shortcut_pool_attn is None:
             return x
@@ -658,6 +691,7 @@ class MultiScaleBlock(nn.Module):
         x = x.reshape(B, C, -1).transpose(1, 2)
         if cls_tok is not None:
             x = torch.cat((cls_tok, x), dim=1)
+
         return x
 
     def forward(self, x, feat_size: List[int]):
@@ -671,6 +705,11 @@ class MultiScaleBlock(nn.Module):
         x_norm = self.norm2(x)
         x_shortcut = x if self.shortcut_proj_mlp is None else self.shortcut_proj_mlp(x_norm)
         x = x_shortcut + self.drop_path2(self.mlp(x_norm))
+
+        #backup
+        dlog('MVIT: last output', x.shape)
+        self.last_output = x
+
         return x, feat_size_new
 
 
@@ -769,6 +808,7 @@ class MultiScaleVit(nn.Module):
     ):
         super().__init__()
         img_size = to_2tuple(img_size)
+        self.config = cfg
         norm_layer = partial(get_norm_layer(cfg.norm_layer), eps=cfg.norm_eps)
         self.num_classes = num_classes
         self.drop_rate = drop_rate
@@ -896,6 +936,9 @@ class MultiScaleVit(nn.Module):
         if self.pos_embed is not None:
             x = x + self.pos_embed
 
+        self.last_embedding = x
+        dlog('last embedding', self.last_embedding.shape)
+
         for stage in self.stages:
             x, feat_size = stage(x, feat_size)
 
@@ -972,6 +1015,15 @@ def _create_mvitv2(variant, cfg_variant=None, pretrained=False, **kwargs):
 def mvitv2_tiny(pretrained=False, **kwargs):
     return _create_mvitv2('mvitv2_tiny', pretrained=pretrained, **kwargs)
 
+def mvitv2_tiny_sttabt():
+    return MultiScaleVit(
+        cfg=MultiScaleVitCfg(
+            depths=(1, 2, 5, 2),
+            kernel_qkv=(1, 1),
+            stride_kv_adaptive=(1, 1),
+            use_cls_token=True,
+        )
+    )
 
 # Evalute MViT without global pooling
 def evalute_model(model, max_steps=987654321):
@@ -997,6 +1049,18 @@ def evalute_model(model, max_steps=987654321):
     
     return acc/c
 
+def init_approx_net_from(mvit: MultiScaleVit, factor: int = 4):
+    import copy
+    cfg = copy.deepcopy(mvit.config)
+    cfg.embed_dim = [int(i / factor) for i in cfg.embed_dim]
+    print('MVIT: new embd dim', cfg.embed_dim, mvit.config.embed_dim)
+    approx_net = MultiScaleVit(
+        cfg=cfg,
+        global_pool=mvit.global_pool,
+    )
+    return approx_net
+
+"""
 if __name__ == '__main__':
     img = torch.randn((1, 3, 224, 224))
     mvit = mvitv2_tiny(pretrained=True) #type: MultiScaleVit
@@ -1026,3 +1090,142 @@ if __name__ == '__main__':
 
     mvit.global_pool = 'avg16'
     print('mvitv2 acc avg16:', evalute_model(mvit))
+"""
+
+from models.sparse_token import benchmark_cum, raise_if_nan, STANDARD_NORMAL_DISTRIBUTION
+BENCHMARK_CONCRETE_OCCUPY = False
+EPS = 1e-7
+__abt_default_p = 0.1
+import copy
+from typing import List
+
+def calc_mvit_concrete_masks(
+    attention_scores: "List[torch.Tensor]",
+    p_logits: "List[torch.Tensor]",
+    temperature=0.1,
+    concrete_hard_threshold=0.5,
+):
+    global __abt_default_p
+        
+    #update mask
+    output_masks = []
+    output_masks_hard = []
+
+    TLEN = attention_scores[-1].shape[-2]
+    N = attention_scores[-1].shape[0]
+    device = attention_scores[0].device
+    last_score = torch.zeros((1, TLEN), dtype=torch.float32, device=device)
+    last_concrete_score = torch.zeros((1, TLEN), dtype=torch.float32, device=device)
+    last_mask = torch.zeros((1, TLEN), dtype=torch.float32, device=device)
+    last_score[0, 0] = 1.0
+    last_concrete_score[0, 0] = 1.0
+    last_mask[0, 0] = 1.0
+    last_mask = last_mask.expand((N, -1))
+    last_mask_un = last_mask.view(-1, TLEN, 1)
+
+    output_masks.append(last_mask_un)
+    output_masks_hard.append(last_mask_un)
+
+    if BENCHMARK_CONCRETE_OCCUPY: 
+        with torch.no_grad():
+            benchmark_cum('concrete_occupy', last_mask_un.mean())
+    
+    for j in range(len(attention_scores)):
+        #layer indexing
+        i = len(attention_scores) - j - 1
+        attention_score = attention_scores[i]
+        p_logit = p_logits[i]
+        
+        att_score = attention_score #N, H, TOUT, TIN
+        N, H, TOUT, TIN = att_score.shape
+        raise_if_nan(att_score)
+        att_score_masked = att_score
+        raise_if_nan(att_score_masked)
+        att_score_mean = torch.mean(att_score_masked, dim=-1, keepdim=True)
+        raise_if_nan(att_score_mean)
+        att_score_var = torch.mean(torch.square((att_score_masked - att_score_mean)), dim=-1, keepdim=True)
+        raise_if_nan(att_score_var)
+        att_score_std = torch.sqrt(att_score_var)
+        raise_if_nan(att_score_std)
+        std_att_score = (att_score - att_score_mean) / (att_score_std + EPS)
+        raise_if_nan(std_att_score)
+        uni_att_score = STANDARD_NORMAL_DISTRIBUTION.cdf(std_att_score) #torch.distributions.Normal(0, 1).cdf(std_att_score)
+        uni_att_score = torch.mean(uni_att_score, dim=1) # head
+
+        N, T, _ = uni_att_score.shape
+        uni_att_score = uni_att_score * last_mask.unsqueeze(-1)
+        score_prop = __abt_default_p
+        uni_att_score = torch.sum(
+            uni_att_score * last_concrete_score.unsqueeze(-1) * score_prop + uni_att_score * (1-score_prop), dim=1
+        ) / (torch.sum(last_mask, dim=1, keepdim=True) + EPS)
+        raise_if_nan(uni_att_score)
+        
+        uni_att_score = uni_att_score / (torch.max(uni_att_score, dim=-1, keepdim=True)[0] + EPS)
+        raise_if_nan(uni_att_score)
+        empty_base = 0.01
+        uni_att_score = (empty_base + (1-empty_base) * uni_att_score)
+        concrete_score = uni_att_score
+        last_concrete_score = concrete_score
+        
+        p = torch.sigmoid(p_logit).view(1, 1)
+        mask = torch.sigmoid((torch.log(p + EPS) - torch.log(1 - p + EPS) + torch.log(concrete_score + EPS) - torch.log(1 - concrete_score + EPS)) / (temperature))
+        raise_if_nan(mask)
+
+        if mask.shape[1] > last_mask.shape[1]:
+            raise "todo"
+        
+        current_mask = torch.max(torch.stack([mask, last_mask], dim=0), dim=0)[0]
+
+        assert current_mask.shape == (N, TIN)
+        
+        current_mask_un = current_mask.view(-1, TLEN, 1)
+        current_mask_hard = None
+        if concrete_hard_threshold is not None:
+            current_mask_hard = (current_mask_un >= concrete_hard_threshold) * 1.0
+            if BENCHMARK_CONCRETE_OCCUPY:
+                with torch.no_grad(): benchmark_cum('concrete_occupy', current_mask_hard.mean())
+        else:
+            if BENCHMARK_CONCRETE_OCCUPY:
+                with torch.no_grad(): benchmark_cum('concrete_occupy', current_mask_un.mean())
+        
+        output_masks.append(current_mask_un)
+        output_masks_hard.append(current_mask_hard)
+
+        last_mask = current_mask
+    
+    output_masks.reverse()
+    output_masks_hard.reverse()
+    
+    return output_masks, output_masks_hard
+
+if __name__ == '__main__':
+    __debug = True
+
+    img = torch.randn((1, 3, 224, 224))
+    mvit = mvitv2_tiny_sttabt() #type: MultiScaleVit
+    approx_net = init_approx_net_from(mvit)
+
+    mvit(img)
+    approx_net(img)
+
+    attention_scores = []
+    p_logits = []
+    for stage in mvit.stages:
+        stage = stage #type: MultiScaleVitStage
+        for block in stage.blocks:
+            block = block #type: MultiScaleBlock
+            attention_scores.append(block.attn.last_attention_score)
+            p_logits.append(block.p_logit)
+            dlog('wow', attention_scores[-1].shape)
+    
+    print('layers:', len(attention_scores))
+
+    output_mask, output_hard_mask = calc_mvit_concrete_masks(
+        attention_scores,
+        p_logits,
+        concrete_hard_threshold=0.5,
+    )
+    for mask in output_mask:
+        print('m', mask.shape)
+    for mask in output_hard_mask:
+        print('m', mask.shape)
