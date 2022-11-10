@@ -30,8 +30,8 @@ class VitApproxTrainerMViT:
         if batch_size <= 0:
             batch_size = 16
         self.batch_size = batch_size
-        
-        base_lr = 1e-4
+
+        base_lr = 5e-4
         self.lr = base_lr * (batch_size*world_size/512.0)
 
         self.weight_decay = 0

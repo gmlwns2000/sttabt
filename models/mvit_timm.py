@@ -1172,8 +1172,10 @@ def mvitv2_tiny_sttabt(pretrained=False):
     mvit.global_pool = 'nothing'
 
     if pretrained:
+        from utils.ddp import MimicDDP
         state = torch.load('./saves/mvit-tiny-in1k.pth', map_location='cpu')
-        mvit.load_state_dict(state['model'])
+        wrapped = MimicDDP(mvit)
+        wrapped.load_state_dict(state['model'])
         del state
 
     return mvit
@@ -1249,7 +1251,7 @@ if __name__ == '__main__':
 """
 
 import models.sparse_token as sparse
-from models.sparse_token import raise_if_nan
+from models.sparse_token import raise_if_nan, STANDARD_NORMAL_DISTRIBUTION
 
 EPS = 1e-7
 

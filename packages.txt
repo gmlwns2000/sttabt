@@ -1,0 +1,76 @@
+Name: torch
+Version: 1.11.0+cu113
+Summary: Tensors and Dynamic neural networks in Python with strong GPU acceleration
+Home-page: https://pytorch.org/
+Author: PyTorch Team
+Author-email: packages@pytorch.org
+License: BSD-3
+Location: /w10_backup/heejun/anaconda3/envs/torch/lib/python3.9/site-packages
+Requires: typing-extensions
+Required-by: torchvision, torchtext, torchdata, torchaudio, timm, REL, flair
+---
+Name: transformers
+Version: 4.18.0
+Summary: State-of-the-art Natural Language Processing for TensorFlow 2.0 and PyTorch
+Home-page: https://github.com/huggingface/transformers
+Author: Thomas Wolf, Lysandre Debut, Victor Sanh, Julien Chaumond, Sam Shleifer, Patrick von Platen, Sylvain Gugger, Suraj Patil, Stas Bekman, Google AI Language Team Authors, Open AI team Authors, Facebook AI Authors, Carnegie Mellon University Authors
+Author-email: thomas@huggingface.co
+License: Apache
+Location: /w10_backup/heejun/anaconda3/envs/torch/lib/python3.9/site-packages
+Requires: pyyaml, requests, tqdm, regex, filelock, huggingface-hub, numpy, packaging, tokenizers, sacremoses
+Required-by: flair
+---
+Name: datasets
+Version: 2.0.0
+Summary: HuggingFace community-driven open-source library of datasets
+Home-page: https://github.com/huggingface/datasets
+Author: HuggingFace Inc.
+Author-email: thomas@huggingface.co
+License: Apache 2.0
+Location: /w10_backup/heejun/anaconda3/envs/torch/lib/python3.9/site-packages
+Requires: dill, pandas, tqdm, responses, xxhash, huggingface-hub, aiohttp, pyarrow, numpy, requests, multiprocess, fsspec, packaging
+Required-by: 
+---
+Name: torchtext
+Version: 0.12.0
+Summary: Text utilities and datasets for PyTorch
+Home-page: https://github.com/pytorch/text
+Author: PyTorch core devs and James Bradbury
+Author-email: jekbradbury@gmail.com
+License: BSD
+Location: /w10_backup/heejun/anaconda3/envs/torch/lib/python3.9/site-packages
+Requires: requests, torch, tqdm, numpy
+Required-by: 
+---
+Name: pandas
+Version: 1.4.4
+Summary: Powerful data structures for data analysis, time series, and statistics
+Home-page: https://pandas.pydata.org
+Author: The Pandas Development Team
+Author-email: pandas-dev@python.org
+License: BSD-3-Clause
+Location: /w10_backup/heejun/anaconda3/envs/torch/lib/python3.9/site-packages
+Requires: pytz, python-dateutil, numpy
+Required-by: torch-tb-profiler, torch-geometric, networkx, datasets
+---
+Name: scikit-learn
+Version: 0.24.2
+Summary: A set of python modules for machine learning and data mining
+Home-page: http://scikit-learn.org
+Author: None
+Author-email: None
+License: new BSD
+Location: /w10_backup/heejun/anaconda3/envs/torch/lib/python3.9/site-packages
+Requires: joblib, numpy, threadpoolctl, scipy
+Required-by: torch-geometric, flair
+---
+Name: timm
+Version: 0.6.11
+Summary: (Unofficial) PyTorch Image Models
+Home-page: https://github.com/rwightman/pytorch-image-models
+Author: Ross Wightman
+Author-email: hello@rwightman.com
+License: UNKNOWN
+Location: /w10_backup/heejun/anaconda3/envs/torch/lib/python3.9/site-packages
+Requires: huggingface-hub, torchvision, pyyaml, torch
+Required-by: 

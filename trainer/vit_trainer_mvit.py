@@ -29,7 +29,7 @@ class VitTrainer:
             batch_size = 16
         self.batch_size = batch_size
 
-        base_lr = 5e-5
+        base_lr = 2e-4
         self.lr = base_lr * (batch_size*world_size/512.0)
         self.weight_decay = 1e-3
         self.amp_enable = True
