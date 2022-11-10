@@ -304,6 +304,7 @@ class MultiScaleAttentionPoolFirst(nn.Module):
         if mode in ("avg", "max"):
             pool_op = nn.MaxPool2d if mode == "max" else nn.AvgPool2d
             if kernel_q:
+                dlog('pool_q init', kernel_q, stride_q, padding_q)
                 self.pool_q = pool_op(kernel_q, stride_q, padding_q)
             if kernel_kv:
                 self.pool_k = pool_op(kernel_kv, stride_kv, padding_kv)
@@ -496,9 +497,9 @@ class MultiScaleAttention(nn.Module):
                 self.pool_q = nn.Conv2d(
                     dim_conv,
                     dim_conv,
-                    kernel_q,
+                    stride_q, #HOTFIX: sttabt
                     stride=stride_q,
-                    padding=padding_q,
+                    padding=(0,0), #HOTFIX: sttabt
                     groups=dim_conv,
                     bias=False,
                 )
@@ -543,6 +544,8 @@ class MultiScaleAttention(nn.Module):
 
         self.residual_pooling = residual_pooling
 
+        self.input_mask = None
+
     def forward(self, x, feat_size: List[int]):
         B, N, _ = x.shape
 
@@ -553,7 +556,7 @@ class MultiScaleAttention(nn.Module):
             q, q_tok = reshape_pre_pool(q, feat_size, self.has_cls_token)
             q = self.pool_q(q)
             q, q_size = reshape_post_pool(q, self.num_heads, q_tok)
-            dlog('pooled q', self.pool_q.weight.shape)
+            dlog('pooled q', self.pool_q)
         else:
             q_size = feat_size
         if self.norm_q is not None:
@@ -563,7 +566,7 @@ class MultiScaleAttention(nn.Module):
             k, k_tok = reshape_pre_pool(k, feat_size, self.has_cls_token)
             k = self.pool_k(k)
             k, k_size = reshape_post_pool(k, self.num_heads, k_tok)
-            dlog('pooled k', self.pool_k.weight.shape)
+            dlog('pooled k', self.pool_k)
         else:
             k_size = feat_size
         if self.norm_k is not None:
@@ -573,7 +576,7 @@ class MultiScaleAttention(nn.Module):
             v, v_tok = reshape_pre_pool(v, feat_size, self.has_cls_token)
             v = self.pool_v(v)
             v, _ = reshape_post_pool(v, self.num_heads, v_tok)
-            dlog('pooled v', self.pool_v.weight.shape)
+            dlog('pooled v', self.pool_v)
         if self.norm_v is not None:
             v = self.norm_v(v)
 
@@ -589,6 +592,11 @@ class MultiScaleAttention(nn.Module):
                 self.rel_pos_w,
             )
         self.last_attention_score = attn
+        if self.input_mask is not None:
+            ATTN, ATTH, ATTOUT, ATTIN = attn.shape
+            attn_mask = self.input_mask.view(ATTN, 1, 1, ATTIN) * (-10000)
+            attn = attn + attn_mask
+            # self.input_mask = None
         attn = attn.softmax(dim=-1)
         self.last_attention_prob = attn
         dlog('MVIT: last score ', self.last_attention_score.shape, 'last prob', self.last_attention_prob.shape)
@@ -635,10 +643,12 @@ class MultiScaleBlock(nn.Module):
 
         self.shortcut_proj_attn = nn.Linear(dim, dim_out) if proj_needed and expand_attn else None
         if stride_q and prod(stride_q) > 1:
-            kernel_skip = [s + 1 if s > 1 else s for s in stride_q]
+            #HOTFIX: reduce local connectivity **for sttabt
+            kernel_skip = [s + 1 - 1 if s > 1 else s for s in stride_q]
             stride_skip = stride_q
-            padding_skip = [int(skip // 2) for skip in kernel_skip]
+            padding_skip = [int(skip // 2)-1 for skip in kernel_skip]
             self.shortcut_pool_attn = nn.MaxPool2d(kernel_skip, stride_skip, padding_skip)
+            dlog('Block.shortcut', self.shortcut_pool_attn)
         else:
             self.shortcut_pool_attn = None
 
@@ -678,6 +688,29 @@ class MultiScaleBlock(nn.Module):
         self.concrete_init_max = 0.0
         self.p_logit = nn.Parameter(torch.empty(1).uniform_(self.concrete_init_min, self.concrete_init_max))
 
+        self.input_mask = None
+        self.output_mask = None
+    
+    def set_mask(self, input_mask, output_mask):
+        if (input_mask is None) and (output_mask is None):
+            self.input_mask = None
+            self.output_mask = None
+            self.attn.input_mask = None
+            self.attn.output_mask = None
+            return
+        
+        # N, TOUT, HID = self.last_output.shape
+        # _N, HEAD, _TOUT, TIN = self.attn.last_attention_score.shape
+        # assert TOUT == _TOUT
+        # assert N == _N
+        # assert input_mask.shape == (N, TIN, 1)
+        # assert output_mask.shape == (N, TOUT, 1)
+
+        self.input_mask = input_mask
+        self.output_mask = output_mask
+        self.attn.input_mask = input_mask
+        self.attn.output_mask = output_mask
+
     def _shortcut_pool(self, x, feat_size: List[int]):
         if self.shortcut_pool_attn is None:
             return x
@@ -700,12 +733,18 @@ class MultiScaleBlock(nn.Module):
         # NOTE as per the original impl, this seems odd, but shortcut uses un-normalized input if no proj
         x_shortcut = x if self.shortcut_proj_attn is None else self.shortcut_proj_attn(x_norm)
         x_shortcut = self._shortcut_pool(x_shortcut, feat_size)
+        # if self.input_mask is not None:
+        #     self.input_mask = None
         x, feat_size_new = self.attn(x_norm, feat_size)
         x = x_shortcut + self.drop_path1(x)
 
         x_norm = self.norm2(x)
         x_shortcut = x if self.shortcut_proj_mlp is None else self.shortcut_proj_mlp(x_norm)
         x = x_shortcut + self.drop_path2(self.mlp(x_norm))
+
+        if self.output_mask is not None:
+            x = x * self.output_mask
+            # self.output_mask = None
 
         #backup
         dlog('MVIT: last output', x.shape)
@@ -898,10 +937,31 @@ class MultiScaleVit(nn.Module):
         
         #for concrete training
         self.approx_net = None
+        self.concrete_hard_threshold = 0.5
+        self.concrete_loss_lambda_p = 1e-3
+        self.concrete_loss_lambda_mask = 100
+    
+    def reset_concrete_mask(self):
+        for stage in self.stages:
+            for block in stage.blocks:
+                block = block # type: MultiScaleBlock
+                block.set_mask(None, None)
+
+    def set_concrete_hard_threshold(self, v):
+        self.concrete_hard_threshold = v
+    
+    def set_concrete_init_p_logit(self, v):
+        for stage in self.stages:
+            for block in stage.blocks:
+                block = block #type: MultiScaleBlock
+                block.concrete_init_max = v
+                block.concrete_init_min = v
+                torch.nn.init.uniform_(block.p_logit, block.concrete_init_min, block.concrete_init_max)
     
     def init_approx_train(self):
         self.transfer_hidden = nn.ModuleList()
-        hids = [96, 192, 192, 384, 384, 384, 384,384, 768, 768,]
+        #TODO: support other definition
+        hids = [96, 192, 192, 384, 384, 384, 384, 384, 768, 768,]
         for h in hids:
             self.transfer_hidden.append(nn.Linear(h//self.factor, h))
 
@@ -982,9 +1042,39 @@ class MultiScaleVit(nn.Module):
                 x = x[:, 0]
         return x if pre_logits else self.head(x)
 
+    def update_concrete_mask(self, pixel_values):
+        assert self.approx_net is not None
+        
+        out_approx = self.approx_net(pixel_values)
+        approx_scores = get_attention_scores(self.approx_net)
+
+        masks, masks_hard = calc_mvit_concrete_masks(
+            approx_scores,
+            get_p_logits(self),
+            temperature=0.1,
+            concrete_hard_threshold=self.concrete_hard_threshold
+        )
+        
+        if self.concrete_hard_threshold is not None:
+            masks = masks_hard
+
+        blocks = [] #type: List[MultiScaleBlock]
+        for stage in self.stages:
+            for block in stage.blocks:
+                blocks.append(block)
+        
+        for i in range(len(approx_scores)):
+            blocks[i].set_mask(masks[i], masks[i+1])
+        
+        dlog('concrete updated')
+    
     def forward(self, pixel_values=None, labels=None):
         assert pixel_values is not None
 
+        if self.loss_mode == 'concrete':
+            self.reset_concrete_mask()
+            self.update_concrete_mask(pixel_values)
+        
         x = pixel_values
         x = self.forward_features(x)
         x = self.forward_head(x)
@@ -1064,8 +1154,33 @@ class MultiScaleVit(nn.Module):
 
                 loss = loss_att + loss_hid + loss_emb + loss_pred
             elif self.loss_mode == 'concrete':
+                loss = F.cross_entropy(x, labels)
+
                 approx_net = self.approx_net #type: MultiScaleVit
-                raise "todo"
+                assert approx_net is not None
+
+                blocks = [] #type: List[MultiScaleBlock]
+                for stage in self.stages:
+                    for block in stage.blocks:
+                        blocks.append(block)
+
+                for block in blocks:
+                    t = ((block.p_logit - block.concrete_init_min) ** 2) * self.concrete_loss_lambda_p
+                    loss_conc_reg += t
+                
+                target = torch.sigmoid(torch.tensor(
+                    blocks[0].concrete_init_min, 
+                    device = blocks[0].p_logit.device, 
+                    dtype=torch.float32
+                ))
+                occupy = 0
+                occupy += blocks[0].input_mask.mean()
+                for block in blocks:
+                    occupy += block.output_mask.mean()
+                occupy = occupy / (len(blocks) + 1)
+                loss_conc_ratio = F.mse_loss(target, occupy) * self.concrete_loss_lambda_mask
+
+                loss = loss + loss_conc_reg + loss_conc_ratio
             else: 
                 raise NotImplementedError()
                 
@@ -1113,6 +1228,15 @@ def get_hidden_outputs(mvit: MultiScaleVit):
             block = block # type: MultiScaleBlock
             hid.append(block.last_output)
     return hid
+
+def get_p_logits(mvit: MultiScaleVit):
+    ps = []
+    for stage in mvit.stages:
+        stage = stage # type: MultiScaleVitStage
+        for block in stage.blocks:
+            block = block # type: MultiScaleBlock
+            ps.append(block.p_logit)
+    return ps
 
 def checkpoint_filter_fn(state_dict, model):
     if 'stages.0.blocks.0.norm1.weight' in state_dict:
@@ -1175,7 +1299,10 @@ def mvitv2_tiny_sttabt(pretrained=False):
         from utils.ddp import MimicDDP
         state = torch.load('./saves/mvit-tiny-in1k.pth', map_location='cpu')
         wrapped = MimicDDP(mvit)
-        wrapped.load_state_dict(state['model'])
+        try:
+            wrapped.load_state_dict(state['model'])
+        except RuntimeError as ex:
+            print('error during import pretrained weights', ex)
         del state
 
     return mvit
@@ -1331,13 +1458,43 @@ def calc_mvit_concrete_masks(
         raise_if_nan(mask)
 
         if mask.shape[1] > last_mask.shape[1]:
-            raise "todo"
+            NN, NT = mask.shape
+            LN, LT = last_mask.shape
+            assert LN == NN
+
+            tokens_len = LT-1
+            isize = int(tokens_len**0.5)
+            assert isize**2 == tokens_len
+
+            new_isize = isize*2
+            assert NT == (new_isize**2 + 1)
+
+            timg = torch.zeros((LN, new_isize, new_isize), dtype=last_mask.dtype, device=last_mask.device)
+            #consider conv2x2 and maxpool2x2
+            timg[:, ::2, ::2] = last_mask[:,1:].view(LN, isize, isize)
+            timg[:, 0::2, 1::2] = last_mask[:,1:].view(LN, isize, isize)
+            timg[:, 1::2, 0::2] = last_mask[:,1:].view(LN, isize, isize)
+            timg[:, 1::2, 1::2] = last_mask[:,1:].view(LN, isize, isize)
+
+            # dlog('help_pre', last_mask[:,1:].view(LN, isize, isize)[0])
+            # dlog('help after', timg[0])
+
+            tmask = torch.zeros((NN, NT), dtype=mask.dtype, device=mask.device)
+            tmask[:,0] = 1.0
+            tmask[:,1:] = timg.view(LN, -1)
+            last_mask = tmask
+
+            assert mask.shape == last_mask.shape
+        elif mask.shape[1] == last_mask.shape[1]:
+            pass
+        else:
+            raise "token must be increasing while back-tracking"
         
         current_mask = torch.max(torch.stack([mask, last_mask], dim=0), dim=0)[0]
 
         assert current_mask.shape == (N, TIN)
         
-        current_mask_un = current_mask.view(-1, TLEN, 1)
+        current_mask_un = current_mask.unsqueeze(-1)
         current_mask_hard = None
         if concrete_hard_threshold is not None:
             current_mask_hard = (current_mask_un >= concrete_hard_threshold) * 1.0
@@ -1356,6 +1513,28 @@ def calc_mvit_concrete_masks(
     output_masks_hard.reverse()
     
     return output_masks, output_masks_hard
+
+def mvitv2_tiny_sttabt_concrete(approx_net=None, factor=4):
+    mvit = mvitv2_tiny_sttabt()
+    if approx_net is None:
+        approx_net = init_approx_net_from(copy.deepcopy(mvit), factor=factor)
+        assert factor == 4
+        state = torch.load('./saves/vit-approx-mvit-tiny-in1k-f4.pth', map_location='cpu')
+        try:
+            if list(state['model'].keys())[0].startswith('module.'):
+                from utils import ddp
+                wrapper = ddp.MimicDDP(approx_net)
+                wrapper.load_state_dict(state['model'])
+            else:
+                approx_net.load_state_dict(state['model'])
+        except RuntimeError as ex:
+            print('error while load approxnet', ex)
+        del state
+    
+    mvit.approx_net = approx_net
+    mvit.loss_mode = 'concrete'
+
+    return mvit
 
 if __name__ == '__main__':
     __debug = True
@@ -1381,16 +1560,86 @@ if __name__ == '__main__':
             block = block #type: MultiScaleBlock
             attention_scores.append(block.attn.last_attention_score)
             p_logits.append(block.p_logit)
-            dlog('wow', attention_scores[-1].shape)
+            dlog(f'attention_scores[{len(attention_scores)-1}]', attention_scores[-1].shape)
     
     print('layers:', len(attention_scores))
 
+    #test mask shapes
     output_mask, output_hard_mask = calc_mvit_concrete_masks(
         attention_scores,
         p_logits,
-        concrete_hard_threshold=0.5,
+        concrete_hard_threshold=None,
     )
-    for mask in output_mask:
-        print('m', mask.shape)
-    for mask in output_hard_mask:
-        print('m', mask.shape)
+    for i, mask in enumerate(output_mask):
+        print(f'concrete mask[{i}]', mask.shape)
+
+    #test mask for different p
+    for p in [-2.5, -1.5, 0.0, 1.0, 1.5]:
+        sparse.benchmark_reset()
+        mvit.set_concrete_init_p_logit(p)
+        #test soft mask
+        output_mask, output_hard_mask = calc_mvit_concrete_masks(
+            attention_scores,
+            p_logits,
+            concrete_hard_threshold=None,
+        )
+        print('concrete_occupy', p, sparse.benchmark_get_average('concrete_occupy'), len(output_mask))
+
+        #test hard mask
+        output_mask, output_hard_mask = calc_mvit_concrete_masks(
+            attention_scores,
+            p_logits,
+            concrete_hard_threshold=0.5,
+        )
+        print('concrete_occupy', p, sparse.benchmark_get_average('concrete_occupy'))
+    
+    #test concrete masking
+    mvit.approx_net = approx_net
+    mvit.loss_mode = 'concrete'
+
+    mvit.set_concrete_init_p_logit(-2)
+    mvit.set_concrete_hard_threshold(None)
+    sparse.benchmark_reset()
+    mvit(img)
+    print('concrete_occupy', p, sparse.benchmark_get_average('concrete_occupy'))
+
+    mvit.set_concrete_hard_threshold(0.5)
+    sparse.benchmark_reset()
+    mvit(img)
+    print('concrete_occupy', p, sparse.benchmark_get_average('concrete_occupy'))
+
+    #test concrete loss
+    mvit = mvitv2_tiny_sttabt_concrete(approx_net=None, factor=4)
+    mvit.set_concrete_hard_threshold(0.5)
+    sparse.benchmark_reset()
+    out = mvit(img, torch.ones((img.shape[0]), dtype=torch.long))
+    print('concrete_loss', out['loss'], out['loss_details'])
+
+    #example optimize
+    img = torch.randn((16, 3, 224, 224))
+    labels = torch.arange(0, img.shape[0])
+
+    mvit = mvitv2_tiny_sttabt_concrete(approx_net=None, factor=4)
+    mvit.set_concrete_hard_threshold(None)
+
+    mvit = mvit.to(0)
+    mvit.train()
+    img = img.to(0)
+    labels = labels.to(0)
+
+    optimizer = torch.optim.Adam(mvit.parameters(), lr=1e-1)
+    
+    __debug = False
+    import tqdm
+    for i in tqdm.trange(1000):
+        sparse.benchmark_reset()
+        out = mvit(img, labels)
+        
+        optimizer.zero_grad()
+        out['loss'].backward()
+        optimizer.step()
+
+        if (i%10) == 0:
+            print(i, out['loss'], out['loss_details'], sparse.benchmark_get_average('concrete_occupy'))
+    
+    __debug = True

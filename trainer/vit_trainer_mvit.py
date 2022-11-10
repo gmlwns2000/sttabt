@@ -263,9 +263,15 @@ class VitTrainer:
     
     def load(self):
         state = torch.load(self.get_checkpoint_path(), map_location='cpu')
-        self.model.load_state_dict(state['model'])
-        self.optimizer.load_state_dict(state['optimizer'])
-        self.scaler.load_state_dict(state['scaler'])
+        model_changed = False
+        try:
+            self.model.load_state_dict(state['model'])
+        except RuntimeError as ex:
+            model_changed = True
+            print('VitTrainerMViT: error while loading model', ex)
+        if not model_changed:
+            self.optimizer.load_state_dict(state['optimizer'])
+            self.scaler.load_state_dict(state['scaler'])
         del state
         print('VitTrainerMViT: Checkpoint loaded', self.get_checkpoint_path())
 
@@ -341,6 +347,8 @@ def main_ddp(rank, world_size, ddp_port, args):
         world_size=world_size,
         device=rank,
     )
+    if args.load:
+        trainer.load()
     trainer.main()
 
     ddp.cleanup()
@@ -351,6 +359,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--batch-size', type=int, default=-1)
     parser.add_argument('--n-gpus', type=int, default=1)
+    parser.add_argument('--load', action='store_true', default=False)
 
     args = parser.parse_args()
 
