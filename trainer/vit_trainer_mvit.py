@@ -31,6 +31,7 @@ class VitTrainer:
 
         base_lr = 2e-4
         self.lr = base_lr * (batch_size*world_size/512.0)
+        print('VitTrainer: Configured LR', self.lr)
         self.weight_decay = 1e-3
         self.amp_enable = True
         
