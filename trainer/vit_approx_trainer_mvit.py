@@ -27,7 +27,13 @@ class VitApproxTrainerMViT:
     ):
         self.seed()
         
-        self.lr = 1e-4
+        if batch_size <= 0:
+            batch_size = 16
+        self.batch_size = batch_size
+        
+        base_lr = 1e-4
+        self.lr = base_lr * (batch_size*world_size/512.0)
+
         self.weight_decay = 0
         self.amp_enable = True
         self.factor = factor
@@ -41,9 +47,6 @@ class VitApproxTrainerMViT:
         self.epochs = epochs
         self.device = device
         self.world_size = world_size
-        if batch_size <= 0:
-            batch_size = 16
-        self.batch_size = batch_size
 
         if not skip_dataloader:
             self.init_dataloader()

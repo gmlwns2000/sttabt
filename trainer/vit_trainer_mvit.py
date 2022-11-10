@@ -25,7 +25,12 @@ class VitTrainer:
     ):
         self.seed()
         
-        self.lr = 5e-5
+        if batch_size <= 0:
+            batch_size = 16
+        self.batch_size = batch_size
+
+        base_lr = 5e-5
+        self.lr = base_lr * (batch_size*world_size/512.0)
         self.weight_decay = 1e-3
         self.amp_enable = True
         
@@ -38,9 +43,6 @@ class VitTrainer:
         self.epochs = 100
         self.device = device
         self.world_size = world_size
-        if batch_size <= 0:
-            batch_size = 16
-        self.batch_size = batch_size
 
         if not skip_dataloader:
             self.init_dataloader()
