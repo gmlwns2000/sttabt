@@ -29,7 +29,7 @@ class VitTrainer:
             batch_size = 16
         self.batch_size = batch_size
 
-        base_lr = 2e-4
+        base_lr = 1e-3
         self.lr = base_lr * (batch_size*world_size/512.0)
         print('VitTrainer: Configured LR', self.lr)
         self.weight_decay = 1e-3
@@ -48,6 +48,9 @@ class VitTrainer:
         if not skip_dataloader:
             self.init_dataloader()
         self.reset_train()
+
+        self.trim_train_steps = 987654321
+        self.trim_test_steps = 987654321
 
 # Initialize
 
@@ -278,7 +281,9 @@ class VitTrainer:
         metric = load_metric("accuracy")
 
         pbar = tqdm.tqdm(self.timm_data_test, desc='eval')
-        for batch in pbar:
+        for step, batch in enumerate(pbar):
+            if step > self.trim_test_steps: break
+
             # batch = {k: batch[k].to(self.device, non_blocking=True) for k in batch.keys()}
             batch = {'pixel_values': batch[0].to(self.device), 'labels': batch[1].to(self.device)} #timm compatibility
             labels = batch['labels']
@@ -299,7 +304,7 @@ class VitTrainer:
 
         pbar = tqdm.tqdm(self.timm_data_train)
         for step, batch in enumerate(pbar):
-            # if step > 100: break
+            if step > self.trim_train_steps: break
             batch = {'pixel_values': batch[0].to(self.device), 'labels': batch[1].to(self.device)} #timm compatibility
             # batch = {k: batch[k].to(self.device, non_blocking=True) for k in batch.keys()}
             
@@ -341,6 +346,8 @@ def main_ddp(rank, world_size, ddp_port, args):
         world_size=world_size,
         device=rank,
     )
+    trainer.trim_test_steps = args.trim_test_steps
+    trainer.trim_train_steps = args.trim_train_steps
     trainer.main()
 
     ddp.cleanup()
@@ -351,6 +358,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--batch-size', type=int, default=-1)
     parser.add_argument('--n-gpus', type=int, default=1)
+    parser.add_argument('--trim-test-steps', type=int, default=987654321)
+    parser.add_argument('--trim-train-steps', type=int, default=987654321)
+    
 
     args = parser.parse_args()
 
