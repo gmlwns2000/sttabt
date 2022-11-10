@@ -39,7 +39,7 @@ class VitTrainer:
         self.device = device
         self.world_size = world_size
         if batch_size <= 0:
-            batch_size = 32
+            batch_size = 16
         self.batch_size = batch_size
 
         if not skip_dataloader:
@@ -283,7 +283,7 @@ class VitTrainer:
             with torch.no_grad(), torch.cuda.amp.autocast(enabled=self.amp_enable):
                 output = model(**batch)
 
-            metric.add_batch(predictions=torch.argmax(output[0], dim=-1), references=labels)
+            metric.add_batch(predictions=torch.argmax(output.logits, dim=-1), references=labels)
         score = metric.compute()
         if show_message: print(score)
         return score
@@ -294,13 +294,14 @@ class VitTrainer:
         self.model.train()
 
         pbar = tqdm.tqdm(self.timm_data_train)
-        for batch in pbar:
+        for step, batch in enumerate(pbar):
+            if step > 100: break
             batch = {'pixel_values': batch[0].to(self.device), 'labels': batch[1].to(self.device)} #timm compatibility
             # batch = {k: batch[k].to(self.device, non_blocking=True) for k in batch.keys()}
             
             with torch.cuda.amp.autocast(enabled=self.amp_enable):
                 output = self.model(**batch)
-                loss = output.loss
+                loss = output['loss']
             
             self.scaler.scale(loss).backward()
 
@@ -319,21 +320,37 @@ class VitTrainer:
         for epoch in range(self.epochs):
             self.epoch = epoch
             self.train_epoch()
-            self.eval_model(self.model, show_message=True)
-            self.save()
+            
+            if self.world_size > 1 and ddp.printable():
+                self.eval_model(self.model, show_message=True)
+                self.save()
+            
+            if self.world_size > 1:
+                ddp.barrier()
+
+def main_ddp(rank, world_size, ddp_port, args):
+    ddp.setup(rank, world_size, ddp_port)
+
+    print('Worker:', rank, world_size, ddp_port, ddp.printable())
+    trainer = VitTrainer(
+        batch_size=args.batch_size,
+        world_size=world_size,
+        device=rank,
+    )
+    trainer.main()
+
+    ddp.cleanup()
 
 def main():
     import argparse, random
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--batch-size', type=int, default=-1)
+    parser.add_argument('--n-gpus', type=int, default=1)
 
     args = parser.parse_args()
 
-    trainer = VitTrainer(
-        batch_size=args.batch_size,
-    )
-    trainer.main()
+    ddp.spawn(main_ddp, args=(args,), n_gpus=args.n_gpus)
 
 if __name__ == '__main__':
     main()

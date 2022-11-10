@@ -783,6 +783,7 @@ class MultiScaleVitStage(nn.Module):
                 x, feat_size = blk(x, feat_size)
         return x, feat_size
 
+from models.sparse_token import ApproxSparseBertForSequenceClassificationOutput
 
 class MultiScaleVit(nn.Module):
     """
@@ -979,20 +980,29 @@ class MultiScaleVit(nn.Module):
         x = self.forward_features(x)
         x = self.forward_head(x)
         
-        loss = 0.0
+        loss_conc_ratio = loss_conc_reg = loss_ltp = loss = 0.0
         if labels is not None:
             if self.loss_mode == 'cls':
                 loss = F.cross_entropy(x, labels)
             elif self.loss_mode == 'approx':
-                main_model = self.main_model #type: MultiScaleViT
+                main_model = self.main_model #type: MultiScaleVit
                 raise "todo"
             elif self.loss_mode == 'concrete':
-                approx_net = self.approx_net #type: MultiScaleViT
+                approx_net = self.approx_net #type: MultiScaleVit
                 raise "todo"
-        
-        ret = OrderedDict()
-        ret['logits'] = x
-        ret['loss'] = loss
+                
+        ret = ApproxSparseBertForSequenceClassificationOutput(
+            loss=loss,
+            logits=x,
+            hidden_states=None,
+            attentions=None,
+            loss_details={
+                'loss_total': loss,
+                'loss_ltp': loss_ltp,
+                'loss_conc_reg': loss_conc_reg,
+                'loss_conc_ratio': loss_conc_ratio,
+            }
+        )
         return ret
 
 def checkpoint_filter_fn(state_dict, model):
@@ -1041,8 +1051,8 @@ def _create_mvitv2(variant, cfg_variant=None, pretrained=False, **kwargs):
 def mvitv2_tiny(pretrained=False, **kwargs):
     return _create_mvitv2('mvitv2_tiny', pretrained=pretrained, **kwargs)
 
-def mvitv2_tiny_sttabt():
-    return MultiScaleVit(
+def mvitv2_tiny_sttabt(pretrained=False):
+    mvit = MultiScaleVit(
         cfg=MultiScaleVitCfg(
             depths=(1, 2, 5, 2),
             kernel_qkv=(1, 1),
@@ -1050,6 +1060,14 @@ def mvitv2_tiny_sttabt():
             use_cls_token=True,
         )
     )
+    mvit.global_pool = 'nothing'
+
+    if pretrained:
+        state = torch.load('./saves/mvit-tiny-in1k.pth', map_location='cpu')
+        mvit.load_state_dict(state['model'])
+        del state
+
+    return mvit
 
 # Evalute MViT without global pooling
 def evalute_model(model, max_steps=987654321):
@@ -1234,8 +1252,11 @@ if __name__ == '__main__':
     out = mvit(img)
     out_approx = approx_net(img)
 
-    assert out.shape == out_approx.shape
-    print(out.shape)
+    assert out.logits.shape == out_approx.logits.shape
+    print(out.logits.shape)
+
+    print('load pretrained')
+    mvitv2_tiny_sttabt(pretrained=True)
 
     attention_scores = []
     p_logits = []
