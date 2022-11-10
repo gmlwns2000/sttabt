@@ -894,9 +894,18 @@ class MultiScaleVit(nn.Module):
 
         #for approx training
         self.main_model = None
+        self.factor = 4
         
         #for concrete training
         self.approx_net = None
+    
+    def init_approx_train(self):
+        self.transfer_hidden = nn.ModuleList()
+        hids = [96, 192, 192, 384, 384, 384, 384,384, 768, 768,]
+        for h in hids:
+            self.transfer_hidden.append(nn.Linear(h//self.factor, h))
+
+        self.transfer_embedding = nn.Linear(hids[0]//self.factor, hids[0])
 
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
@@ -979,31 +988,131 @@ class MultiScaleVit(nn.Module):
         x = pixel_values
         x = self.forward_features(x)
         x = self.forward_head(x)
+        logits = x
         
         loss_conc_ratio = loss_conc_reg = loss_ltp = loss = 0.0
+        loss_att, loss_hid, loss_emb, loss_pred = 0, 0, 0, 0
         if labels is not None:
             if self.loss_mode == 'cls':
                 loss = F.cross_entropy(x, labels)
             elif self.loss_mode == 'approx':
                 main_model = self.main_model #type: MultiScaleVit
-                raise "todo"
+                out = main_model(
+                    pixel_values=pixel_values,
+                    labels=None
+                )
+                
+                attn = get_attention_probs(self)
+                attn_main = get_attention_probs(main_model)
+
+                hid = get_hidden_outputs(self)
+                hid_main = get_hidden_outputs(main_model)
+                # for i, h in enumerate(hid):
+                #     print(h.shape, hid_main[i].shape)
+
+                # from tinybert paper
+                # loss attention
+                loss_att = 0
+                NLAYER = len(attn)
+                #from miniLM paper
+                for j in range(NLAYER):
+                    N, H, TOUT, TIN = attn[j].shape
+                    y_pred = attn[j].view(N*H*TOUT, TIN)
+                    y_target = attn_main[j].view(N*H*TOUT, TIN)
+                    kl_loss = y_target * ((y_target + EPS).log() - (y_pred + EPS).log())
+                    kl_loss = torch.sum(kl_loss.view(N, H, TOUT, TIN), dim=-1) # shape: N, H, T
+                    kl_loss = torch.mean(kl_loss, dim=-1)
+                    kl_loss = kl_loss.mean() # head and batch mean
+                    loss_att += kl_loss
+                loss_att /= NLAYER
+                #loss_att *= 1/100
+                
+                # loss hidden
+                loss_hid = 0
+                for j in range(NLAYER):
+                    loss_hid += F.mse_loss(
+                        self.transfer_hidden[j](hid[j]),
+                        hid_main[j]
+                    )
+                loss_hid /= NLAYER
+                loss_hid *= (1/100)
+                
+                # loss emb
+                loss_emb = F.mse_loss(
+                    self.transfer_embedding(self.last_embedding), 
+                    main_model.last_embedding
+                )
+                
+                # loss prediction
+                #print(approx_output.logits[0])
+                # loss_pred = F.kl_div(
+                #     F.softmax(approx_output.logits, dim=-1),
+                #     F.softmax(original_output.logits, dim=-1),
+                #     reduction='batchmean'
+                # )
+                # HOTFIX: LVVIT
+                loss_pred = F.mse_loss(
+                    F.softmax(logits, dim=-1),
+                    F.softmax(out.logits, dim=-1),
+                )
+                #print(approx_output.logits[0], original_output.logits[0])
+                # loss_pred *= 1/10
+                # # HOTFIX: LVVIT
+                # loss_pred *= 500
+                loss_pred *= 200
+                # print(loss_pred.item())
+
+                loss = loss_att + loss_hid + loss_emb + loss_pred
             elif self.loss_mode == 'concrete':
                 approx_net = self.approx_net #type: MultiScaleVit
                 raise "todo"
+            else: 
+                raise NotImplementedError()
                 
         ret = ApproxSparseBertForSequenceClassificationOutput(
             loss=loss,
             logits=x,
-            hidden_states=None,
-            attentions=None,
-            loss_details={
+            hidden_states=get_hidden_outputs(self),
+            attentions=get_attention_probs(self),
+            loss_details = {
                 'loss_total': loss,
                 'loss_ltp': loss_ltp,
                 'loss_conc_reg': loss_conc_reg,
                 'loss_conc_ratio': loss_conc_ratio,
+                'loss_att': loss_att, 
+                'loss_hid': loss_hid, 
+                'loss_emb': loss_emb, 
+                'loss_pred': loss_pred,
             }
         )
         return ret
+
+def get_attention_scores(mvit: MultiScaleVit):
+    scores = []
+    for stage in mvit.stages:
+        stage = stage # type: MultiScaleVitStage
+        for block in stage.blocks:
+            block = block # type: MultiScaleBlock
+            scores.append(block.attn.last_attention_score)
+    return scores
+
+def get_attention_probs(mvit: MultiScaleVit):
+    scores = []
+    for stage in mvit.stages:
+        stage = stage # type: MultiScaleVitStage
+        for block in stage.blocks:
+            block = block # type: MultiScaleBlock
+            scores.append(block.attn.last_attention_prob)
+    return scores
+
+def get_hidden_outputs(mvit: MultiScaleVit):
+    hid = []
+    for stage in mvit.stages:
+        stage = stage # type: MultiScaleVitStage
+        for block in stage.blocks:
+            block = block # type: MultiScaleBlock
+            hid.append(block.last_output)
+    return hid
 
 def checkpoint_filter_fn(state_dict, model):
     if 'stages.0.blocks.0.norm1.weight' in state_dict:
@@ -1102,6 +1211,9 @@ def init_approx_net_from(mvit: MultiScaleVit, factor: int = 4):
         cfg=cfg,
         global_pool=mvit.global_pool,
     )
+    approx_net.main_model = mvit
+    approx_net.loss_mode = 'approx'
+    approx_net.init_approx_train()
     return approx_net
 
 """
@@ -1136,10 +1248,11 @@ if __name__ == '__main__':
     print('mvitv2 acc avg16:', evalute_model(mvit))
 """
 
-from models.sparse_token import benchmark_cum, raise_if_nan, STANDARD_NORMAL_DISTRIBUTION
-BENCHMARK_CONCRETE_OCCUPY = False
+import models.sparse_token as sparse
+from models.sparse_token import raise_if_nan
+
 EPS = 1e-7
-__abt_default_p = 0.1
+
 import copy
 from typing import List
 
@@ -1149,7 +1262,7 @@ def calc_mvit_concrete_masks(
     temperature=0.1,
     concrete_hard_threshold=0.5,
 ):
-    global __abt_default_p
+    __abt_default_p = sparse.__abt_default_p
         
     #update mask
     output_masks = []
@@ -1170,9 +1283,9 @@ def calc_mvit_concrete_masks(
     output_masks.append(last_mask_un)
     output_masks_hard.append(last_mask_un)
 
-    if BENCHMARK_CONCRETE_OCCUPY: 
+    if sparse.BENCHMARK_CONCRETE_OCCUPY: 
         with torch.no_grad():
-            benchmark_cum('concrete_occupy', last_mask_un.mean())
+            sparse.benchmark_cum('concrete_occupy', last_mask_un.mean())
     
     for j in range(len(attention_scores)):
         #layer indexing
@@ -1226,11 +1339,11 @@ def calc_mvit_concrete_masks(
         current_mask_hard = None
         if concrete_hard_threshold is not None:
             current_mask_hard = (current_mask_un >= concrete_hard_threshold) * 1.0
-            if BENCHMARK_CONCRETE_OCCUPY:
-                with torch.no_grad(): benchmark_cum('concrete_occupy', current_mask_hard.mean())
+            if sparse.BENCHMARK_CONCRETE_OCCUPY:
+                with torch.no_grad(): sparse.benchmark_cum('concrete_occupy', current_mask_hard.mean())
         else:
-            if BENCHMARK_CONCRETE_OCCUPY:
-                with torch.no_grad(): benchmark_cum('concrete_occupy', current_mask_un.mean())
+            if sparse.BENCHMARK_CONCRETE_OCCUPY:
+                with torch.no_grad(): sparse.benchmark_cum('concrete_occupy', current_mask_un.mean())
         
         output_masks.append(current_mask_un)
         output_masks_hard.append(current_mask_hard)

@@ -15,19 +15,22 @@ import transformers
 from dataset.images_hf import ImagesHfDataset, ExamplesToBatchTransform, ViTInputTransform
 from utils import ddp, env_vars
 
-class VitTrainer:
+class VitApproxTrainerMViT:
     def __init__(self,
         subset = 'in1k',
         batch_size = -1,
         device = 0,
         world_size = 1,
         skip_dataloader = False,
+        factor=4,
+        epochs=10,
     ):
         self.seed()
         
-        self.lr = 5e-5
-        self.weight_decay = 1e-3
+        self.lr = 1e-4
+        self.weight_decay = 0
         self.amp_enable = True
+        self.factor = factor
         
         self.model_id = 'mvit-tiny'
         self.base_model_id = 'mvit-tiny'
@@ -35,7 +38,7 @@ class VitTrainer:
         self.subset = subset
         assert subset == 'in1k'
         self.device = device
-        self.epochs = 100
+        self.epochs = epochs
         self.device = device
         self.world_size = world_size
         if batch_size <= 0:
@@ -67,7 +70,7 @@ class VitTrainer:
         arg_distributed = self.world_size > 1
 
         model_id = 'deit_small_patch16_224'
-        print(f"VitTrainerMViT: timm dataloader of ({model_id}) b{self.batch_size}")
+        print(f"VitApproxTrainerMViT: timm dataloader of ({model_id}) b{self.batch_size}")
         model = timm.create_model(model_id, pretrained=True)
 
         data_config = resolve_data_config({}, model=model, verbose=ddp.printable())
@@ -78,7 +81,7 @@ class VitTrainer:
 
         # create the train and eval datasets
         if test_split == 'split':
-            print("VitTrainerMViT: Using valid split from train set for test set.")
+            print("VitApproxTrainerMViT: Using valid split from train set for test set.")
             dataset_train = create_dataset(
                 dataset_name, root=data_dir, split=arg_train_split, is_training=True,
                 #class_map=args.class_map,
@@ -218,7 +221,12 @@ class VitTrainer:
         self.epoch = 0
         
         from models import mvit_timm
-        self.model = mvit_timm.mvitv2_tiny_sttabt()
+        self.main_model = mvit_timm.mvitv2_tiny_sttabt()
+        self.main_model = self.main_model.to(self.device)
+
+        self.model = mvit_timm.init_approx_net_from(
+            self.main_model, factor=self.factor
+        )
         self.model = self.model.to(self.device)
         self.model = ddp.wrap_model(self.model, find_unused_paramters=True)
 
@@ -243,7 +251,7 @@ class VitTrainer:
 # IO
 
     def get_checkpoint_path(self):
-        return f'./saves/{self.base_model_id}-{self.subset}.pth'
+        return f'./saves/vit-approx-{self.base_model_id}-{self.subset}-f{self.factor}.pth'
 
     def save(self):
         torch.save({
@@ -256,7 +264,7 @@ class VitTrainer:
             'epoch': self.epoch,
             'epochs': self.epochs,
         }, self.get_checkpoint_path())
-        print('VitTrainerMViT: Checkpoint saved', self.get_checkpoint_path())
+        print('VitApproxTrainerMViT: Checkpoint saved', self.get_checkpoint_path())
     
     def load(self):
         state = torch.load(self.get_checkpoint_path(), map_location='cpu')
@@ -264,7 +272,7 @@ class VitTrainer:
         self.optimizer.load_state_dict(state['optimizer'])
         self.scaler.load_state_dict(state['scaler'])
         del state
-        print('VitTrainerMViT: Checkpoint loaded', self.get_checkpoint_path())
+        print('VitApproxTrainerMViT: Checkpoint loaded', self.get_checkpoint_path())
 
 # Eval Impl
 
@@ -303,6 +311,10 @@ class VitTrainer:
             with torch.cuda.amp.autocast(enabled=self.amp_enable):
                 output = self.model(**batch)
                 loss = output['loss']
+                loss_att = output['loss_details']['loss_att']
+                loss_hid = output['loss_details']['loss_hid']
+                loss_emb = output['loss_details']['loss_emb']
+                loss_pred = output['loss_details']['loss_pred']
             
             self.scaler.scale(loss).backward()
 
@@ -313,7 +325,10 @@ class VitTrainer:
             self.scaler.update()
             self.optimizer.zero_grad()
 
-            pbar.set_description(f'[{self.epoch+1}/{self.epochs}] {loss.item():.5f}')
+            pbar.set_description(
+                f'[{self.epoch+1}/{self.epochs}] {loss.item():.5f} '+\
+                f'Latt:{loss_att.item():.5f} Lhid:{loss_hid.item():.5f} Lemb:{loss_emb.item():.5f} Lpred:{loss_pred.item():.5f} '
+            )
 
 # Main
 
@@ -322,7 +337,7 @@ class VitTrainer:
             self.epoch = epoch
             self.train_epoch()
             
-            if self.world_size > 1 and ddp.printable():
+            if (self.world_size > 1 and ddp.printable()) or self.world_size <= 1:
                 self.eval_model(self.model, show_message=True)
                 self.save()
             
@@ -333,7 +348,7 @@ def main_ddp(rank, world_size, ddp_port, args):
     ddp.setup(rank, world_size, ddp_port)
 
     print('Worker:', rank, world_size, ddp_port, ddp.printable())
-    trainer = VitTrainer(
+    trainer = VitApproxTrainerMViT(
         batch_size=args.batch_size,
         world_size=world_size,
         device=rank,
@@ -346,6 +361,7 @@ def main():
     import argparse, random
 
     parser = argparse.ArgumentParser()
+    parser.add_argument('--epochs', type=int, default=12)
     parser.add_argument('--batch-size', type=int, default=-1)
     parser.add_argument('--n-gpus', type=int, default=1)
 
