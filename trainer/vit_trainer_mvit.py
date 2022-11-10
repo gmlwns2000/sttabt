@@ -325,7 +325,7 @@ class VitTrainer:
             self.epoch = epoch
             self.train_epoch()
             
-            if self.world_size > 1 and ddp.printable():
+            if (self.world_size > 1 and ddp.printable()) or (self.world_size <= 1):
                 self.eval_model(self.model, show_message=True)
                 self.save()
             
