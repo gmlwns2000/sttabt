@@ -209,6 +209,16 @@ from utils import ddp
 import transformers
 
 def load_concrete_model(model_id = 'deit-small', factor=4, p_logit=0.0):
+    if model_id.startswith('mvit-'):
+        from models.mvit_timm import mvitv2_tiny_sttabt_concrete
+        assert factor == 4
+        
+        mvit = mvitv2_tiny_sttabt_concrete(pretrained=True, approx_net=None, factor=4)
+        mvit.set_concrete_hard_threshold(None)
+        mvit.set_concrete_init_p_logit(p_logit)
+        
+        return
+    
     if model_id in ['vit-base', 'deit-base', 'deit-small', 'lvvit-small']:
         model_cls = transformers.ViTForImageClassification
     elif model_id in ['deit-base-distilled', 'deit-small-distilled']:

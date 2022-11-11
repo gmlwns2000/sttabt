@@ -938,7 +938,7 @@ class MultiScaleVit(nn.Module):
         #for concrete training
         self.approx_net = None
         self.concrete_hard_threshold = 0.5
-        self.concrete_loss_lambda_p = 1e-3
+        self.concrete_loss_lambda_p = 1e-2
         self.concrete_loss_lambda_mask = 100
     
     def reset_concrete_mask(self):
@@ -1296,11 +1296,10 @@ def mvitv2_tiny_sttabt(pretrained=False):
     mvit.global_pool = 'nothing'
 
     if pretrained:
-        from utils.ddp import MimicDDP
-        state = torch.load('./saves/mvit-tiny-in1k.pth', map_location='cpu')
-        wrapped = MimicDDP(mvit)
+        state = torch.load('./saves/mvit-tiny-deit/checkpoint.pth', map_location='cpu')
+        dlog('mvitv2_tiny_sttabt load from ./saves/mvit-tiny-deit/checkpoint.pth')
         try:
-            wrapped.load_state_dict(state['model'])
+            mvit.load_state_dict(state['model'])
         except RuntimeError as ex:
             print('error during import pretrained weights', ex)
         del state
@@ -1514,21 +1513,26 @@ def calc_mvit_concrete_masks(
     
     return output_masks, output_masks_hard
 
-def mvitv2_tiny_sttabt_concrete(approx_net=None, factor=4):
-    mvit = mvitv2_tiny_sttabt()
+def mvitv2_tiny_sttabt_concrete(pretrained=False, approx_net=None, factor=4):
+    mvit = mvitv2_tiny_sttabt(pretrained=pretrained)
     if approx_net is None:
         approx_net = init_approx_net_from(copy.deepcopy(mvit), factor=factor)
         assert factor == 4
-        state = torch.load('./saves/vit-approx-mvit-tiny-in1k-f4.pth', map_location='cpu')
-        try:
-            if list(state['model'].keys())[0].startswith('module.'):
-                from utils import ddp
-                wrapper = ddp.MimicDDP(approx_net)
-                wrapper.load_state_dict(state['model'])
-            else:
-                approx_net.load_state_dict(state['model'])
-        except RuntimeError as ex:
-            print('error while load approxnet', ex)
+        
+        # state = torch.load('./saves/vit-approx-mvit-tiny-in1k-f4.pth', map_location='cpu')
+        # try:
+        #     if list(state['model'].keys())[0].startswith('module.'):
+        #         from utils import ddp
+        #         wrapper = ddp.MimicDDP(approx_net)
+        #         wrapper.load_state_dict(state['model'])
+        #     else:
+        #         approx_net.load_state_dict(state['model'])
+        # except RuntimeError as ex:
+        #     print('error while load approxnet', ex)
+        # del state
+        state = torch.load('./saves/mvit-tiny-deit-approx/checkpoint.pth', map_location='cpu')
+        dlog('mvitv2_tiny_sttabt_concrete load from ./saves/mvit-tiny-deit-approx/checkpoint.pth')
+        approx_net.load_state_dict(state['model'])
         del state
     
     mvit.approx_net = approx_net
