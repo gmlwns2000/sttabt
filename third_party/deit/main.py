@@ -17,11 +17,11 @@ from timm.scheduler import create_scheduler
 from timm.optim import create_optimizer
 from timm.utils import NativeScaler, get_state_dict, ModelEma
 
-from datasets import build_dataset
-from engine import train_one_epoch, evaluate
-from losses import DistillationLoss
-from samplers import RASampler
-from augment import new_data_aug_generator
+from third_party.deit.datasets import build_dataset
+from third_party.deit.engine import train_one_epoch, evaluate
+from third_party.deit.losses import DistillationLoss
+from third_party.deit.samplers import RASampler
+from third_party.deit.augment import new_data_aug_generator
 
 import models
 import models_v2

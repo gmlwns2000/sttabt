@@ -12,8 +12,8 @@ import torch
 from timm.data import Mixup
 from timm.utils import accuracy, ModelEma
 
-from losses import DistillationLoss
-import utils
+from third_party.deit.losses import DistillationLoss
+import third_party.deit.utils as utils
 
 
 def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
@@ -38,8 +38,10 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
             targets = targets.gt(0.0).type(targets.dtype)
                     
         with torch.cuda.amp.autocast():
-            outputs = model(samples)
-            loss = criterion(samples, outputs, targets)
+            outputs_dict = model(samples, targets)
+            
+            loss = outputs_dict['loss'] #criterion(samples, outputs, targets)
+            outputs = outputs_dict['logits']
 
         loss_value = loss.item()
 
@@ -58,6 +60,12 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
         if model_ema is not None:
             model_ema.update(model)
 
+        loss_details = outputs_dict['loss_details']
+        debugs = {}
+        for key in loss_details:
+            if loss_details[key] > 0:
+                debugs[key] = loss_details[key].item()
+        metric_logger.update(**debugs)
         metric_logger.update(loss=loss_value)
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
     # gather the stats from all processes
@@ -82,8 +90,9 @@ def evaluate(data_loader, model, device):
 
         # compute output
         with torch.cuda.amp.autocast():
-            output = model(images)
-            loss = criterion(output, target)
+            ouput_dict = model(images, target)
+            loss = ouput_dict['loss']#criterion(output, target)
+            output = ouput_dict['logits']
 
         acc1, acc5 = accuracy(output, target, topk=(1, 5))
 
