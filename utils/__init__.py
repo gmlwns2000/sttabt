@@ -60,3 +60,6 @@ def initialize_saves_dirs():
     mkdir('./saves_plot')
     mkdir('./saves_hparam')
     mkdir('./logs')
+
+if __name__ == '__main__':
+    initialize_saves_dirs()
