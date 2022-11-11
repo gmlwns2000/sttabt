@@ -208,7 +208,7 @@ def main(fig_scales=[1.0, 0.7], model_id = 'deit-small', extra_models=[]):
                     'lvvit-small':'LVViT$_{small}$',
                     'mvit-tiny':'MViT$_{tiny}$',
                 }[modelid]
-                plt.scatter(
+                plt.plot(
                     xs, ys, 
                     label=f"STTABT@f4 (Concrete) {extra_model_name}", color=COLOR_STTABT_CONCRETE_WITH_TRAIN,
                     marker={
