@@ -28,7 +28,8 @@ import third_party.deit.models_v2 as model_v2
 
 import third_party.deit.utils as utils
 
-from utils import env_vars
+from utils import env_vars, initialize_saves_dirs
+initialize_saves_dirs()
 
 
 def get_args_parser():
@@ -267,10 +268,29 @@ def main(args):
     #     drop_block_rate=None,
     #     img_size=args.input_size
     # )
-    from models import mvit_timm
-    model = mvit_timm.mvitv2_tiny_sttabt()
+    
+    if args.model == 'mvit-tiny':
+        from models import mvit_timm
+        model = mvit_timm.mvitv2_tiny_sttabt()
+    elif args.model == 'mvit-tiny-approx':
+        assert args.output_dir != './saves/mvit-tiny-deit/'
+        
+        from models import mvit_timm
+        main_model = mvit_timm.mvitv2_tiny_sttabt(pretrained=True)
 
-                    
+        model = mvit_timm.init_approx_net_from(
+            main_model, factor=4
+        )
+        
+        from trainer import vit_approx_trainer as vit_approx
+        vit_approx.load_state_dict_interpolated(
+            model,
+            main_model.state_dict(),
+            ignores=['p_logit', 'ltp', 'main_model.', 'transfer_']
+        )
+    else:
+        raise Exception("not supported model type")
+
     if args.finetune:
         if args.finetune.startswith('https'):
             checkpoint = torch.hub.load_state_dict_from_url(

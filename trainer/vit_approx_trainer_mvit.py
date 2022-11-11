@@ -228,7 +228,7 @@ class VitApproxTrainerMViT:
         self.epoch = 0
         
         from models import mvit_timm
-        self.main_model = mvit_timm.mvitv2_tiny_sttabt()
+        self.main_model = mvit_timm.mvitv2_tiny_sttabt(pretrained=True)
         self.main_model = self.main_model.to(self.device)
 
         self.model = mvit_timm.init_approx_net_from(
