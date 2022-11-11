@@ -2252,7 +2252,6 @@ class ApproxSparseBertModel(nn.Module):
                 image_size=224,
                 patch_embeding_mode=self.sparse_bert.patch_embedding_mode,
             )
-            print('AAFFE:', self.sparse_bert.patch_embedding_mode)
             layer_token_occupies = []
             if mode in ['approx', 'forward']:
                 #from channel indices

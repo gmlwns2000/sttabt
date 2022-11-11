@@ -137,7 +137,6 @@ def flops_bert_embedding(c: ModelConfig):
 
             # self.proj = nn.Conv2d(64, embed_dim, kernel_size=new_patch_size, stride=new_patch_size)
             flops = MM_FLOPS * c.token_occupies[0] * c.seq_len * (c.patch_size ** 2) * c.hidden_size
-            print('TTESTSST:')
             return flops
         else: raise Exception()
     else: raise Exception()

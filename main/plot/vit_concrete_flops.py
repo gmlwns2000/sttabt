@@ -9,13 +9,15 @@ from main.plot.constants import *
 from main.visualize.vit import load_concrete as load_concrete_model
 from trainer import vit_concrete_trainer as vit_concrete
 
+COLOR_LVVIT = 'skyblue'
 COLOR_DEIT = 'blue'
 COLOR_SPVIT = 'magenta'
 COLOR_IA = 'green'
 COLOR_S2 = 'black'
 COLOR_HVT = 'gray'
+COLOR_DYVIT = 'orange'
 
-def load_points():
+def load_points(include_extra=False):
     #return [flops] [accuracy] [name] [color] [offset(x, y)]
     # we left only baselines that derived from DeiT-S, not others
     ret = [
@@ -40,6 +42,17 @@ def load_points():
         (2.14, 77.21, 'DeiT-S/256', COLOR_DEIT, (0.1,-0.2)),
         # (1.29, 76.87, 'SPViT-DeiT-T/256'),
     ]
+    if include_extra:
+        ret += [
+            #from LVViT paper
+            (6.6, 83, 'LVViT-S', COLOR_LVVIT, (-0.55, -0.4)), #we reproduece it, slightly lower 0.3%
+
+            #from DyViT paper
+            (5.8, 83.3, '', COLOR_DYVIT, (0.1, -0.2)), 
+            (5.1, 83.2, '', COLOR_DYVIT, (0.1, -0.2)),
+            (4.6, 83, '', COLOR_DYVIT, (0.1, -0.2)),
+            (3.7, 82, 'DyViT-LV-S', COLOR_DYVIT, (0.1, -0.2)),
+        ]
     return ([ret[j][i] for j in range(len(ret))] for i in range(len(ret[0])))
 
 def load_dyvit():
@@ -95,8 +108,9 @@ def load_concrete(
             #calc flops
             #load dataloader_test
             if dataloader_test is None:
+                assert model_id in ['deit-small', 'lvvit-small', 'mvit-tiny']
                 trainer = vit_concrete.VitConcreteTrainer(
-                    subset='base', model=model_id, factor=factor, batch_size=-1, device='cpu',
+                    subset='base', model='deit-small', factor=factor, batch_size=-1, device='cpu',
                     world_size=1, enable_valid=False, epochs=epochs
                 )
                 dataloader_test = trainer.approx_trainer.timm_data_test
@@ -144,7 +158,9 @@ def load_concrete(
         return [], [], [], []
     return ([ret[j][i] for j in range(len(ret))] for i in range(len(ret[0])))
 
-def main(fig_scales=[1.0, 0.7], model_id = 'deit-small'):
+PLOT_NAME = './saves_plot/vit-flops'
+
+def main(fig_scales=[1.0, 0.7], model_id = 'deit-small', extra_models=[]):
     xs_dyvit, ys_dyvit = load_dyvit()
     xs_dyvit = scale(xs_dyvit, 1e-9)
 
@@ -152,10 +168,14 @@ def main(fig_scales=[1.0, 0.7], model_id = 'deit-small'):
         load_concrete(factor=4, model_id=model_id)
     xs_concrete_f8, ys_concrete_f8, xs_concrete_ema_f8, ys_concrete_ema_f8 = \
         load_concrete(factor=8, model_id=model_id)
-    xs_concrete_lvvit, ys_concrete_lvvit, xs_concrete_lvvit_ema, ys_concrete_lvvit_ema = \
-        load_concrete(factor=4, model_id=model_id)
+    xs_extra = []
+    ys_extra = []
+    for modelid in extra_models:
+        xs, ys, xs_ema, ys_ema = load_concrete(factor=4, model_id=modelid)
+        xs_extra.append(xs)
+        ys_extra.append(ys)
 
-    xs_other, ys_other, labels_other, colors_other, offsets_other = load_points()
+    xs_other, ys_other, labels_other, colors_other, offsets_other = load_points(include_extra=len(extra_models) > 0)
 
     def _render(fig_scale):
         plt.clf()
@@ -180,12 +200,22 @@ def main(fig_scales=[1.0, 0.7], model_id = 'deit-small'):
                 label=f"STTABT@f8 (Concrete) {model_label}", color=COLOR_STTABT_CONCRETE_WITH_TRAIN,
                 marker='^', linestyle='-', linewidth=1.2, zorder=99,
             )
-        if len(xs_concrete_lvvit) > 0:
-            plt.plot(
-                xs_concrete_f8, ys_concrete_f8, 
-                label=f"STTABT@f4 (Concrete) {model_label}", color=COLOR_STTABT_CONCRETE_WITH_TRAIN,
-                marker='o', linestyle='-', linewidth=1.2, zorder=99,
-            )
+        for idx, modelid in enumerate(extra_models):
+            xs = xs_extra[idx]
+            ys = ys_extra[idx]
+            if len(xs) > 0:
+                extra_model_name = {
+                    'lvvit-small':'LVViT$_{small}$',
+                    'mvit-tiny':'MViT$_{tiny}$',
+                }[modelid]
+                plt.scatter(
+                    xs, ys, 
+                    label=f"STTABT@f4 (Concrete) {extra_model_name}", color=COLOR_STTABT_CONCRETE_WITH_TRAIN,
+                    marker={
+                        'lvvit-small': 'o',
+                        'mvit-tiny': '+'
+                    }[modelid], linestyle='-', linewidth=1.2, zorder=99,
+                )
         
         for i, txt in enumerate(labels_other):
             ox, oy = offsets_other[i]
@@ -207,9 +237,9 @@ def main(fig_scales=[1.0, 0.7], model_id = 'deit-small'):
         plt.grid(which='both', axis='both')
 
         if model_id == 'deit-small':
-            filename = './saves_plot/vit-flops' + ('' if fig_scale == 1.0 else f'-x{fig_scale}')
+            filename = PLOT_NAME + ('' if fig_scale == 1.0 else f'-x{fig_scale}')
         else:
-            filename = f'./saves_plot/vit-flops-{model_id}' + ('' if fig_scale == 1.0 else f'-x{fig_scale}')
+            filename = f'{PLOT_NAME}-{model_id}' + ('' if fig_scale == 1.0 else f'-x{fig_scale}')
         plt.savefig(filename+'.png', bbox_inches='tight', pad_inches=0.05)
         plt.savefig(filename+'.pdf', bbox_inches='tight', pad_inches=0.05)
     
@@ -218,3 +248,5 @@ def main(fig_scales=[1.0, 0.7], model_id = 'deit-small'):
 
 if __name__ == '__main__':
     main()
+    PLOT_NAME += '_extra'
+    main(extra_models=['lvvit-small'])
