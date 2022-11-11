@@ -1,5 +1,5 @@
 import tqdm, torch
-from thrid_party.DynamicViT.datasets import build_dataset
+from third_party.DynamicViT.datasets import build_dataset
 from utils import env_vars
 
 IMNET_PATH = env_vars.get_imagenet_root()

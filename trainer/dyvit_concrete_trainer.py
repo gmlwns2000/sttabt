@@ -21,20 +21,20 @@ from timm.data.mixup import Mixup
 from timm.models import create_model
 from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
 from timm.utils import ModelEma
-from thrid_party.DynamicViT.optim_factory import create_optimizer, LayerDecayValueAssigner
+from third_party.DynamicViT.optim_factory import create_optimizer, LayerDecayValueAssigner
 
 from trainer.dyvit.engine import train_one_epoch, evaluate
 from trainer.dyvit.losses import DistillDiffPruningLoss_dynamic
 
-from thrid_party.DynamicViT.utils import NativeScalerWithGradNormCount as NativeScaler
-import thrid_party.DynamicViT.utils as utils
-from thrid_party.DynamicViT.datasets import build_dataset, build_transform
-#from thrid_party.DynamicViT.samplers import RASampler
-# from thrid_party.DynamicViT.models.dyconvnext import ConvNeXt_Teacher, AdaConvNeXt
-# from thrid_party.DynamicViT.models.dylvvit import LVViTDiffPruning, LVViT_Teacher
-# from thrid_party.DynamicViT.models.dyvit import VisionTransformerDiffPruning, VisionTransformerTeacher
-# from thrid_party.DynamicViT.models.dyswin import AdaSwinTransformer, SwinTransformer_Teacher
-from thrid_party.DynamicViT.calc_flops import calc_flops, throughput
+from third_party.DynamicViT.utils import NativeScalerWithGradNormCount as NativeScaler
+import third_party.DynamicViT.utils as utils
+from third_party.DynamicViT.datasets import build_dataset, build_transform
+#from third_party.DynamicViT.samplers import RASampler
+# from third_party.DynamicViT.models.dyconvnext import ConvNeXt_Teacher, AdaConvNeXt
+# from third_party.DynamicViT.models.dylvvit import LVViTDiffPruning, LVViT_Teacher
+# from third_party.DynamicViT.models.dyvit import VisionTransformerDiffPruning, VisionTransformerTeacher
+# from third_party.DynamicViT.models.dyswin import AdaSwinTransformer, SwinTransformer_Teacher
+from third_party.DynamicViT.calc_flops import calc_flops, throughput
 
 from utils import initialize_saves_dirs
 initialize_saves_dirs()

@@ -13,7 +13,7 @@ from timm.data import Mixup
 from timm.utils import accuracy, ModelEma
 from models import sparse_token
 
-import thrid_party.DynamicViT.utils as utils
+import third_party.DynamicViT.utils as utils
 from trainer.dyvit.losses import DistillDiffPruningLoss_dynamic
 
 def train_one_epoch(model: torch.nn.Module, criterion,

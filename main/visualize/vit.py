@@ -55,8 +55,8 @@ def render_image(pil_img, masks, layer_filter=None):
     return imgs
 
 def load_dyvit(checkpoint_path, base_rate=0.4):
-    os.environ['PYTHONPATH'] = './thrid_party/DynamicViT/'
-    from thrid_party.DynamicViT.models.dyvit import VisionTransformerDiffPruning
+    os.environ['PYTHONPATH'] = './third_party/DynamicViT/'
+    from third_party.DynamicViT.models.dyvit import VisionTransformerDiffPruning
     SPARSE_RATIO = [0.4]
     PRUNING_LOC = [3, 6, 9]
     KEEP_RATE = [SPARSE_RATIO[0], SPARSE_RATIO[0] ** 2, SPARSE_RATIO[0] ** 3]
@@ -243,7 +243,7 @@ def main():
     interested_layers = [3,6,9]
     labels_layer = [0,]+[f'Layer {i+1}' for i in interested_layers]
     plots_dyvit = vis_dyvit(
-        checkpoint_path='./thrid_party/DynamicViT/logs/dynamicvit_deit-s-0.4/checkpoint-29.pth',
+        checkpoint_path='./third_party/DynamicViT/logs/dynamicvit_deit-s-0.4/checkpoint-29.pth',
         base_rate=0.4, interested_layer=interested_layers
     )
     plots_concrete = vis_concrete(
@@ -259,7 +259,7 @@ def main():
     #full layers
     interested_layers = None
     plots_dyvit = vis_dyvit(
-        checkpoint_path='./thrid_party/DynamicViT/logs/dynamicvit_deit-s-0.4/checkpoint-29.pth',
+        checkpoint_path='./third_party/DynamicViT/logs/dynamicvit_deit-s-0.4/checkpoint-29.pth',
         base_rate=0.4
     )
     plots_concrete = vis_concrete(
