@@ -214,7 +214,7 @@ def main(fig_scales=[1.0, 0.7], model_id = 'deit-small', extra_models=[]):
                     marker={
                         'lvvit-small': 'o',
                         'mvit-tiny': '+'
-                    }[modelid], linestyle='-', linewidth=1.2, zorder=99,
+                    }[modelid], linestyle=':', linewidth=1.2, zorder=99,
                 )
         
         for i, txt in enumerate(labels_other):

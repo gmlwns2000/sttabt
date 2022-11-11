@@ -174,13 +174,13 @@ def main(factor=4, font_scale=1.0, fig_scale=1.0, extra_models=[]):
             'mvit-tiny': 'MViT$_{tiny}$'
         }[modelid]
         if len(xs) > 0:
-            plt.scatter(
+            plt.plot(
                 xs, ys,
                 label=f'STTABT (Concrete) {model_name}', color=COLOR_STTABT_CONCRETE_WITH_TRAIN,
                 marker={
                     'lvvit-small': 'o',
                     'mvit-tiny': '+'
-                }[modelid], linestyle='-', linewidth=1.2, zorder=99,
+                }[modelid], linestyle=':', linewidth=1.2, zorder=99,
             )
             plt.plot(
                 xs_base, ys_extra_base[idx], 
