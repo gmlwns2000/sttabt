@@ -17,12 +17,14 @@ def load_dyvit():
     pts = list(sorted([(r['occupy'], r['accuracy']) for r in results], key=lambda it: it[0]))
     return ([p[i] for p in pts] for i in range(2))
 
-def load_concrete(factor=4, p_logits=[-3, -2, -1.5, -1.25, -1, -0.5, 0.0, 0.5, 1.0], epochs=20, warmup_epochs=14):
+def load_concrete(factor=4, p_logits=[-3, -2, -1.5, -1.25, -1, -0.5, 0.0, 0.5, 1.0], epochs=20, warmup_epochs=14, modelid='deit-small'):
     #saves/dyvit-concrete-f{factor}-{plogit}-nohard-e{epochs}-we{warmup_epochs}/log.txt
     #get last line of it
     pts = []
     for p in p_logits:
         log_path = f'./saves/dyvit-concrete-f{factor}-{p}-nohard-e{epochs}-we{warmup_epochs}/log.txt'
+        if modelid != 'deit-small':
+            log_path = f'./saves/dyvit-concrete-{modelid}-f{factor}-{p}-nohard-e{epochs}-we{warmup_epochs}/log.txt'
         if os.path.exists(log_path):
             with open(log_path, 'r') as f:
                 lines = f.readlines()
@@ -75,7 +77,7 @@ def load_approx(factor=4):
         ys_base,
     )
 
-def main(factor=4, font_scale=1.0, fig_scale=1.0):
+def main(factor=4, font_scale=1.0, fig_scale=1.0, extra_models=[]):
     xs_dyvit, ys_dyvit = load_dyvit()
     (
         xs_concrete, ys_concrete, 
@@ -88,7 +90,23 @@ def main(factor=4, font_scale=1.0, fig_scale=1.0):
         ys_base
     ) = load_approx(factor=factor)
     ys_base = [ys_base, ] * 2
-    xs_base = xs_dyvit + xs_concrete + xs_concrete_ema + xs_approx + xs_absatt + xs_forward
+
+    xs_extra = []
+    ys_extra = []
+    ys_extra_base = []
+    for modelid in extra_models:
+        (
+            xs, ys,
+            xs_ema, ys_ema,
+        ) = load_concrete(factor=factor, modelid=modelid)
+        xs_extra.append(xs)
+        ys_extra.append(ys)
+        ys_extra_base.append([{
+            'lvvit-small':83,
+            'mvit-tiny':0,
+        }[modelid],]*2)
+    
+    xs_base = xs_dyvit + xs_concrete + xs_concrete_ema + xs_approx + xs_absatt + xs_forward + sum(xs_extra, [])
     xs_base = [min(xs_base), max(xs_base)]
 
     json_path = f'{PLOT_NAME}.json'
@@ -108,6 +126,9 @@ def main(factor=4, font_scale=1.0, fig_scale=1.0):
             'ys_absatt': ys_absatt,
             'xs_forward': xs_forward,
             'ys_forward': ys_forward,
+            'xs_extra': xs_extra,
+            'ys_extra': ys_extra,
+            'extra_models': extra_models,
         }, f, indent=2)
 
     plt.clf()
@@ -121,6 +142,7 @@ def main(factor=4, font_scale=1.0, fig_scale=1.0):
     xs_concrete = scale(xs_concrete, xscale)
     xs_concrete_ema = scale(xs_concrete_ema, xscale)
     xs_base = scale(xs_base, xscale)
+    xs_extra = [scale(xs, xscale) for xs in xs_extra]
     
     plt.plot(
         xs_concrete, ys_concrete,
@@ -142,7 +164,30 @@ def main(factor=4, font_scale=1.0, fig_scale=1.0):
         label=STR_DEIT_SMALL, color=COLOR_BERT_BASE, 
         linestyle=':', zorder=-99,
     )
-
+    if len(extra_models) > 0:
+        plt.annotate(STR_DEIT_SMALL, (xs_base[0]+2, ys_base[0]-0.9), color=COLOR_BERT_BASE)
+    for idx, modelid in enumerate(extra_models):
+        xs = xs_extra[idx]
+        ys = ys_extra[idx]
+        model_name = {
+            'lvvit-small': 'LVViT$_{small}$',
+            'mvit-tiny': 'MViT$_{tiny}$'
+        }[modelid]
+        if len(xs) > 0:
+            plt.scatter(
+                xs, ys,
+                label=f'STTABT (Concrete) {model_name}', color=COLOR_STTABT_CONCRETE_WITH_TRAIN,
+                marker={
+                    'lvvit-small': 'o',
+                    'mvit-tiny': '+'
+                }[modelid], linestyle='-', linewidth=1.2, zorder=99,
+            )
+            plt.plot(
+                xs_base, ys_extra_base[idx], 
+                label=model_name, color=COLOR_BERT_BASE, 
+                linestyle=':', zorder=-99,
+            )
+            plt.annotate(model_name, (xs_base[0]+2, ys_extra_base[idx][0]-0.9), color=COLOR_BERT_BASE)
     #backup ylim
     y_bot, y_top = plt.ylim()
 
@@ -171,9 +216,13 @@ def main(factor=4, font_scale=1.0, fig_scale=1.0):
     plt.legend(prop={'size': 9*font_scale}).set_zorder(1000)
     plt.title(f'{STR_IMAGENET_1K}', fontsize=12*font_scale)
 
-    plt.savefig(f'{PLOT_NAME}.png', dpi=320, bbox_inches='tight', pad_inches=0.05)
-    plt.savefig(f'{PLOT_NAME}.svg', bbox_inches='tight', pad_inches=0.05)
-    plt.savefig(f'{PLOT_NAME}.pdf', bbox_inches='tight', pad_inches=0.05)
+    plot_name = PLOT_NAME
+    if len(extra_models) > 0:
+        plot_name = PLOT_NAME + '_extra'
+
+    plt.savefig(f'{plot_name}.png', dpi=320, bbox_inches='tight', pad_inches=0.05)
+    plt.savefig(f'{plot_name}.svg', bbox_inches='tight', pad_inches=0.05)
+    plt.savefig(f'{plot_name}.pdf', bbox_inches='tight', pad_inches=0.05)
 
     print('done')
 
@@ -181,3 +230,4 @@ if __name__ == '__main__':
     main()
     PLOT_NAME += '-small'
     main(fig_scale=0.75)
+    main(fig_scale=0.75, extra_models=['lvvit-small'])
