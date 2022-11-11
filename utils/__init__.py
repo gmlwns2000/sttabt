@@ -48,14 +48,16 @@ def mkdir(path, create_message=None):
     pathlib.Path(path).mkdir(parents=True, exist_ok=True)
     if create_message is not None:
         print(create_message)
+    else:
+        print(f'[INFO] Directory created. {path}')
 
 def initialize_saves_dirs():
     mkdir('./saves')
     mkdir('./saves/vit_concrete_end2end_logs')
     mkdir('./saves/lvvit', create_message=
         '[SETUP] LVViT weight must be downloaded seperately! into ./saves/lvvit/*\n'+\
-        'wget https://github.com/zihangJiang/TokenLabeling/releases/download/1.0/lvvit_s-26M-224-83.3.pth.tar\n'+\
-        'from https://github.com/zihangJiang/TokenLabeling'
+        '[SETUP] wget https://github.com/zihangJiang/TokenLabeling/releases/download/1.0/lvvit_s-26M-224-83.3.pth.tar\n'+\
+        '[SETUP] from https://github.com/zihangJiang/TokenLabeling'
     )
     mkdir('./saves_plot')
     mkdir('./saves_hparam')
