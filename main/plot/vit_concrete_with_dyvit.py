@@ -231,3 +231,6 @@ if __name__ == '__main__':
     PLOT_NAME += '-small'
     main(fig_scale=0.75)
     main(fig_scale=0.75, extra_models=['lvvit-small'])
+
+    PLOT_NAME = PLOT_NAME[:-6]
+    main(fig_scale=1.0, extra_models=['lvvit-small'])
