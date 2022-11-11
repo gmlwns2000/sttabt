@@ -49,6 +49,42 @@ PYTHONPATH=./ python -m torch.distributed.launch --master_port 4432 --nproc_per_
 python -m main.vit_concrete_end2end --factor 4 --n-gpus 1 --model mvit-tiny --master-port 14431 --auto-resume --p-logits "-2.0 -0.5 1.0" --skip-approx --batch-size 16
 ```
 
+ - per epochs
+
+mvit 1hr (2 3090) = 2gpuhr
+
+approxnet 5hr (1 TITAN RTX) = 3.75gpuhr
+
+concrete 7hr (1 4090) = 14gpuhr
+
+ - per experiment (on 8 TITAN RTX machine)
+
+mvit 100 epochs = 33.3hr
+
+approxnet 30 epochs = 18.75hr
+
+one concrete 20 epochs = 46.6hr
+
+ - we have...
+
+about 140 hours
+
+we have 92 hours for concrete
+
+which is **two data point for concrete** model
+
+ - gpu to gpuhr
+
+TITAN RTX = 0.75
+
+3090 = 1
+
+4090 = 2
+
+TITAN RTXx8 = 6
+
+
+
 
 ## GLUE Tasks
 
