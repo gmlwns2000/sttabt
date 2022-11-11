@@ -824,6 +824,13 @@ class MultiScaleVitStage(nn.Module):
 
 from models.sparse_token import ApproxSparseBertForSequenceClassificationOutput
 
+class DummyBert:
+    def __init__(self, set_concrete_hard_threshold_handler):
+        self.set_concrete_hard_threshold_handler = set_concrete_hard_threshold_handler
+    
+    def set_concrete_hard_threshold(self, x):
+        return self.set_concrete_hard_threshold_handler(x)
+
 class MultiScaleVit(nn.Module):
     """
     Improved Multiscale Vision Transformers for Classification and Detection
@@ -940,6 +947,12 @@ class MultiScaleVit(nn.Module):
         self.concrete_hard_threshold = 0.5
         self.concrete_loss_lambda_p = 1e-2
         self.concrete_loss_lambda_mask = 100
+        self.loss_fct = None
+        
+        #for compatibility
+        self.bert = DummyBert(
+            self.set_concrete_hard_threshold
+        )
     
     def reset_concrete_mask(self):
         for stage in self.stages:
@@ -1051,7 +1064,7 @@ class MultiScaleVit(nn.Module):
         masks, masks_hard = calc_mvit_concrete_masks(
             approx_scores,
             get_p_logits(self),
-            temperature=0.1,
+            temperature=0.2,
             concrete_hard_threshold=self.concrete_hard_threshold
         )
         
@@ -1084,7 +1097,10 @@ class MultiScaleVit(nn.Module):
         loss_att, loss_hid, loss_emb, loss_pred = 0, 0, 0, 0
         if labels is not None:
             if self.loss_mode == 'cls':
-                loss = F.cross_entropy(x, labels)
+                if self.loss_fct is not None:
+                    loss = self.loss_fct(x, labels)
+                else:
+                    loss = F.cross_entropy(x, labels)
             elif self.loss_mode == 'approx':
                 main_model = self.main_model #type: MultiScaleVit
                 out = main_model(
@@ -1109,10 +1125,11 @@ class MultiScaleVit(nn.Module):
                     N, H, TOUT, TIN = attn[j].shape
                     y_pred = attn[j].view(N*H*TOUT, TIN)
                     y_target = attn_main[j].view(N*H*TOUT, TIN)
-                    kl_loss = y_target * ((y_target + EPS).log() - (y_pred + EPS).log())
-                    kl_loss = torch.sum(kl_loss.view(N, H, TOUT, TIN), dim=-1) # shape: N, H, T
-                    kl_loss = torch.mean(kl_loss, dim=-1)
-                    kl_loss = kl_loss.mean() # head and batch mean
+                    # kl_loss = y_target * ((y_target + EPS).log() - (y_pred + EPS).log())
+                    # kl_loss = torch.sum(kl_loss.view(N, H, TOUT, TIN), dim=-1) # shape: N, H, T
+                    # kl_loss = torch.mean(kl_loss, dim=-1)
+                    # kl_loss = kl_loss.mean() # head and batch mean
+                    kl_loss = F.kl_div((y_pred+EPS).log(), y_target, reduction='batchmean')
                     loss_att += kl_loss
                 loss_att /= NLAYER
                 #loss_att *= 1/100
@@ -1154,7 +1171,10 @@ class MultiScaleVit(nn.Module):
 
                 loss = loss_att + loss_hid + loss_emb + loss_pred
             elif self.loss_mode == 'concrete':
-                loss = F.cross_entropy(x, labels)
+                if self.loss_fct is not None:
+                    loss = self.loss_fct(x, labels)
+                else:
+                    loss = F.cross_entropy(x, labels)
 
                 approx_net = self.approx_net #type: MultiScaleVit
                 assert approx_net is not None

@@ -210,14 +210,16 @@ import transformers
 
 def load_concrete_model(model_id = 'deit-small', factor=4, p_logit=0.0):
     if model_id.startswith('mvit-'):
-        from models.mvit_timm import mvitv2_tiny_sttabt_concrete
+        from models.mvit_timm import mvitv2_tiny_sttabt_concrete, mvitv2_tiny_sttabt
         assert factor == 4
         
-        mvit = mvitv2_tiny_sttabt_concrete(pretrained=True, approx_net=None, factor=4)
-        mvit.set_concrete_hard_threshold(None)
-        mvit.set_concrete_init_p_logit(p_logit)
+        mvit = mvitv2_tiny_sttabt(pretrained=True)
         
-        return
+        mvit_concrete = mvitv2_tiny_sttabt_concrete(pretrained=True, approx_net=None, factor=4)
+        mvit_concrete.set_concrete_hard_threshold(None)
+        mvit_concrete.set_concrete_init_p_logit(p_logit)
+        
+        return mvit_concrete, mvit
     
     if model_id in ['vit-base', 'deit-base', 'deit-small', 'lvvit-small']:
         model_cls = transformers.ViTForImageClassification
@@ -410,6 +412,20 @@ def main(args):
         teacher_model = teacher_model.to(device)
 
         model.config.problem_type = 'custom'
+        model.loss_fct = criterion
+
+        log('Criterion', criterion)
+        
+        criterion = DistillDiffPruningLoss_dynamic(
+            teacher_model, criterion, clf_weight=1.0, mse_token=True, ratio_weight=2.0, distill_weight=0.5
+        )
+    elif args.model in ['mvit-tiny']:
+        model, teacher_model = load_concrete_model(
+            model_id=args.model, factor=args.approx_factor, p_logit=args.p_logit
+        )
+        teacher_model.eval()
+        teacher_model = teacher_model.to(device)
+        
         model.loss_fct = criterion
 
         log('Criterion', criterion)
