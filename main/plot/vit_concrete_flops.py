@@ -16,6 +16,8 @@ COLOR_IA = 'green'
 COLOR_S2 = 'black'
 COLOR_HVT = 'gray'
 COLOR_DYVIT = 'orange'
+COLOR_SWIN = 'lightseagreen'
+COLOR_MViTv2 = 'forestgreen'
 
 def load_points(include_extra=False):
     #return [flops] [accuracy] [name] [color] [offset(x, y)]
@@ -52,6 +54,12 @@ def load_points(include_extra=False):
             (5.1, 83.2, '', COLOR_DYVIT, (0.1, -0.2)),
             (4.6, 83, '', COLOR_DYVIT, (0.1, -0.2)),
             (3.7, 82, 'DyViT-LV-S', COLOR_DYVIT, (0.1, -0.2)),
+            
+            #from SwinT paper
+            (4.5, 81.3, 'Swin-T', COLOR_SWIN, (0.1, -0.2)), 
+            
+            #from MViTv2 paper
+            (4.7, 82.3, 'MViTv2-T', COLOR_MViTv2, (0.1, -0.2)), 
         ]
     return ([ret[j][i] for j in range(len(ret))] for i in range(len(ret[0])))
 
