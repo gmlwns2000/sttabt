@@ -62,6 +62,8 @@ def execute_proc(cmd, new_envs=None):
                 log('process exited')
 
 def run_approx(args):
+    assert args.model in ['lvvit-small', 'deit-small']
+    
     cmd = f"python -m trainer.vit_approx_trainer --factor {args.factor} --n-gpus {args.n_gpus} --epochs {args.approx_epochs} --model {args.model}"
     return_code = execute_proc(cmd, new_envs={
         'IMAGENET_ROOT': args.imagenet_root
