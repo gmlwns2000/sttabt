@@ -4,6 +4,8 @@ import sys,os,signal
 import time
 from datetime import datetime
 
+from utils import env_vars
+
 __print = print
 __print_fd = None
 __print_log_dir = './saves/vit_concrete_end2end_logs'
@@ -106,7 +108,7 @@ def main():
     parser.add_argument('--epochs', type=int, default=20)
     parser.add_argument('--warmup-epochs', type=int, default=14)
     parser.add_argument('--n-gpus', type=int, default=8)
-    parser.add_argument('--imagenet-root', type=str, default='/d1/dataset/ILSVRC2012/')
+    parser.add_argument('--imagenet-root', type=str, default=env_vars.get_imagenet_root())
     parser.add_argument('--model', type=str, default='deit-small')
     parser.add_argument('--master-port', type=int, default=12127)
     parser.add_argument('--skip-approx', action='store_true', default=False)

@@ -15,18 +15,39 @@ python -m main.plot.vit_concrete_flops
 python -m main.visualize.vit
 ```
 
-lvvit
+### LVViT concrete samples
 
-
+End2end.
+```sh
 python -m main.vit_concrete_end2end --factor 4 --n-gpus 3 --model lvvit-small --master-port 14431 --auto-resume --p-logits "-1.5 -1.0 -0.5 0.0 1.0"
+```
 
+Skip approx.
+```sh
 python -m main.vit_concrete_end2end --factor 4 --n-gpus 1 --model lvvit-small --master-port 14431 --auto-resume --p-logits "-1.5 -1.0 -0.5 0.0 1.0" --skip-approx --batch-size 32
+```
 
+### MViT pretrain
+
+Pretrain MViT from scratch. (This process is required for train MViT that compatible to STTABT)
+
+```bash
 PYTHONPATH=./ python -m torch.distributed.launch --nproc_per_node=2 --use_env trainer/deit_trainer_mvit.py --batch-size 48 --model mvit-tiny --output_dir ./saves/mvit-tiny-deit/
+```
 
+### MViT approx net
+
+Approx net train for MViT.
+
+```bash
 PYTHONPATH=./ python -m torch.distributed.launch --master_port 4432 --nproc_per_node=1 --use_env trainer/deit_trainer_mvit.py --batch-size 8 --model mvit-tiny-approx --output_dir ./saves/mvit-tiny-deit-approx/ --warmup-epochs 0 --epochs 30 --lr 1e-3
+```
 
-python -m main.vit_concrete_end2end --factor 4 --n-gpus 1 --model lvvit-small --master-port 14431 --auto-resume --p-logits "-2.0 -0.5 1.0" --skip-approx --batch-size 16
+### MViT concrete samples
+
+```bash
+python -m main.vit_concrete_end2end --factor 4 --n-gpus 1 --model mvit-tiny --master-port 14431 --auto-resume --p-logits "-2.0 -0.5 1.0" --skip-approx --batch-size 16
+```
 
 
 ## GLUE Tasks

@@ -168,7 +168,10 @@ def evaluate(data_loader, model, device, use_amp=False):
         with torch.cuda.amp.autocast(enabled=use_amp):
             batch = {'pixel_values': images}
             output = model(**batch)
-            output = output[0]
+            if isinstance(output[0], float):
+                output = output['logits']
+            else:
+                output = output[0]
             loss = criterion(output, target)
 
         acc1, acc5 = accuracy(output, target, topk=(1, 5))
