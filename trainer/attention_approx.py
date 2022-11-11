@@ -4,6 +4,9 @@ import copy, torch, math, random, time
 from torch import nn, optim
 from torch.cuda.amp import GradScaler, autocast
 
+from utils import initialize_saves_dirs
+initialize_saves_dirs()
+
 class Trainer:
     def __init__(self,
         batch_size = 64,

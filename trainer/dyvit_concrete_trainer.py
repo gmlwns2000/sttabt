@@ -36,6 +36,9 @@ from thrid_party.DynamicViT.datasets import build_dataset, build_transform
 # from thrid_party.DynamicViT.models.dyswin import AdaSwinTransformer, SwinTransformer_Teacher
 from thrid_party.DynamicViT.calc_flops import calc_flops, throughput
 
+from utils import initialize_saves_dirs
+initialize_saves_dirs()
+
 import warnings
 warnings.filterwarnings('ignore')
 

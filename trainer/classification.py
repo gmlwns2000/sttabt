@@ -6,6 +6,9 @@ import numpy as np
 from dataset import ClassificationDataset
 from models import ElectraClassifier, BigBirdClassifier, BertClassification
 
+from utils import initialize_saves_dirs
+initialize_saves_dirs()
+
 class Trainer:
     def __init__(self,
         batch_size = 64,

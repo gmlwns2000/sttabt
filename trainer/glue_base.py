@@ -21,6 +21,9 @@ from utils.gpu_pool import print
 
 from torch.nn.parallel import DistributedDataParallel as DDP
 
+from utils import initialize_saves_dirs
+initialize_saves_dirs()
+
 def setup(rank, world_size, port=32277):
     os.environ['MASTER_ADDR'] = 'localhost'
     os.environ['MASTER_PORT'] = str(port)

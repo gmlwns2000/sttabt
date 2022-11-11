@@ -37,3 +37,26 @@ def batch_index_fill(x, x1, x2, idx1, idx2):
 
     x = x.reshape(B, N, C)
     return x
+
+def mkdir(path, create_message=None):
+    import os
+    
+    if os.path.exists(path):
+        return
+    
+    import pathlib
+    pathlib.Path(path).mkdir(parents=True, exist_ok=True)
+    if create_message is not None:
+        print(create_message)
+
+def initialize_saves_dirs():
+    mkdir('./saves')
+    mkdir('./saves/vit_concrete_end2end_logs')
+    mkdir('./saves/lvvit', create_message=
+        '[SETUP] LVViT weight must be downloaded seperately! into ./saves/lvvit/*\n'+\
+        'wget https://github.com/zihangJiang/TokenLabeling/releases/download/1.0/lvvit_s-26M-224-83.3.pth.tar\n'+\
+        'from https://github.com/zihangJiang/TokenLabeling'
+    )
+    mkdir('./saves_plot')
+    mkdir('./saves_hparam')
+    mkdir('./logs')

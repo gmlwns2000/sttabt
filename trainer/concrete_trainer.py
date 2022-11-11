@@ -23,6 +23,9 @@ import torch.multiprocessing as mp
 
 from torch.nn.parallel import DistributedDataParallel as DDP
 
+from utils import initialize_saves_dirs
+initialize_saves_dirs()
+
 AMP_ENABLED = False
 
 def setup(rank, world_size, port=32277):

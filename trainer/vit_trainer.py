@@ -14,6 +14,9 @@ import tqdm
 import transformers
 from dataset.images_hf import ImagesHfDataset, ExamplesToBatchTransform, ViTInputTransform
 
+from utils import initialize_saves_dirs
+initialize_saves_dirs()
+
 tasks_to_epoch = {
     'food101_5000': 10,
     'food101': 10,

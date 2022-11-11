@@ -12,6 +12,9 @@ import models.sparse_token as sparse
 
 from utils import ddp, env_vars
 
+from utils import initialize_saves_dirs
+initialize_saves_dirs()
+
 tasks_to_epoch = {
     'base': 30,
     'cifar100': 20,

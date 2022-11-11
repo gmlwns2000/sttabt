@@ -14,6 +14,9 @@ import models.sparse_token as sparse
 from trainer import vit_approx_trainer as vit_approx
 from utils import ddp
 
+from utils import initialize_saves_dirs
+initialize_saves_dirs()
+
 tasks_to_epoch = {
     'base': 30,
     'cifar100': 20,

@@ -15,6 +15,9 @@ import transformers
 from dataset.images_hf import ImagesHfDataset, ExamplesToBatchTransform, ViTInputTransform
 from utils import ddp, env_vars
 
+from utils import initialize_saves_dirs
+initialize_saves_dirs()
+
 class VitApproxTrainerMViT:
     def __init__(self,
         subset = 'in1k',
