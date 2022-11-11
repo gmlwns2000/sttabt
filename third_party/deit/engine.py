@@ -14,7 +14,7 @@ from timm.utils import accuracy, ModelEma
 
 from third_party.deit.losses import DistillationLoss
 import third_party.deit.utils as utils
-
+import tqdm
 
 def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
                     data_loader: Iterable, optimizer: torch.optim.Optimizer,
@@ -25,9 +25,10 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
     header = 'Epoch: [{}]'.format(epoch)
-    print_freq = 10
+    print_freq = 100
     
-    for istep, (samples, targets) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
+    pbar = tqdm.tqdm(metric_logger.log_every(data_loader, print_freq, header), total=len(data_loader))
+    for istep, (samples, targets) in enumerate(pbar):
         # if istep > 10: break
         samples = samples.to(device, non_blocking=True)
         targets = targets.to(device, non_blocking=True)
@@ -61,6 +62,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
         if model_ema is not None:
             model_ema.update(model)
 
+        pbar.set_description(f"l:{loss.item():.5f}")
         loss_details = outputs_dict['loss_details']
         debugs = {}
         for key in loss_details:

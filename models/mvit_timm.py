@@ -1103,10 +1103,11 @@ class MultiScaleVit(nn.Module):
                     loss = F.cross_entropy(x, labels)
             elif self.loss_mode == 'approx':
                 main_model = self.main_model #type: MultiScaleVit
-                out = main_model(
-                    pixel_values=pixel_values,
-                    labels=None
-                )
+                with torch.no_grad():
+                    out = main_model(
+                        pixel_values=pixel_values,
+                        labels=None
+                    )
                 
                 attn = get_attention_probs(self)
                 attn_main = get_attention_probs(main_model)
@@ -1317,7 +1318,7 @@ def mvitv2_tiny_sttabt(pretrained=False):
 
     if pretrained:
         state = torch.load('./saves/mvit-tiny-deit/checkpoint.pth', map_location='cpu')
-        dlog('mvitv2_tiny_sttabt load from ./saves/mvit-tiny-deit/checkpoint.pth')
+        print('mvitv2_tiny_sttabt load from ./saves/mvit-tiny-deit/checkpoint.pth')
         try:
             mvit.load_state_dict(state['model'])
         except RuntimeError as ex:
@@ -1551,7 +1552,7 @@ def mvitv2_tiny_sttabt_concrete(pretrained=False, approx_net=None, factor=4):
         #     print('error while load approxnet', ex)
         # del state
         state = torch.load('./saves/mvit-tiny-deit-approx/checkpoint.pth', map_location='cpu')
-        dlog('mvitv2_tiny_sttabt_concrete load from ./saves/mvit-tiny-deit-approx/checkpoint.pth')
+        print('mvitv2_tiny_sttabt_concrete load from ./saves/mvit-tiny-deit-approx/checkpoint.pth')
         approx_net.load_state_dict(state['model'])
         del state
     
