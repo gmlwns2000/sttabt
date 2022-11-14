@@ -1064,7 +1064,7 @@ class MultiScaleVit(nn.Module):
         masks, masks_hard = calc_mvit_concrete_masks(
             approx_scores,
             get_p_logits(self),
-            temperature=0.2,
+            temperature=0.1,
             concrete_hard_threshold=self.concrete_hard_threshold
         )
         

@@ -40,7 +40,7 @@ PYTHONPATH=./ python -m torch.distributed.launch --nproc_per_node=2 --use_env tr
 Approx net train for MViT.
 
 ```bash
-PYTHONPATH=./ python -m torch.distributed.launch --master_port 4432 --nproc_per_node=1 --use_env trainer/deit_trainer_mvit.py --batch-size 8 --model mvit-tiny-approx --output_dir ./saves/mvit-tiny-deit-approx/ --warmup-epochs 0 --epochs 30 --lr 1e-3
+PYTHONPATH=./ python -m torch.distributed.launch --master_port 4432 --nproc_per_node=1 --use_env trainer/deit_trainer_mvit.py --batch-size 8 --model mvit-tiny-approx --output_dir ./saves/mvit-tiny-deit-approx/ --warmup-epochs 1 --epochs 30 --lr 1e-3
 ```
 
 ### MViT concrete samples
