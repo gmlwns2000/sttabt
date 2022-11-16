@@ -581,7 +581,7 @@ def main(args):
                 log_writer=log_writer, start_steps=epoch * num_training_steps_per_epoch,
                 lr_schedule_values=lr_schedule_values, wd_schedule_values=wd_schedule_values,
                 num_training_steps_per_epoch=num_training_steps_per_epoch, update_freq=args.update_freq,
-                use_amp=args.use_amp
+                use_amp=args.use_amp, is_mvit=args.model.startswith('mvit-')
             )
         else: train_stats = {}
 

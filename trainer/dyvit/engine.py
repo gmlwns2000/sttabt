@@ -21,7 +21,7 @@ def train_one_epoch(model: torch.nn.Module, criterion,
                     device: torch.device, epoch: int, loss_scaler, max_norm: float = 0,
                     model_ema: Optional[ModelEma] = None, mixup_fn: Optional[Mixup] = None, log_writer=None,
                     start_steps=None, lr_schedule_values=None, wd_schedule_values=None,
-                    num_training_steps_per_epoch=None, update_freq=None, use_amp=False):
+                    num_training_steps_per_epoch=None, update_freq=None, use_amp=False, is_mvit=False):
     model.train(True)
     metric_logger = utils.MetricLogger(delimiter=" ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.3e}'))
@@ -32,7 +32,7 @@ def train_one_epoch(model: torch.nn.Module, criterion,
     optimizer.zero_grad()
 
     for data_iter_step, (samples, targets) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
-        # if data_iter_step > 10: break
+        # if data_iter_step > 10000: break
 
         step = data_iter_step // update_freq
         if step >= num_training_steps_per_epoch:
@@ -55,6 +55,11 @@ def train_one_epoch(model: torch.nn.Module, criterion,
         if mixup_fn is not None:
             samples, targets = mixup_fn(samples, targets)
         
+        if is_mvit:
+            if (data_iter_step % 2) == 0:
+                model.module.set_concrete_hard_threshold(None)
+            else:
+                model.module.set_concrete_hard_threshold(0.5)
         with torch.cuda.amp.autocast(enabled=use_amp):
             batch = {'pixel_values': samples, 'labels': targets}
             sparse_token.benchmark_reset()
@@ -96,6 +101,9 @@ def train_one_epoch(model: torch.nn.Module, criterion,
                 optimizer.zero_grad()
                 if model_ema is not None:
                     model_ema.update(model)
+
+        if is_mvit:
+            model.module.set_concrete_hard_threshold(None)
 
         torch.cuda.synchronize()
 
@@ -154,7 +162,8 @@ def evaluate(data_loader, model, device, use_amp=False):
     model.eval()
 
     i = 0
-    for batch in metric_logger.log_every(data_loader, 50, header):
+    for data_iter_step, batch in enumerate(metric_logger.log_every(data_loader, 50, header)):
+        # if data_iter_step > 500: break
         i += 1
         images = batch[0]
         target = batch[-1]

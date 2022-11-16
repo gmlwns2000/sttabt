@@ -14,6 +14,7 @@ pretrained/
 logs/
 *.log
 saves.bak/
+output.txt
 
 !saves/README.md
 !./saves/README.md

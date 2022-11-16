@@ -944,8 +944,9 @@ class MultiScaleVit(nn.Module):
         
         #for concrete training
         self.approx_net = None
-        self.concrete_hard_threshold = 0.5
-        self.concrete_loss_lambda_p = 1e-2
+        self.concrete_hard_threshold = None
+        self.concrete_temperature = 0.1
+        self.concrete_loss_lambda_p = 0.0
         self.concrete_loss_lambda_mask = 100
         self.loss_fct = None
         
@@ -963,13 +964,21 @@ class MultiScaleVit(nn.Module):
     def set_concrete_hard_threshold(self, v):
         self.concrete_hard_threshold = v
     
+    def set_concrete_temperature(self, v):
+        self.concrete_temperature = v
+    
     def set_concrete_init_p_logit(self, v):
+        blocks = []
         for stage in self.stages:
             for block in stage.blocks:
                 block = block #type: MultiScaleBlock
-                block.concrete_init_max = v
-                block.concrete_init_min = v
-                torch.nn.init.uniform_(block.p_logit, block.concrete_init_min, block.concrete_init_max)
+                blocks.append(block)
+        for i, block in enumerate(blocks):
+            value = -2 + (i+1) / len(blocks) * (v - (-2))
+            print(i, value)
+            block.concrete_init_max = value
+            block.concrete_init_min = value
+            torch.nn.init.uniform_(block.p_logit, block.concrete_init_min, block.concrete_init_max)
     
     def init_approx_train(self):
         self.transfer_hidden = nn.ModuleList()
@@ -1064,7 +1073,7 @@ class MultiScaleVit(nn.Module):
         masks, masks_hard = calc_mvit_concrete_masks(
             approx_scores,
             get_p_logits(self),
-            temperature=0.1,
+            temperature=self.concrete_temperature,
             concrete_hard_threshold=self.concrete_hard_threshold
         )
         
@@ -1190,15 +1199,20 @@ class MultiScaleVit(nn.Module):
                     loss_conc_reg += t
                 
                 target = torch.sigmoid(torch.tensor(
-                    blocks[0].concrete_init_min, 
-                    device = blocks[0].p_logit.device, 
+                    blocks[-1].concrete_init_min, 
+                    device = blocks[-1].p_logit.device, 
                     dtype=torch.float32
                 ))
-                occupy = 0
-                occupy += blocks[0].input_mask.mean()
+                occupy_sum = 0
+                occupy_numel = 0
+                occupy_sum += blocks[0].input_mask.sum()
+                occupy_numel += blocks[0].input_mask.numel()
                 for block in blocks:
-                    occupy += block.output_mask.mean()
-                occupy = occupy / (len(blocks) + 1)
+                    #occupy += block.output_mask.mean()
+                    occupy_sum += block.output_mask.sum()
+                    occupy_numel += block.output_mask.numel()
+                #occupy = occupy / (len(blocks) + 1)
+                occupy = occupy_sum / occupy_numel
                 loss_conc_ratio = F.mse_loss(target, occupy) * self.concrete_loss_lambda_mask
 
                 loss = loss + loss_conc_reg + loss_conc_ratio
@@ -1432,9 +1446,12 @@ def calc_mvit_concrete_masks(
     output_masks.append(last_mask_un)
     output_masks_hard.append(last_mask_un)
 
+    concrete_occupy_mask_sum = 0
+    concrete_occupy_numel_sum = 0
     if sparse.BENCHMARK_CONCRETE_OCCUPY: 
         with torch.no_grad():
-            sparse.benchmark_cum('concrete_occupy', last_mask_un.mean())
+            concrete_occupy_mask_sum += last_mask_un.sum()
+            concrete_occupy_numel_sum += last_mask_un.numel()
     
     for j in range(len(attention_scores)):
         #layer indexing
@@ -1519,16 +1536,25 @@ def calc_mvit_concrete_masks(
         if concrete_hard_threshold is not None:
             current_mask_hard = (current_mask_un >= concrete_hard_threshold) * 1.0
             if sparse.BENCHMARK_CONCRETE_OCCUPY:
-                with torch.no_grad(): sparse.benchmark_cum('concrete_occupy', current_mask_hard.mean())
+                with torch.no_grad(): 
+                    #sparse.benchmark_cum('concrete_occupy', current_mask_hard.mean())
+                    concrete_occupy_mask_sum += current_mask_hard.sum()
+                    concrete_occupy_numel_sum += current_mask_hard.numel()
         else:
             if sparse.BENCHMARK_CONCRETE_OCCUPY:
-                with torch.no_grad(): sparse.benchmark_cum('concrete_occupy', current_mask_un.mean())
+                with torch.no_grad(): 
+                    #sparse.benchmark_cum('concrete_occupy', current_mask_un.mean())
+                    concrete_occupy_mask_sum += current_mask_un.sum()
+                    concrete_occupy_numel_sum += current_mask_un.numel()
         
         output_masks.append(current_mask_un)
         output_masks_hard.append(current_mask_hard)
 
         last_mask = current_mask
     
+    if concrete_occupy_numel_sum > 0:
+        sparse.benchmark_cum('concrete_occupy', concrete_occupy_mask_sum / concrete_occupy_numel_sum)
+
     output_masks.reverse()
     output_masks_hard.reverse()
     
@@ -1611,6 +1637,7 @@ if __name__ == '__main__':
         print('concrete_occupy', p, sparse.benchmark_get_average('concrete_occupy'), len(output_mask))
 
         #test hard mask
+        sparse.benchmark_reset()
         output_mask, output_hard_mask = calc_mvit_concrete_masks(
             attention_scores,
             p_logits,
