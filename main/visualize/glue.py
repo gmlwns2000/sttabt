@@ -89,7 +89,11 @@ def render_mask(tokenizer: "transformers.BertTokenizerFast", ids, attention_mask
     plt.clf()
 
     fig, ax = plt.subplots()
-    ax.imshow(mask)
+    # If mask contains single value then set color range manually
+    if np.max(mask) == np.min(mask):
+        ax.imshow(mask, vmin=0, vmax=1)
+    else:
+        ax.imshow(mask)
     # Show all ticks and label them with the respective list entries
     ax.set_xticks(np.arange(len(labels_horizontal)))
     ax.set_yticks(np.arange(len(labels_vertical)))
@@ -166,8 +170,75 @@ def vis_glue(subset='sst2'):
         [f'./saves_plot/visualization_nlp/{subset}_{i}_ltp' for i in range(len(masks_concrete))]
     )
 
+import transformers.models.bert.modeling_bert as berts
+
+@torch.no_grad()
+def mask_forward(batch, model: "berts.BertForSequenceClassification"):
+    N, TLEN = batch['input_ids'].shape
+    model = model.eval()
+    model = model.to(batch['input_ids'].device)
+    # model.bert.set_concrete_hard_threshold(0.5)
+
+    batch_masks = []
+    for i in range(N):
+        output = model(
+            input_ids=batch['input_ids'][i:i+1],
+            attention_mask=batch['attention_mask'][i:i+1],
+        )
+
+        masks = []
+        for layer in model.bert.sparse_bert.encoder.layer:
+            layer = layer #type: sparse.BertLayer
+            mask = layer.attention.get_attention().input_mask.view(1, TLEN)
+            masks.append(mask)
+        masks = torch.stack(masks, dim=1)
+        batch_masks.append(masks)
+    masks = torch.cat(batch_masks, dim=0)
+
+    print(masks[0])
+    
+    return masks
+
+def load_model_manual_topk(dataset):
+    from trainer.glue_base import GlueAttentionApproxTrainer as Glue
+    import models.sparse_token as sparse
+
+    trainer = Glue(
+        dataset=dataset,
+        batch_size=1,
+        factor=4,
+    )
+
+    target_ks = 0.90
+    if target_ks <= 0.666:
+        ksx = [target_ks*0.5+((1-x/10.0)**1.0) * target_ks for x in range(12)]
+    else:
+        ksx = [(1-x/10.0)*(2-2*target_ks)+(2*target_ks-1) for x in range(12)]
+    wrapped_bert = sparse.ApproxSparseBertModel(trainer.model_bert, approx_bert=trainer.approx_bert.module, ks=ksx)
+    wrapped_bert.use_forward_sparse = True
+    wrapped_bert.run_original_attention = False
+    sparse_cls_bert = berts.BertForSequenceClassification(trainer.model_bert.config)
+    sparse_cls_bert.load_state_dict(trainer.model.state_dict())
+    sparse_cls_bert.bert = wrapped_bert
+    sparse_cls_bert.to(trainer.device).eval()
+
+    return trainer.tokenizer, sparse_cls_bert
+
+def vis_manual_topk(subset='sst2'):
+    tokenizer, model = load_model_manual_topk(subset)
+    lines, batch = load_samples(subset, tokenizer)
+
+    masks = mask_forward(batch, model)
+
+    #visualize
+    plots_concrete = render_masks(
+        tokenizer, batch, masks, "STTABT (Manual Topk)",
+        [f'./saves_plot/visualization_nlp/{subset}_{i}_manual' for i in range(len(masks))]
+    )
+
 def main():
-    vis_glue('sst2')
+    # vis_glue('sst2')
+    vis_manual_topk('sst2')
 
 if __name__ == '__main__':
     main()
