@@ -195,7 +195,7 @@ def mask_forward(batch, model: "berts.BertForSequenceClassification"):
         batch_masks.append(masks)
     masks = torch.cat(batch_masks, dim=0)
 
-    print(masks[0])
+    # print(masks[0])
     
     return masks
 
@@ -232,7 +232,7 @@ def vis_manual_topk(subset='sst2'):
 
     #visualize
     plots_concrete = render_masks(
-        tokenizer, batch, masks, "STTABT (Manual Topk)",
+        tokenizer, batch, masks, "Manual Top-k",
         [f'./saves_plot/visualization_nlp/{subset}_{i}_manual' for i in range(len(masks))]
     )
 
