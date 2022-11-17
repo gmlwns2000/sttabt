@@ -575,6 +575,8 @@ def main(args):
             log('Soft training')
 
         if epoch > -1: # for debugging purpose
+            if args.model.startswith('mvit-'):
+                log('Are you trying MViT? It would not be working... If you do not select mvit- variants, this is error.')
             train_stats = train_one_epoch(
                 model, criterion, data_loader_train, optimizer,
                 device, epoch, loss_scaler, args.clip_grad, model_ema, mixup_fn,
