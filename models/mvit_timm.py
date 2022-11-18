@@ -947,7 +947,7 @@ class MultiScaleVit(nn.Module):
         self.concrete_hard_threshold = None
         self.concrete_temperature = 0.1
         self.concrete_loss_lambda_p = 0.0
-        self.concrete_loss_lambda_mask = 100
+        self.concrete_loss_lambda_mask = 1000
         self.loss_fct = None
         
         #for compatibility
@@ -974,7 +974,7 @@ class MultiScaleVit(nn.Module):
                 block = block #type: MultiScaleBlock
                 blocks.append(block)
         for i, block in enumerate(blocks):
-            value = -2 + (i+1) / len(blocks) * (v - (-2))
+            value = v - i*((v+2)/len(blocks))
             print(i, value)
             block.concrete_init_max = value
             block.concrete_init_min = value
