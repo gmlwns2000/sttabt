@@ -1,5 +1,7 @@
 # STTABT: Sparse Token Transformer with Attention Back-Tracking [[Paper]](https://openreview.net/forum?id=VV0hSE8AxCw)
 
+![image](https://user-images.githubusercontent.com/4879345/223654639-82b4c170-6e18-4ee3-9f9a-16f409df0b24.png)
+
 Sparse Token Transformer with Attention Back-Tracking
 
 # Experiments
