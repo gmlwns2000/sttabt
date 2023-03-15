@@ -2,7 +2,7 @@
 
 ![image](https://user-images.githubusercontent.com/4879345/223654639-82b4c170-6e18-4ee3-9f9a-16f409df0b24.png)
 
-This repository inlcudes official implementations and model weights for [STTABT](https://openreview.net/forum?id=VV0hSE8AxCw).
+This repository inlcudes official implementations for [STTABT](https://openreview.net/forum?id=VV0hSE8AxCw).
 
 [[`OpenReview`](https://openreview.net/forum?id=VV0hSE8AxCw)] [[`BibTeX`](#Citation)]
  
