@@ -7,8 +7,8 @@ This repository inlcudes official implementations and model weights for [STTABT]
 [[`OpenReview`](https://openreview.net/forum?id=VV0hSE8AxCw)] [[`BibTeX`](#CitingSTTABT)]
  
 > **[Sparse Token Transformer with Attention Back-Tracking](https://openreview.net/forum?id=VV0hSE8AxCw)**<br>
-> :school:[Heejun Lee](https://github.com/gmlwns2000), :school:[Minki Kang](https://nardien.github.io/), :school:[Youngwan Lee](https://youngwanlee.github.io/), :school:[Sung Ju Hwang](http://www.sungjuhwang.com/) <br>
-> KAIST:school: <br>
+> :school::robot:[Heejun Lee](https://github.com/gmlwns2000), :school::alien:[Minki Kang](https://nardien.github.io/), :school::classical_building:[Youngwan Lee](https://youngwanlee.github.io/), :school:[Sung Ju Hwang](http://www.sungjuhwang.com/) <br>
+> KAIST:school:, [DeepAuto.ai](http://deepauto.ai/):robot:, AITRICS:alien:, ETRI:classical_building:<br>
 > Internation Conference on Learning Representation (ICLR) 2023
 
 # Abstract
@@ -42,7 +42,7 @@ python -m main.vit_concrete_end2end --factor 4 --n-gpus 1 --model lvvit-small --
 
 ## GLUE Tasks
 
-WIP... Please check `trainers` folder.
+WIP... Please check [`trainer`](https://github.com/gmlwns2000/sttabt/tree/master/trainer) folder.
 ```
 main.approx_glue_plot
 main.concrete_glue_plot
