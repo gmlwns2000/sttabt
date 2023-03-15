@@ -4,7 +4,7 @@
 
 This repository inlcudes official implementations and model weights for [STTABT](https://openreview.net/forum?id=VV0hSE8AxCw).
 
-[[`OpenReview`](https://openreview.net/forum?id=VV0hSE8AxCw)] [[`BibTeX`](#CitingSTTABT)]
+[[`OpenReview`](https://openreview.net/forum?id=VV0hSE8AxCw)] [[`BibTeX`](#Citation)]
  
 > **[Sparse Token Transformer with Attention Back-Tracking](https://openreview.net/forum?id=VV0hSE8AxCw)**<br>
 > :school::robot:[Heejun Lee](https://github.com/gmlwns2000), :school::alien:[Minki Kang](https://nardien.github.io/), :school::classical_building:[Youngwan Lee](https://youngwanlee.github.io/), :school:[Sung Ju Hwang](http://www.sungjuhwang.com/) <br>
@@ -49,7 +49,7 @@ main.concrete_glue_plot
 main.ltp_glue_plot
 ```
 
-# <a name="CitingSTTABT"></a>CitingSTTABT
+# <a name="Citation"></a>Citation
 
 ```BibTeX
 @inproceedings{
